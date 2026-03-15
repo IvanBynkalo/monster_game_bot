@@ -25,11 +25,22 @@ from handlers.admin import (
 )
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 TOKEN = (BOT_TOKEN or "").strip()
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN is empty. Check Railway Variables.")
+
+logger.info("BOT_TOKEN debug: length=%s", len(TOKEN))
+logger.info("BOT_TOKEN debug: has_colon=%s", ":" in TOKEN)
+
+if ":" in TOKEN:
+    prefix, suffix = TOKEN.split(":", 1)
+    logger.info("BOT_TOKEN debug: prefix=%r", prefix)
+    logger.info("BOT_TOKEN debug: suffix_length=%s", len(suffix))
+else:
+    logger.info("BOT_TOKEN debug: raw_prefix=%r", TOKEN[:15])
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
