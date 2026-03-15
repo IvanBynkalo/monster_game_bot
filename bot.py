@@ -1,4 +1,6 @@
 import asyncio
+import logging
+
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 
@@ -22,7 +24,16 @@ from handlers.admin import (
     reset_player_handler,
 )
 
-bot = Bot(token=BOT_TOKEN)
+logging.basicConfig(level=logging.INFO)
+
+TOKEN = (BOT_TOKEN or "").strip()
+
+if not TOKEN:
+    raise ValueError("BOT_TOKEN is empty. Check Railway Variables.")
+if ":" not in TOKEN:
+    raise ValueError("BOT_TOKEN format is invalid.")
+
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 dp.message.register(start_handler, Command("start"))
