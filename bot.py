@@ -30,8 +30,6 @@ TOKEN = (BOT_TOKEN or "").strip()
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN is empty. Check Railway Variables.")
-if ":" not in TOKEN:
-    raise ValueError("BOT_TOKEN format is invalid.")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
