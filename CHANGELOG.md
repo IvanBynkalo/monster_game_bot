@@ -1,20 +1,12 @@
 # Changelog
 
-## v2.4
-- Added full admin panel with buttons instead of slash-only workflow
-- Added button `🛠 Админ-панель` for admins
-- Added admin reply keyboard with actions:
-  - give gold
-  - give energy
-  - heal monsters
-  - teleport by location
-  - teleport by district
-  - reset player
-- Added simple admin state flow for entering target player ID and value
-- Kept old slash commands for compatibility
+## v2.4.2
+- Fixed active monster switching with real buttons in monster screen
+- Added compact main menu to reduce scrolling
+- Added `📂 Ещё` submenu for secondary actions
+- Added `⬅️ Назад` navigation from submenus
+- Kept admin panel separate from the normal player flow
 
-## v2.3
-- Added inventory system
-- Added starter consumable items
-- Added inventory screen `🎒 Инвентарь`
-- Added usable items
+## v2.4.1
+- Fixed syntax error in `database/repositories.py`
+- Corrected `STORY_QUESTS` list bracket in admin panel build

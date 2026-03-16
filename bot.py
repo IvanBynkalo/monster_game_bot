@@ -7,6 +7,7 @@ from handlers.start import start_handler
 from handlers.map import map_handler, location_handler, move_handler, navigation_handler
 from handlers.world import world_handler
 from handlers.story import story_handler
+from handlers.more import more_handler, back_handler
 from handlers.district import district_handler, district_move_handler
 from handlers.explore import explore_handler
 from handlers.encounter import attack_handler, capture_handler, flee_handler, skill_handler, trap_handler
@@ -42,6 +43,8 @@ dp.message.register(reset_player_handler, Command("reset_player"))
 
 dp.message.register(profile_handler, text_is("Профиль", "🧭 Профиль", "🧭 Профіль"))
 dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
+dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
+dp.message.register(back_handler, text_is("⬅️ Назад"))
 dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
 dp.message.register(restore_energy_handler, text_is("Восстановить энергию", "⚡ Восстановить энергию"))
 dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
@@ -68,7 +71,7 @@ dp.message.register(back_to_menu_handler, text_is("⬅️ Назад в меню
 dp.message.register(capture_handler, text_is("Поймать", "🎯 Поймать"))
 dp.message.register(trap_handler, text_is("🪤 Простая ловушка", "🪤 Ловушка"))
 dp.message.register(flee_handler, text_is("Убежать", "🏃 Убежать"))
-dp.message.register(admin_buttons_handler, lambda message: message.from_user.id in set(ADMIN_IDS or []))
+dp.message.register(admin_buttons_handler, lambda message: message.from_user.id in set(ADMIN_IDS or []) and (message.text or "").strip() not in {"🧭 Профиль","🐲 Мои монстры","🎒 Инвентарь","🌲 Исследовать","🧾 Сюжет","📜 Квесты","🧭 Перемещение","📂 Ещё","🌍 Мир","🗺 Карта","📍 Локация","🧭 Район","❤️ Лечить монстра","⚡ Восстановить энергию","⬅️ Назад","🛠 Админ-панель"})
 dp.message.register(set_active_monster_handler, lambda message: (message.text or "").startswith("Активный ") or (message.text or "").startswith("✅ "))
 
 async def main():
