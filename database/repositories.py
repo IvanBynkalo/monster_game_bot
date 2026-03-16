@@ -60,6 +60,29 @@ def _default_craft_quests():
         },
     }
 
+
+def _default_board_quests():
+    return {
+        "guild_hunt": {
+            "progress": 0,
+            "completed": False,
+            "target": 3,
+            "type": "win",
+            "title": "Охота гильдии",
+            "reward_gold": 40,
+            "reward_exp": 15
+        },
+        "guild_gather": {
+            "progress": 0,
+            "completed": False,
+            "target": 5,
+            "type": "gather",
+            "title": "Сбор ресурсов",
+            "reward_gold": 30,
+            "reward_exp": 10
+        }
+    }
+
 def _ensure_market_defaults():
     MARKET_ITEMS.setdefault("small_potion", {"base_price": 14, "demand": 0.0, "updated_at": 0.0})
     MARKET_ITEMS.setdefault("energy_capsule", {"base_price": 18, "demand": 0.0, "updated_at": 0.0})
@@ -137,7 +160,6 @@ def get_player(telegram_id: int):
             "hp": 30,
             "max_hp": 30,
             "is_defeated": False,
-            "injury_turns": 0,
         }.items():
             if not hasattr(player, attr):
                 setattr(player, attr, default)
@@ -608,72 +630,8 @@ def defeat_player_state(telegram_id: int, gold_loss: int = 0):
         return None
     player.is_defeated = True
     player.hp = 1
-    player.injury_turns = max(getattr(player, 'injury_turns', 0), 5)
     if gold_loss > 0:
         player.gold = max(0, player.gold - gold_loss)
     player.location_slug = "silver_city"
     player.current_district_slug = "market_square"
     return player
-
-
-def tick_player_injuries(telegram_id: int, amount: int = 1):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-    if getattr(player, "injury_turns", 0) > 0:
-        player.injury_turns = max(0, player.injury_turns - amount)
-    return player
-
-def clear_player_injuries(telegram_id: int):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-    player.injury_turns = 0
-    player.is_defeated = False
-    player.hp = player.max_hp
-    return player
-# ==============================
-# Система типов монстров
-# ==============================
-
-TYPE_DAMAGE = {
-    ("Эхо", "Тень"): 1.2,
-    ("Тень", "Эхо"): 0.8,
-
-    ("Свет", "Тень"): 1.4,
-    ("Тень", "Свет"): 0.6,
-
-    ("Эхо", "Свет"): 1.1,
-    ("Свет", "Эхо"): 0.9,
-}
-
-
-def get_damage_multiplier(attacker_type: str, defender_type: str) -> float:
-    """
-    Возвращает множитель урона между типами монстров
-    """
-    return TYPE_DAMAGE.get((attacker_type, defender_type), 1.0)
-
-
-def render_type_hint(attacker_type: str, defender_type: str) -> str:
-    """
-    Текстовая подсказка эффективности атаки
-    """
-    mult = get_damage_multiplier(attacker_type, defender_type)
-
-    if mult > 1:
-        return "⚡ Атака особенно эффективна!"
-    elif mult < 1:
-        return "🛡 Цель сопротивляется урону."
-    else:
-        return ""
-# ==============================
-# Заглушка прогресса гильдейских квестов
-# ==============================
-
-def progress_guild_quests(telegram_id: int, action: str):
-    """
-    Пока система гильдий отключена.
-    Эта функция нужна, чтобы не падали импорты.
-    """
-    return []
