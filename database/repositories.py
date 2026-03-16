@@ -22,7 +22,7 @@ STORY_QUESTS = [
     {"id": "forest_echo", "title": "Шёпот леса", "description": "Исследуй Тёмный лес 2 раза.", "requirements": {"location_slug": "dark_forest", "explore_count": 2}, "reward_gold": 25, "reward_exp": 12, "reward_text": "След уходит в Болото теней."},
     {"id": "swamp_sign", "title": "Тени у воды", "description": "Доберись до Болота теней и исследуй его 1 раз.", "requirements": {"location_slug": "shadow_swamp", "explore_count": 1}, "reward_gold": 35, "reward_exp": 16, "reward_text": "Голоса ведут к Вулкану ярости."},
     {"id": "volcano_trial", "title": "Испытание жаром", "description": "Доберись до Вулкана ярости и победи там 1 монстра.", "requirements": {"location_slug": "volcano_wrath", "win_count": 1}, "reward_gold": 50, "reward_exp": 25, "reward_text": "Первый акт истории региона завершён."},
-}
+]
 
 def _default_story():
     return {"current_index": 0, "completed_ids": [], "forest_echo": {"explore_count": 0, "win_count": 0, "visited": False}, "swamp_sign": {"explore_count": 0, "win_count": 0, "visited": False}, "volcano_trial": {"explore_count": 0, "win_count": 0, "visited": False}}
