@@ -9,27 +9,36 @@ from utils.logger import log_event
 RARITY_LABELS = {"common": "Обычный", "rare": "Редкий", "epic": "Эпический", "legendary": "Легендарный", "mythic": "Мифический"}
 MOOD_LABELS = {"rage": "Ярость", "fear": "Страх", "instinct": "Инстинкт", "inspiration": "Вдохновение"}
 
+def _render_monster_card(monster: dict):
+    marker = "⭐ Активный" if monster.get("is_active") else f"▫️ #{monster['id']}"
+    source = "🌌 Эмоциональный" if monster.get("source_type") == "emotion" else "🐾 Дикий"
+    evo = "🦋 Есть эволюция" if monster.get("evolution_stage", 0) > 0 else "• Без эволюции"
+    return "\n".join([
+        f"{marker} | {source} | {monster['name']}",
+        f"Редкость: {RARITY_LABELS.get(monster['rarity'], monster['rarity'])}",
+        f"Эмоция: {MOOD_LABELS.get(monster['mood'], monster['mood'])}",
+        f"Тип: {get_type_label(monster.get('monster_type'))}",
+        f"HP: {monster.get('current_hp', monster['hp'])}/{monster.get('max_hp', monster['hp'])} | Атака: {monster['attack']}",
+        f"Уровень: {monster['level']} | Опыт: {monster.get('experience', 0)}/{monster['level'] * 5}",
+        f"Состояние: {evo}",
+        f"{render_monster_infection(monster)}",
+    ])
+
 def _render_monster_list(monsters):
     if not monsters:
         return "У тебя пока нет монстров."
     lines = ["🐲 Твои монстры", ""]
-    for monster in monsters:
-        marker = "⭐ Активный" if monster.get("is_active") else "▫️ Монстр"
-        source = "🌌 Эмоциональный" if monster.get("source_type") == "emotion" else "🐾 Дикий"
-        evo = "🦋 Есть эволюция" if monster.get("evolution_stage", 0) > 0 else "• Без эволюции"
-        lines.extend([
-            f"{marker} | {source} | #{monster['id']} {monster['name']}",
-            f"Редкость: {RARITY_LABELS.get(monster['rarity'], monster['rarity'])}",
-            f"Эмоция: {MOOD_LABELS.get(monster['mood'], monster['mood'])}",
-            f"Тип: {get_type_label(monster.get('monster_type'))}",
-            f"HP: {monster.get('current_hp', monster['hp'])}/{monster.get('max_hp', monster['hp'])} | Атака: {monster['attack']}",
-            f"Уровень: {monster['level']} | Опыт: {monster.get('experience', 0)}/{monster['level'] * 5}",
-            f"Состояние: {evo}",
-            f"{render_monster_infection(monster)}",
-            "",
-        ])
-    inactive = [m for m in monsters if not m.get("is_active")]
-    if inactive:
+    active = next((m for m in monsters if m.get("is_active")), None)
+    if active:
+        lines.append(_render_monster_card(active))
+        lines.append("")
+    others = [m for m in monsters if not m.get("is_active")]
+    if others:
+        lines.append("Доступны для переключения:")
+        lines.append("")
+        for monster in others:
+            lines.append(_render_monster_card(monster))
+            lines.append("")
         lines.append("Нажми кнопку с ID ниже, чтобы сделать монстра активным.")
     else:
         lines.append("У тебя пока только один монстр — он уже активный.")
@@ -48,7 +57,7 @@ async def set_active_monster_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
-    raw = (message.text or "").replace("✅", "", 1).replace("Активный", "", 1).strip()
+    raw = (message.text or "").replace("✅", "", 1).strip()
     if not raw.isdigit():
         await message.answer("Формат команды: ✅ ID")
         return
@@ -61,7 +70,10 @@ async def set_active_monster_handler(message: Message):
     active = get_active_monster(message.from_user.id)
     log_event("active_monster_changed", message.from_user.id, active["name"])
     monsters = get_player_monsters(message.from_user.id)
-    await message.answer(f"✅ Активный монстр изменён: {active['name']}", reply_markup=monsters_menu(monsters))
+    await message.answer(
+        f"✅ Активный монстр изменён: {active['name']}\n\n{_render_monster_list(monsters)}",
+        reply_markup=monsters_menu(monsters),
+    )
 
 async def heal_monster_handler(message: Message):
     player = get_player(message.from_user.id)
