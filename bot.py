@@ -4,7 +4,7 @@ from aiogram.filters import Command
 
 from config import BOT_TOKEN
 from handlers.start import start_handler
-from handlers.map import map_handler, location_handler, move_handler
+from handlers.map import map_handler, location_handler, move_handler, navigation_handler
 from handlers.world import world_handler
 from handlers.story import story_handler
 from handlers.district import district_handler, district_move_handler
@@ -48,6 +48,7 @@ dp.message.register(world_handler, text_is("Мир", "🌍 Мир"))
 dp.message.register(map_handler, text_is("Карта", "🗺 Карта"))
 dp.message.register(location_handler, text_is("Локация", "📍 Локация"))
 dp.message.register(district_handler, text_is("Район", "🧭 Район"))
+dp.message.register(navigation_handler, text_is("🧭 Перемещение", "Перемещение"))
 dp.message.register(move_handler, lambda message: (message.text or "").startswith("Перейти: ") or (message.text or "").startswith("🚶 "))
 dp.message.register(district_move_handler, lambda message: (message.text or "").startswith("Район: ") or (message.text or "").startswith("🧭→ "))
 dp.message.register(explore_handler, text_is("Исследовать", "🌲 Исследовать"))
