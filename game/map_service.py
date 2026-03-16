@@ -2,59 +2,94 @@ from pathlib import Path
 from database.models import Location
 
 LOCATIONS = {
+
+"emerald_fields": Location(
+    slug="emerald_fields",
+    name="🌿 Изумрудные поля",
+    mood="inspiration",
+    biome="поля",
+    description="Бескрайние зелёные равнины, где ветер приносит запах редких трав."
+),
+"stone_hills": Location(
+    slug="stone_hills",
+    name="⛰ Каменные холмы",
+    mood="instinct",
+    biome="горы",
+    description="Холмы из серого камня. Здесь часто находят руду и кристаллы."
+),
+"shadow_marsh": Location(
+    slug="shadow_marsh",
+    name="🕸 Болота теней",
+    mood="fear",
+    biome="болото",
+    description="Тёмная вода и густой туман скрывают странных существ."
+),
+    "silver_city": Location(
+        slug="silver_city",
+        name="🏙 Сереброград",
+        mood="inspiration",
+        biome="город",
+        description="Каменный город-убежище. Здесь находятся лавки, мастерские и главные ворота, ведущие в дикие земли."
+    ),
     "dark_forest": Location(
         slug="dark_forest",
         name="🌲 Тёмный лес",
         mood="fear",
-        biome="forest",
+        biome="лес",
         description="Сырая чаща, где тревога и шёпот деревьев подпитывают страх."
-    ),
-    "volcano_wrath": Location(
-        slug="volcano_wrath",
-        name="🔥 Вулкан ярости",
-        mood="rage",
-        biome="volcano",
-        description="Трещины земли дышат жаром. Здесь эмоции легко превращаются в ярость."
     ),
     "shadow_swamp": Location(
         slug="shadow_swamp",
         name="🌫 Болото теней",
         mood="fear",
-        biome="swamp",
+        biome="болото",
         description="Туман скрывает движения, а тени будто наблюдают за каждым шагом."
-    ),
-    "bone_desert": Location(
-        slug="bone_desert",
-        name="🏜 Пустыня костей",
-        mood="instinct",
-        biome="desert",
-        description="Суровая земля проверяет выживших. Здесь просыпается хищный инстинкт."
     ),
     "ancient_ruins": Location(
         slug="ancient_ruins",
         name="🏛 Древние руины",
         mood="inspiration",
-        biome="ruins",
+        biome="руины",
         description="Старые символы и забытые залы наполняют разум вдохновением."
     ),
-    "emotion_rift": Location(
-        slug="emotion_rift",
-        name="🌌 Разлом эмоций",
-        mood="inspiration",
-        biome="rift",
-        description="Нестабильная зона, где чувства обретают форму быстрее обычного."
+    "bone_desert": Location(
+        slug="bone_desert",
+        name="🏜 Пустыня костей",
+        mood="instinct",
+        biome="пустыня",
+        description="Суровая земля проверяет выживших. Здесь просыпается хищный инстинкт."
+    ),
+    "volcano_wrath": Location(
+        slug="volcano_wrath",
+        name="🔥 Вулкан ярости",
+        mood="rage",
+        biome="вулкан",
+        description="Трещины земли дышат жаром. Здесь эмоции легко превращаются в ярость."
     ),
     "storm_ridge": Location(
         slug="storm_ridge",
         name="🏔 Хребет бурь",
         mood="rage",
-        biome="mountains",
+        biome="горы",
         description="Штормы и удары молний закаляют волю и будят внутренний гнев."
+    ),
+    "emotion_rift": Location(
+        slug="emotion_rift",
+        name="🌌 Разлом эмоций",
+        mood="inspiration",
+        biome="разлом",
+        description="Нестабильная зона, где чувства обретают форму быстрее обычного."
     ),
 }
 
 TRAVEL_GRAPH = {
-    "dark_forest": ["shadow_swamp", "ancient_ruins"],
+    "dark_forest": ["silver_city","shadow_swamp","ancient_ruins","emerald_fields"],
+    "emerald_fields": ["dark_forest","stone_hills"],
+    "stone_hills": ["emerald_fields","bone_desert"],
+    "shadow_marsh": ["shadow_swamp"],
+
+    "silver_city": ["dark_forest"],
+    "dark_forest": ["silver_city", "shadow_swamp", "ancient_ruins"],
     "shadow_swamp": ["dark_forest", "emotion_rift"],
     "ancient_ruins": ["dark_forest", "bone_desert", "emotion_rift"],
     "bone_desert": ["ancient_ruins", "volcano_wrath", "storm_ridge"],
@@ -76,11 +111,15 @@ WORLD_MAP_PATH = BASE_DIR / "assets" / "world_map.png"
 def get_location(location_slug: str):
     return LOCATIONS.get(location_slug)
 
+def get_location_name(location_slug: str) -> str:
+    location = get_location(location_slug)
+    return location.name if location else location_slug
+
 def get_connected_locations(location_slug: str):
     return [LOCATIONS[slug] for slug in TRAVEL_GRAPH.get(location_slug, [])]
 
 def render_map_overview(current_slug: str) -> str:
-    lines = ["🗺 Карта мира:", ""]
+    lines = ["🗺 Карта мира", ""]
     for slug, location in LOCATIONS.items():
         marker = "📍" if slug == current_slug else "▫️"
         lines.append(f"{marker} {location.name} — {MOOD_LABELS[location.mood]}")
@@ -89,15 +128,14 @@ def render_map_overview(current_slug: str) -> str:
 def render_location_card(location_slug: str) -> str:
     location = get_location(location_slug)
     neighbors = get_connected_locations(location_slug)
-
     lines = [
-        f"{location.name}",
-        f"Биом: {location.biome}",
+        location.name,
+        f"Тип местности: {location.biome}",
         f"Эмоция локации: {MOOD_LABELS[location.mood]}",
         "",
         location.description,
         "",
-        "Переходы:"
+        "Переходы:",
     ]
     for item in neighbors:
         lines.append(f"— {item.name}")
@@ -106,7 +144,6 @@ def render_location_card(location_slug: str) -> str:
 def build_map_caption(current_slug: str) -> str:
     location = get_location(current_slug)
     neighbors = get_connected_locations(current_slug)
-
     lines = [
         "🗺 Визуальная карта мира",
         "",
@@ -120,8 +157,7 @@ def build_map_caption(current_slug: str) -> str:
     return "\n".join(lines)
 
 def get_move_commands(location_slug: str):
-    neighbors = get_connected_locations(location_slug)
-    return [f"🚶 {location.name}" for location in neighbors]
+    return [f"🚶 {location.name}" for location in get_connected_locations(location_slug)]
 
 def resolve_location_by_move_text(text: str):
     target_name = text.replace("🚶 ", "", 1).strip()
@@ -130,15 +166,8 @@ def resolve_location_by_move_text(text: str):
             return location
     return None
 
-def get_location_explore_text(location_slug: str) -> str:
+def get_location_explore_text(location_slug: str):
     location = get_location(location_slug)
-    biome_messages = {
-        "forest": "Под ногами хрустит листва. Вдалеке слышится рык неизвестного существа.",
-        "volcano": "Воздух обжигает лёгкие. Магма пульсирует, будто отвечает на твой гнев.",
-        "swamp": "Туман стелется по воде. Кажется, кто-то движется рядом, но не показывается.",
-        "desert": "Горячий ветер несёт песок. Здесь выживают только те, у кого сильный инстинкт.",
-        "ruins": "Каменные арки покрыты знаками. Здесь легко найти следы древней силы.",
-        "rift": "Воздух дрожит. Эмоции словно материализуются прямо в пространстве.",
-        "mountains": "Гром гремит над вершинами. Шторм делает каждый шаг испытанием."
-    }
-    return f"{location.name}\n\n{biome_messages.get(location.biome, 'Ты исследуешь окрестности.')}"
+    if not location:
+        return "Здесь пока нечего исследовать."
+    return f"Ты осматриваешь зону: {location.name}. {location.description}"

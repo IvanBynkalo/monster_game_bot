@@ -1,7 +1,209 @@
 import random
-from game.type_service import TYPE_LABELS, get_damage_multiplier, render_type_hint
+from game.type_service import TYPE_LABELS
+from database.repositories import register_monster_seen, get_damage_multiplier, render_type_hint
 
 DISTRICT_POOLS = {
+
+"elite_forest": {
+    "monsters": [
+        {"name": "Чащобный альфа", "rarity": "epic", "mood": "fear", "monster_type": "nature", "weight": 18},
+        {"name": "Шёпот кроны", "rarity": "epic", "mood": "inspiration", "monster_type": "echo", "weight": 14},
+        {"name": "Корнепасть", "rarity": "legendary", "mood": "rage", "monster_type": "nature", "weight": 8},
+        {"name": "Хранитель старого дуба", "rarity": "legendary", "mood": "fear", "monster_type": "bone", "weight": 6}
+    ],
+    "events": [
+        {"type": "cache", "text": "Под древним корнем спрятан трофей охотников.", "weight": 10},
+        {"type": "anomaly", "text": "Лес затихает так резко, будто сам наблюдает за тобой.", "weight": 12}
+    ]
+},
+"elite_hills": {
+    "monsters": [
+        {"name": "Хребтовый колун", "rarity": "epic", "mood": "instinct", "monster_type": "bone", "weight": 18},
+        {"name": "Синий разрушитель", "rarity": "epic", "mood": "rage", "monster_type": "storm", "weight": 12},
+        {"name": "Старший монолит", "rarity": "legendary", "mood": "instinct", "monster_type": "bone", "weight": 8},
+        {"name": "Глас разлома", "rarity": "legendary", "mood": "inspiration", "monster_type": "echo", "weight": 6}
+    ],
+    "events": [
+        {"type": "cache", "text": "Ты находишь редкий геологический схрон.", "weight": 10},
+        {"type": "rift", "text": "Разлом в скале мерцает изнутри холодным светом.", "weight": 8}
+    ]
+},
+"elite_marsh": {
+    "monsters": [
+        {"name": "Топный ловчий", "rarity": "epic", "mood": "fear", "monster_type": "shadow", "weight": 18},
+        {"name": "Смоляной жрец", "rarity": "epic", "mood": "fear", "monster_type": "void", "weight": 12},
+        {"name": "Болотный владыка", "rarity": "legendary", "mood": "fear", "monster_type": "shadow", "weight": 8},
+        {"name": "Омутный архив", "rarity": "legendary", "mood": "inspiration", "monster_type": "echo", "weight": 5}
+    ],
+    "events": [
+        {"type": "trail", "text": "По вязкой воде тянется след огромного существа.", "weight": 10},
+        {"type": "anomaly", "text": "Болото словно дышит. Из глубины доносится гул.", "weight": 10}
+    ]
+},
+
+"legend_fields": {
+    "monsters": [
+        {"name":"Златорогий олень","rarity":"legendary","mood":"inspiration","monster_type":"nature","weight":5},
+        {"name":"Луговой титан","rarity":"legendary","mood":"instinct","monster_type":"bone","weight":4},
+        {"name":"Световой пастух","rarity":"epic","mood":"inspiration","monster_type":"echo","weight":8},
+        {"name":"Песнь ветров","rarity":"epic","mood":"inspiration","monster_type":"storm","weight":7}
+    ],
+    "events":[
+        {"type":"anomaly","text":"Трава светится мягким золотым светом.","weight":10},
+        {"type":"trail","text":"Следы огромного существа уходят за холм.","weight":8}
+    ]
+},
+"ancient_hills": {
+    "monsters":[
+        {"name":"Каменный великан","rarity":"legendary","mood":"rage","monster_type":"bone","weight":5},
+        {"name":"Живой монолит","rarity":"epic","mood":"instinct","monster_type":"bone","weight":9},
+        {"name":"Кристальный дух","rarity":"rare","mood":"inspiration","monster_type":"storm","weight":12},
+        {"name":"Гранитный зверь","rarity":"rare","mood":"rage","monster_type":"bone","weight":11}
+    ],
+    "events":[
+        {"type":"anomaly","text":"Камни вокруг вибрируют.","weight":12},
+        {"type":"cache","text":"Ты находишь тайник шахтёров.","weight":9}
+    ]
+},
+
+
+"wind_garden": {
+    "monsters": [
+        {"name": "Ветряной заяц", "rarity": "common", "mood": "inspiration", "monster_type": "storm", "weight": 25},
+        {"name": "Листовой певун", "rarity": "rare", "mood": "inspiration", "monster_type": "echo", "weight": 18},
+        {"name": "Садовый каратель", "rarity": "epic", "mood": "rage", "monster_type": "nature", "weight": 10},
+        {"name": "Небесный пастух", "rarity": "legendary", "mood": "inspiration", "monster_type": "storm", "weight": 5},
+    ],
+    "events": [
+        {"type": "trail", "text": "Порывы ветра складываются в путь между травами.", "weight": 10},
+        {"type": "anomaly", "text": "Воздух звенит, будто в нём натянута невидимая струна.", "weight": 10},
+    ],
+},
+"crystal_shelf": {
+    "monsters": [
+        {"name": "Кристальный страж", "rarity": "rare", "mood": "inspiration", "monster_type": "storm", "weight": 18},
+        {"name": "Осколочный хищник", "rarity": "epic", "mood": "rage", "monster_type": "bone", "weight": 12},
+        {"name": "Синяя жила", "rarity": "legendary", "mood": "inspiration", "monster_type": "echo", "weight": 5},
+    ],
+    "events": [
+        {"type": "cache", "text": "Между кристаллами блестит редкая находка.", "weight": 12},
+        {"type": "rift", "text": "Свет в кристаллах ломается так, словно за ними скрыт другой мир.", "weight": 7},
+    ],
+},
+"reed_maze": {
+    "monsters": [
+        {"name": "Камышовый резчик", "rarity": "rare", "mood": "fear", "monster_type": "shadow", "weight": 18},
+        {"name": "Тростниковый глаз", "rarity": "epic", "mood": "fear", "monster_type": "echo", "weight": 10},
+        {"name": "Смотритель топей", "rarity": "legendary", "mood": "fear", "monster_type": "void", "weight": 5},
+    ],
+    "events": [
+        {"type": "trail", "text": "Камыши расступаются и тут же смыкаются за твоей спиной.", "weight": 10},
+        {"type": "anomaly", "text": "Кто-то шепчет из зарослей, но рядом никого нет.", "weight": 10},
+    ],
+},
+
+"green_meadow": {
+    "monsters": [
+        {"name": "Луговой прыгун", "rarity": "common", "mood": "inspiration", "monster_type": "nature", "weight": 25},
+        {"name": "Светлый мотылёк", "rarity": "common", "mood": "inspiration", "monster_type": "echo", "weight": 20},
+        {"name": "Травяной сторож", "rarity": "rare", "mood": "instinct", "monster_type": "nature", "weight": 15},
+        {"name": "Росный пастух", "rarity": "rare", "mood": "inspiration", "monster_type": "spirit", "weight": 12},
+        {"name": "Жемчужный кузнечик", "rarity": "rare", "mood": "instinct", "monster_type": "storm", "weight": 10},
+        {"name": "Эхо-перепел", "rarity": "epic", "mood": "inspiration", "monster_type": "echo", "weight": 7},
+        {"name": "Страж лугов", "rarity": "epic", "mood": "instinct", "monster_type": "bone", "weight": 6},
+        {"name": "Солнечный хищник", "rarity": "legendary", "mood": "rage", "monster_type": "flame", "weight": 5},
+    ],
+    "events": [
+        {"type": "anomaly", "text": "Трава ложится кругом, будто невидимое существо только что прошло здесь.", "weight": 12},
+        {"type": "cache", "text": "В траве спрятан забытый мешочек с мелочами путешественника.", "weight": 10},
+        {"type": "trail", "text": "Ты замечаешь цепочку свежих следов, ведущих к редкому существу.", "weight": 8},
+    ],
+},
+"flower_valley": {
+    "monsters": [
+        {"name": "Пыльцевой дух", "rarity": "common", "mood": "inspiration", "monster_type": "spirit", "weight": 24},
+        {"name": "Лепестковый лис", "rarity": "rare", "mood": "inspiration", "monster_type": "nature", "weight": 18},
+        {"name": "Медовый шёпот", "rarity": "rare", "mood": "inspiration", "monster_type": "echo", "weight": 15},
+        {"name": "Садовый страж", "rarity": "rare", "mood": "instinct", "monster_type": "nature", "weight": 12},
+        {"name": "Полевой змеец", "rarity": "epic", "mood": "fear", "monster_type": "shadow", "weight": 10},
+        {"name": "Венец рассвета", "rarity": "epic", "mood": "inspiration", "monster_type": "storm", "weight": 9},
+        {"name": "Хранитель лепестков", "rarity": "legendary", "mood": "inspiration", "monster_type": "echo", "weight": 4},
+        {"name": "Цветочная ведьма", "rarity": "legendary", "mood": "fear", "monster_type": "void", "weight": 3},
+    ],
+    "events": [
+        {"type": "anomaly", "text": "Цветы поворачиваются к тебе одновременно, как будто слушают твои мысли.", "weight": 12},
+        {"type": "trail", "text": "Пыльца складывается в стрелку и ведёт в глубину долины.", "weight": 9},
+        {"type": "rift", "text": "Среди цветов мерцает тонкая щель иного мира.", "weight": 6},
+    ],
+},
+"old_mine": {
+    "monsters": [
+        {"name": "Шахтный копун", "rarity": "common", "mood": "instinct", "monster_type": "bone", "weight": 23},
+        {"name": "Кремневый жук", "rarity": "common", "mood": "instinct", "monster_type": "nature", "weight": 18},
+        {"name": "Рудный скат", "rarity": "rare", "mood": "instinct", "monster_type": "bone", "weight": 15},
+        {"name": "Кристальный сверчок", "rarity": "rare", "mood": "inspiration", "monster_type": "storm", "weight": 12},
+        {"name": "Пыльный дозорный", "rarity": "epic", "mood": "fear", "monster_type": "shadow", "weight": 10},
+        {"name": "Глубинный ломатель", "rarity": "epic", "mood": "rage", "monster_type": "flame", "weight": 9},
+        {"name": "Хранитель жилы", "rarity": "legendary", "mood": "instinct", "monster_type": "bone", "weight": 7},
+        {"name": "Голос карьера", "rarity": "legendary", "mood": "inspiration", "monster_type": "echo", "weight": 6},
+    ],
+    "events": [
+        {"type": "cache", "text": "Ты находишь старый ящик шахтёров. Внутри ещё остались полезные вещи.", "weight": 10},
+        {"type": "anomaly", "text": "Стены шахты гудят, как будто внутри камня что-то дышит.", "weight": 12},
+        {"type": "trail", "text": "Крошки руды тянутся по полу, будто их кто-то уносил совсем недавно.", "weight": 8},
+    ],
+},
+"rock_pass": {
+    "monsters": [
+        {"name": "Перевальный хрипун", "rarity": "common", "mood": "instinct", "monster_type": "shadow", "weight": 22},
+        {"name": "Скальный грызень", "rarity": "common", "mood": "instinct", "monster_type": "bone", "weight": 18},
+        {"name": "Буревой вьюн", "rarity": "rare", "mood": "rage", "monster_type": "storm", "weight": 16},
+        {"name": "Каменный глашатай", "rarity": "rare", "mood": "inspiration", "monster_type": "echo", "weight": 12},
+        {"name": "Седой страж перевала", "rarity": "epic", "mood": "instinct", "monster_type": "bone", "weight": 11},
+        {"name": "Гранитный волк", "rarity": "epic", "mood": "rage", "monster_type": "flame", "weight": 9},
+        {"name": "Небесный раскол", "rarity": "legendary", "mood": "rage", "monster_type": "storm", "weight": 7},
+        {"name": "Горный пророк", "rarity": "legendary", "mood": "inspiration", "monster_type": "spirit", "weight": 5},
+    ],
+    "events": [
+        {"type": "anomaly", "text": "Между камней проскальзывает искра и гаснет, оставляя запах грозы.", "weight": 12},
+        {"type": "trail", "text": "На камне свежие царапины. Кто-то большой недавно прошёл через перевал.", "weight": 9},
+        {"type": "cache", "text": "Под выступом спрятан походный схрон старых добытчиков.", "weight": 7},
+    ],
+},
+"fog_pool": {
+    "monsters": [
+        {"name": "Туманный угорь", "rarity": "common", "mood": "fear", "monster_type": "shadow", "weight": 23},
+        {"name": "Болотный дублёр", "rarity": "rare", "mood": "fear", "monster_type": "void", "weight": 17},
+        {"name": "Вязкий сторож", "rarity": "rare", "mood": "instinct", "monster_type": "nature", "weight": 15},
+        {"name": "Слизень омутов", "rarity": "common", "mood": "fear", "monster_type": "shadow", "weight": 20},
+        {"name": "Чёрный камышовик", "rarity": "epic", "mood": "fear", "monster_type": "spirit", "weight": 10},
+        {"name": "Глотатель следов", "rarity": "epic", "mood": "instinct", "monster_type": "bone", "weight": 8},
+        {"name": "Хозяин тумана", "rarity": "legendary", "mood": "fear", "monster_type": "void", "weight": 4},
+        {"name": "Омутная сирена", "rarity": "legendary", "mood": "inspiration", "monster_type": "echo", "weight": 3},
+    ],
+    "events": [
+        {"type": "anomaly", "text": "Туман сгущается в силуэт и на миг идёт рядом с тобой.", "weight": 12},
+        {"type": "rift", "text": "Поверхность воды дрожит, открывая мутную трещину в пространстве.", "weight": 6},
+        {"type": "trail", "text": "Из грязи торчит амулет. Рядом следы тяжёлого существа.", "weight": 9},
+    ],
+},
+"sunken_ruins": {
+    "monsters": [
+        {"name": "Руинный сторож", "rarity": "common", "mood": "fear", "monster_type": "bone", "weight": 20},
+        {"name": "Утопший глаз", "rarity": "rare", "mood": "fear", "monster_type": "echo", "weight": 18},
+        {"name": "Зов руин", "rarity": "rare", "mood": "inspiration", "monster_type": "spirit", "weight": 14},
+        {"name": "Плесневый рыцарь", "rarity": "epic", "mood": "instinct", "monster_type": "bone", "weight": 12},
+        {"name": "Смоляной дозор", "rarity": "epic", "mood": "fear", "monster_type": "shadow", "weight": 10},
+        {"name": "Архивариус бездны", "rarity": "legendary", "mood": "inspiration", "monster_type": "void", "weight": 7},
+        {"name": "Утопший герольд", "rarity": "legendary", "mood": "fear", "monster_type": "echo", "weight": 6},
+        {"name": "Маршевый колосс", "rarity": "legendary", "mood": "rage", "monster_type": "bone", "weight": 4},
+    ],
+    "events": [
+        {"type": "cache", "text": "Ты находишь затопленный тайник древних жителей.", "weight": 10},
+        {"type": "anomaly", "text": "Колонны руин отзываются гулом на твоё присутствие.", "weight": 12},
+        {"type": "rift", "text": "В проломе между плитами мерцает иная глубина.", "weight": 7},
+    ],
+},
     "mushroom_path": {
         "monsters": [
             {"name": "Споровый слизень", "rarity": "common", "mood": "fear", "monster_type": "nature", "weight": 40},
