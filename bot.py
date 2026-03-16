@@ -24,10 +24,17 @@ from handlers.admin import (
     teleport_location_handler,
     teleport_district_handler,
     reset_player_handler,
+    ADMIN_STATES,
 )
 
 def text_is(*variants):
     return lambda message: (message.text or "").strip() in variants
+
+def is_admin(user_id: int) -> bool:
+    return user_id in set(ADMIN_IDS or [])
+
+def has_admin_state(message) -> bool:
+    return is_admin(message.from_user.id) and message.from_user.id in ADMIN_STATES
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -41,38 +48,49 @@ dp.message.register(teleport_location_handler, Command("teleport_location"))
 dp.message.register(teleport_district_handler, Command("teleport_district"))
 dp.message.register(reset_player_handler, Command("reset_player"))
 
+# Core player menu
 dp.message.register(profile_handler, text_is("Профиль", "🧭 Профиль", "🧭 Профіль"))
+dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
+dp.message.register(set_active_monster_handler, lambda message: (message.text or "").startswith("✅ "))
+dp.message.register(inventory_handler, text_is("🎒 Инвентарь", "Инвентарь"))
+dp.message.register(use_small_potion_handler, text_is("🧪 Малое зелье"))
+dp.message.register(use_energy_capsule_handler, text_is("⚡ Капсула энергии"))
+dp.message.register(back_to_menu_handler, text_is("⬅️ Назад в меню"))
+dp.message.register(explore_handler, text_is("Исследовать", "🌲 Исследовать"))
 dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
+dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
+dp.message.register(navigation_handler, text_is("🧭 Перемещение", "Перемещение"))
 dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
 dp.message.register(back_handler, text_is("⬅️ Назад"))
-dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
-dp.message.register(restore_energy_handler, text_is("Восстановить энергию", "⚡ Восстановить энергию"))
-dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
-dp.message.register(inventory_handler, text_is("🎒 Инвентарь", "Инвентарь"))
-dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
-dp.message.register(heal_monster_handler, text_is("Лечить монстра", "❤️ Лечить монстра"))
-dp.message.register(admin_buttons_handler, lambda message: (message.text or "").strip() in {
-    "💰 Выдать золото", "⚡ Выдать энергию", "❤️ Вылечить монстров", "🧹 Сбросить игрока",
-    "🗺 Телепорт по локации", "🧭 Телепорт по району", "❌ Закрыть админ-панель"
-} or False)
+
+# Additional screens
 dp.message.register(world_handler, text_is("Мир", "🌍 Мир"))
 dp.message.register(map_handler, text_is("Карта", "🗺 Карта"))
 dp.message.register(location_handler, text_is("Локация", "📍 Локация"))
 dp.message.register(district_handler, text_is("Район", "🧭 Район"))
-dp.message.register(navigation_handler, text_is("🧭 Перемещение", "Перемещение"))
+dp.message.register(heal_monster_handler, text_is("Лечить монстра", "❤️ Лечить монстра"))
+dp.message.register(restore_energy_handler, text_is("Восстановить энергию", "⚡ Восстановить энергию"))
+
+# Movement
 dp.message.register(move_handler, lambda message: (message.text or "").startswith("Перейти: ") or (message.text or "").startswith("🚶 "))
 dp.message.register(district_move_handler, lambda message: (message.text or "").startswith("Район: ") or (message.text or "").startswith("🧭→ "))
-dp.message.register(explore_handler, text_is("Исследовать", "🌲 Исследовать"))
+
+# Encounter
 dp.message.register(attack_handler, text_is("Атаковать", "⚔️ Атаковать"))
 dp.message.register(skill_handler, text_is("Навык", "✨ Навык"))
-dp.message.register(use_small_potion_handler, text_is("🧪 Малое зелье"))
-dp.message.register(use_energy_capsule_handler, text_is("⚡ Капсула энергии"))
-dp.message.register(back_to_menu_handler, text_is("⬅️ Назад в меню"))
 dp.message.register(capture_handler, text_is("Поймать", "🎯 Поймать"))
 dp.message.register(trap_handler, text_is("🪤 Простая ловушка", "🪤 Ловушка"))
 dp.message.register(flee_handler, text_is("Убежать", "🏃 Убежать"))
-dp.message.register(admin_buttons_handler, lambda message: message.from_user.id in set(ADMIN_IDS or []) and (message.text or "").strip() not in {"🧭 Профиль","🐲 Мои монстры","🎒 Инвентарь","🌲 Исследовать","🧾 Сюжет","📜 Квесты","🧭 Перемещение","📂 Ещё","🌍 Мир","🗺 Карта","📍 Локация","🧭 Район","❤️ Лечить монстра","⚡ Восстановить энергию","⬅️ Назад","🛠 Админ-панель"})
-dp.message.register(set_active_monster_handler, lambda message: (message.text or "").startswith("Активный ") or (message.text or "").startswith("✅ "))
+
+# Admin panel
+dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
+dp.message.register(
+    admin_buttons_handler,
+    lambda message: is_admin(message.from_user.id) and ((message.text or "").strip() in {
+        "💰 Выдать золото", "⚡ Выдать энергию", "❤️ Вылечить монстров", "🧹 Сбросить игрока",
+        "🗺 Телепорт по локации", "🧭 Телепорт по району", "❌ Закрыть админ-панель"
+    } or has_admin_state(message))
+)
 
 async def main():
     await dp.start_polling(bot)
