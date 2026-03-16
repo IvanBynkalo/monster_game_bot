@@ -1,5 +1,5 @@
 from aiogram.types import Message
-from database.repositories import add_player_experience, add_player_gold, get_player, get_active_monster, progress_quests, save_pending_encounter, spend_player_energy, update_story_progress
+from database.repositories import add_player_experience, add_player_gold, begin_action_scope, get_player, get_active_monster, progress_quests, save_pending_encounter, spend_player_energy, tick_birth_cooldown, update_story_progress
 from game.district_service import get_district, get_district_explore_text
 from game.emotion_birth_service import render_birth_text, try_birth_emotional_monster
 from game.emotion_service import grant_event_emotions, render_emotion_changes
@@ -23,6 +23,8 @@ async def explore_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    begin_action_scope(message.from_user.id, "explore")
+    tick_birth_cooldown(message.from_user.id)
     if not spend_player_energy(message.from_user.id, 1):
         log_event("explore_failed_no_energy", message.from_user.id)
         await message.answer("⚡ Недостаточно энергии для исследования.")

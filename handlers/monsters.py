@@ -16,7 +16,6 @@ def _render_monster_list(monsters):
         marker = "⭐ Активный" if monster.get("is_active") else "▫️ Монстр"
         source = "🌌 Эмоциональный" if monster.get("source_type") == "emotion" else "🐾 Дикий"
         evo = "🦋 Есть эволюция" if monster.get("evolution_stage", 0) > 0 else "• Без эволюции"
-        switch = f"Сделать активным: ✅ {monster['id']}"
         lines.extend([
             f"{marker} | {source} | #{monster['id']} {monster['name']}",
             f"Редкость: {RARITY_LABELS.get(monster['rarity'], monster['rarity'])}",
@@ -26,9 +25,10 @@ def _render_monster_list(monsters):
             f"Уровень: {monster['level']} | Опыт: {monster.get('experience', 0)}/{monster['level'] * 5}",
             f"Состояние: {evo}",
             f"{render_monster_infection(monster)}",
-            switch,
-            "",
         ])
+        if not monster.get("is_active"):
+            lines.append(f"Сделать активным: ✅ {monster['id']}")
+        lines.append("")
     return "\n".join(lines)
 
 async def monsters_handler(message: Message):

@@ -16,7 +16,7 @@ async def profile_handler(message: Message):
     evolved_monsters = sum(1 for m in monsters if m.get("evolution_stage", 0) > 0)
     active = get_active_monster(message.from_user.id)
     active_text = active["name"] if active else "нет"
-    infection_text = render_monster_infection(active) if active else "Заражение: нет"
+    infection_text = render_monster_infection(active) if active else "Искажение: нет"
     hp_text = f"{active.get('current_hp', active['hp'])}/{active.get('max_hp', active['hp'])}" if active else "-"
     monster_xp = f"{active.get('experience', 0)}/{active['level'] * 5}" if active else "-"
     evolution_text = f"Стадия эволюции: {active.get('evolution_stage', 0)}" if active else "Стадия эволюции: -"

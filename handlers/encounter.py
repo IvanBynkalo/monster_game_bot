@@ -1,8 +1,8 @@
 from aiogram.types import Message
 from database.repositories import (
     add_active_monster_experience, add_captured_monster, add_player_experience, add_player_gold,
-    clear_pending_encounter, damage_active_monster, get_active_monster, get_pending_encounter,
-    get_player, progress_quests, save_pending_encounter, update_story_progress,
+    begin_action_scope, clear_pending_encounter, damage_active_monster, get_active_monster, get_item_count, get_pending_encounter,
+    get_player, progress_quests, save_pending_encounter, spend_item, tick_birth_cooldown, update_story_progress,
 )
 from game.district_service import get_district
 from game.emotion_birth_service import render_birth_text, try_birth_emotional_monster
@@ -89,8 +89,9 @@ def _render_completed_quests(player_id: int, completed_now):
     for _, quest in completed_now:
         add_player_gold(player_id, quest["reward_gold"])
         add_player_experience(player_id, quest["reward_exp"])
-        mt, evolved = _monster_progress_text(player_id, quest["reward_exp"])
-        text = f"📜 Квест выполнен: {quest['title']}\n💰 Награда: +{quest['reward_gold']} золота\n✨ Награда: +{quest['reward_exp']} опыта"
+        monster_exp = max(1, quest["reward_exp"] // 2)
+        mt, evolved = _monster_progress_text(player_id, monster_exp)
+        text = f"📜 Квест выполнен: {quest['title']}\n💰 Награда: +{quest['reward_gold']} золота\n✨ Награда: +{quest['reward_exp']} опыта\n🐲 Опыт монстра за квест: +{monster_exp}"
         if mt:
             text += "\n" + mt
         et = render_evolution_text(evolved)
@@ -121,6 +122,8 @@ async def attack_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start"); return
+    begin_action_scope(message.from_user.id, "battle_attack")
+    tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
         await message.answer("У тебя нет активного монстра."); return
@@ -143,10 +146,32 @@ async def attack_handler(message: Message):
     save_pending_encounter(message.from_user.id, encounter)
     await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_menu())
 
+
+async def trap_handler(message: Message):
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start"); return
+    encounter = get_pending_encounter(message.from_user.id)
+    if not encounter or encounter.get("type") != "monster":
+        await message.answer("🪤 Ловушку можно использовать только во время встречи с монстром.", reply_markup=main_menu(player.location_slug)); return
+    if get_item_count(message.from_user.id, "basic_trap") <= 0:
+        await message.answer("🪤 У тебя нет простой ловушки.", reply_markup=encounter_menu()); return
+    spend_item(message.from_user.id, "basic_trap", 1)
+    encounter["bonus_capture"] = min(0.45, encounter.get("bonus_capture", 0.0) + 0.15)
+    save_pending_encounter(message.from_user.id, encounter)
+    await message.answer(
+        f"🪤 Ты активируешь простую ловушку.\n"
+        f"Шанс поимки повышен на 15%.\n"
+        f"Текущий бонус: +{int(encounter['bonus_capture'] * 100)}%",
+        reply_markup=encounter_menu(),
+    )
+
 async def skill_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start"); return
+    begin_action_scope(message.from_user.id, "battle_skill")
+    tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
         await message.answer("У тебя нет активного монстра."); return
@@ -179,6 +204,8 @@ async def capture_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start"); return
+    begin_action_scope(message.from_user.id, "battle_capture")
+    tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
         await message.answer("У тебя нет активного монстра."); return
@@ -213,6 +240,8 @@ async def flee_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start"); return
+    begin_action_scope(message.from_user.id, "battle_flee")
+    tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
         await message.answer("У тебя нет активного монстра."); return
