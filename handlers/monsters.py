@@ -1,7 +1,7 @@
 from aiogram.types import Message
-
 from database.repositories import get_active_monster, get_monster_by_id, get_player, get_player_monsters, heal_active_monster, set_active_monster
 from game.infection_service import render_monster_infection
+from game.type_service import get_type_label
 from keyboards.main_menu import main_menu
 from utils.logger import log_event
 
@@ -20,6 +20,7 @@ def _render_monster_list(monsters):
             f"{marker} {source}{evo} #{monster['id']} {monster['name']}",
             f"   Редкость: {RARITY_LABELS.get(monster['rarity'], monster['rarity'])}",
             f"   Эмоция: {MOOD_LABELS.get(monster['mood'], monster['mood'])}",
+            f"   Тип: {get_type_label(monster.get('monster_type'))}",
             f"   HP: {monster.get('current_hp', monster['hp'])}/{monster.get('max_hp', monster['hp'])} | ATK: {monster['attack']}",
             f"   Уровень: {monster['level']} | XP: {monster.get('experience', 0)}/{monster['level'] * 5}",
             f"   {render_monster_infection(monster)}", "",

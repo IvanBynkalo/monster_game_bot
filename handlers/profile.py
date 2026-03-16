@@ -2,6 +2,7 @@ from aiogram.types import Message
 from database.repositories import get_active_monster, get_player, get_player_monsters, restore_player_energy
 from game.emotion_service import render_emotions_panel
 from game.infection_service import render_monster_infection
+from game.type_service import get_type_label
 from keyboards.main_menu import main_menu
 from utils.logger import log_event
 
@@ -19,6 +20,7 @@ async def profile_handler(message: Message):
     hp_text = f"{active.get('current_hp', active['hp'])}/{active.get('max_hp', active['hp'])}" if active else "-"
     monster_xp = f"{active.get('experience', 0)}/{active['level'] * 5}" if active else "-"
     evolution_text = f"Стадия эволюции: {active.get('evolution_stage', 0)}" if active else "Стадия эволюции: -"
+    monster_type = get_type_label(active.get("monster_type")) if active else "-"
     await message.answer(
         f"🧭 Профиль\n\n"
         f"Имя: {player.name}\n"
@@ -30,6 +32,7 @@ async def profile_handler(message: Message):
         f"Эмоциональных монстров: {emotion_monsters}\n"
         f"Эволюционировавших монстров: {evolved_monsters}\n"
         f"Активный монстр: {active_text}\n"
+        f"Тип монстра: {monster_type}\n"
         f"Уровень монстра: {active['level'] if active else '-'}\n"
         f"Опыт монстра: {monster_xp}\n"
         f"HP активного монстра: {hp_text}\n"

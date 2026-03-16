@@ -1,5 +1,5 @@
 from aiogram.types import Message
-from database.repositories import add_player_experience, add_player_gold, get_player, progress_quests, save_pending_encounter, spend_player_energy, update_story_progress
+from database.repositories import add_player_experience, add_player_gold, get_player, get_active_monster, progress_quests, save_pending_encounter, spend_player_energy, update_story_progress
 from game.district_service import get_district, get_district_explore_text
 from game.emotion_birth_service import render_birth_text, try_birth_emotional_monster
 from game.emotion_service import grant_event_emotions, render_emotion_changes
@@ -36,11 +36,13 @@ async def explore_handler(message: Message):
         district_mood = district["mood"] if district else None
         intro = get_district_explore_text(player.location_slug, player.current_district_slug)
         encounter = generate_district_encounter(player.current_district_slug)
+        active = get_active_monster(message.from_user.id)
+        attacker_type = active.get("monster_type") if active else None
         log_event("explore", message.from_user.id, f"district={player.current_district_slug} type={encounter['type']}")
 
         if encounter["type"] == "monster":
             save_pending_encounter(message.from_user.id, encounter)
-            text = f"{intro}\n\n---\n\n{render_encounter_text(encounter)}"
+            text = f"{intro}\n\n---\n\n{render_encounter_text(encounter, attacker_type=attacker_type)}"
             extras = _render_completed_quests(message.from_user.id, completed_now)
             if story_done:
                 extras.append(apply_story_reward(message.from_user.id, story_done))

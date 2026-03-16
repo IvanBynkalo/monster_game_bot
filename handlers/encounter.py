@@ -130,7 +130,7 @@ async def attack_handler(message: Message):
     if not encounter:
         await message.answer("Сейчас нет активной встречи."); return
 
-    result = resolve_attack(encounter, active_monster_attack=active.get("attack", 8))
+    result = resolve_attack(encounter, active_monster_attack=active.get("attack", 8), attacker_type=active.get("monster_type"))
     damaged, damage_text = _apply_enemy_damage(message.from_user.id, result)
     if damaged and damaged["current_hp"] <= 0 and not result.get("finished"):
         clear_pending_encounter(message.from_user.id)
