@@ -32,6 +32,11 @@ TOKEN = (BOT_TOKEN or "").strip()
 if not TOKEN:
     raise ValueError("BOT_TOKEN is empty. Check Railway Variables.")
 
+TOKEN = (BOT_TOKEN or "").strip()
+
+if not TOKEN:
+    raise ValueError("BOT_TOKEN is empty. Railway env was not loaded.")
+
 logger.info("BOT_TOKEN debug: length=%s", len(TOKEN))
 logger.info("BOT_TOKEN debug: has_colon=%s", ":" in TOKEN)
 
