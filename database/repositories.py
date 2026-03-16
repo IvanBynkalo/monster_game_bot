@@ -60,6 +60,31 @@ def _default_craft_quests():
         },
     }
 
+
+def _default_board_quests():
+    return {
+        "board_hunt": {
+            "progress": 0,
+            "completed": False,
+            "title": "Охота гильдии",
+            "description": "Победи 3 монстров в любой зоне.",
+            "target": 3,
+            "target_type": "win",
+            "reward_gold": 40,
+            "reward_exp": 15,
+        },
+        "board_gather": {
+            "progress": 0,
+            "completed": False,
+            "title": "Сбор ресурсов",
+            "description": "Собери 5 ресурсов.",
+            "target": 5,
+            "target_type": "gather",
+            "reward_gold": 30,
+            "reward_exp": 10,
+        },
+    }
+
 def _ensure_market_defaults():
     MARKET_ITEMS.setdefault("small_potion", {"base_price": 14, "demand": 0.0, "updated_at": 0.0})
     MARKET_ITEMS.setdefault("energy_capsule", {"base_price": 18, "demand": 0.0, "updated_at": 0.0})
@@ -615,28 +640,51 @@ def defeat_player_state(telegram_id: int, gold_loss: int = 0):
 
 
 
-# --- PATCH: injuries tick function ---
+def progress_guild_quests(telegram_id: int, action: str, amount: int = 1):
+    return []
 
-def tick_player_injuries(telegram_id):
-    """
-    Простая обработка травм игрока.
-    Сейчас это безопасная заглушка, чтобы бот не падал.
-    """
 
-    player = PLAYERS.get(telegram_id)
+
+TYPE_DAMAGE = {
+    ("Эхо", "Тень"): 1.2,
+    ("Тень", "Эхо"): 0.8,
+    ("Свет", "Тень"): 1.4,
+    ("Тень", "Свет"): 0.6,
+    ("Эхо", "Свет"): 1.1,
+    ("Свет", "Эхо"): 0.9,
+}
+
+def get_damage_multiplier(attacker_type: str, defender_type: str) -> float:
+    return TYPE_DAMAGE.get((attacker_type, defender_type), 1.0)
+
+def render_type_hint(attacker_type: str, defender_type: str) -> str:
+    mult = get_damage_multiplier(attacker_type, defender_type)
+    if mult > 1:
+        return "⚡ Атака особенно эффективна!"
+    elif mult < 1:
+        return "🛡 Цель сопротивляется урону."
+    return ""
+
+
+
+def tick_player_injuries(telegram_id: int, amount: int = 1):
+    player = get_player(telegram_id)
     if not player:
-        return
+        return None
+    if not hasattr(player, "injury_turns"):
+        player.injury_turns = 0
+    if player.injury_turns > 0:
+        player.injury_turns = max(0, player.injury_turns - amount)
+    return player
 
-    # если у игрока нет поля травм — создаём
-    if not hasattr(player, "injuries"):
-        player.injuries = []
-
-    healed = []
-
-    for injury in list(player.injuries):
-        injury["turns"] -= 1
-        if injury["turns"] <= 0:
-            healed.append(injury)
-
-    for i in healed:
-        player.injuries.remove(i)
+def clear_player_injuries(telegram_id: int):
+    player = get_player(telegram_id)
+    if not player:
+        return None
+    if not hasattr(player, "injury_turns"):
+        player.injury_turns = 0
+    player.injury_turns = 0
+    player.is_defeated = False
+    if hasattr(player, "max_hp") and hasattr(player, "hp"):
+        player.hp = player.max_hp
+    return player
