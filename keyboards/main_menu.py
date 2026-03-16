@@ -4,15 +4,17 @@ from game.district_service import get_district_move_commands
 
 def main_menu(location_slug: str):
     buttons = [
-        [KeyboardButton(text="🧭 Профиль"), KeyboardButton(text="🐲 Мои монстры")],
-        [KeyboardButton(text="🧾 Сюжет"), KeyboardButton(text="📜 Квесты")],
-        [KeyboardButton(text="🌍 Мир"), KeyboardButton(text="🗺 Карта")],
-        [KeyboardButton(text="📍 Локация"), KeyboardButton(text="🧭 Район")],
-        [KeyboardButton(text="🌲 Исследовать")],
-        [KeyboardButton(text="❤️ Лечить монстра"), KeyboardButton(text="⚡ Восстановить энергию")],
+        [KeyboardButton(text="Профиль"), KeyboardButton(text="Мои монстры")],
+        [KeyboardButton(text="Сюжет"), KeyboardButton(text="Квесты")],
+        [KeyboardButton(text="Мир"), KeyboardButton(text="Карта")],
+        [KeyboardButton(text="Локация"), KeyboardButton(text="Район")],
+        [KeyboardButton(text="Исследовать")],
+        [KeyboardButton(text="Лечить монстра"), KeyboardButton(text="Восстановить энергию")],
     ]
     for cmd in get_move_commands(location_slug):
-        buttons.append([KeyboardButton(text=cmd)])
+        name = cmd.replace("🚶 ", "")
+        buttons.append([KeyboardButton(text=f"Перейти: {name}")])
     for cmd in get_district_move_commands(location_slug):
-        buttons.append([KeyboardButton(text=cmd)])
+        name = cmd.replace("🧭→ ", "")
+        buttons.append([KeyboardButton(text=f"Район: {name}")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
