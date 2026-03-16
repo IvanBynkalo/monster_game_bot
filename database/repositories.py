@@ -60,29 +60,6 @@ def _default_craft_quests():
         },
     }
 
-
-def _default_board_quests():
-    return {
-        "guild_hunt": {
-            "progress": 0,
-            "completed": False,
-            "target": 3,
-            "type": "win",
-            "title": "Охота гильдии",
-            "reward_gold": 40,
-            "reward_exp": 15
-        },
-        "guild_gather": {
-            "progress": 0,
-            "completed": False,
-            "target": 5,
-            "type": "gather",
-            "title": "Сбор ресурсов",
-            "reward_gold": 30,
-            "reward_exp": 10
-        }
-    }
-
 def _ensure_market_defaults():
     MARKET_ITEMS.setdefault("small_potion", {"base_price": 14, "demand": 0.0, "updated_at": 0.0})
     MARKET_ITEMS.setdefault("energy_capsule", {"base_price": 18, "demand": 0.0, "updated_at": 0.0})
@@ -635,3 +612,31 @@ def defeat_player_state(telegram_id: int, gold_loss: int = 0):
     player.location_slug = "silver_city"
     player.current_district_slug = "market_square"
     return player
+
+
+
+# --- PATCH: injuries tick function ---
+
+def tick_player_injuries(telegram_id):
+    """
+    Простая обработка травм игрока.
+    Сейчас это безопасная заглушка, чтобы бот не падал.
+    """
+
+    player = PLAYERS.get(telegram_id)
+    if not player:
+        return
+
+    # если у игрока нет поля травм — создаём
+    if not hasattr(player, "injuries"):
+        player.injuries = []
+
+    healed = []
+
+    for injury in list(player.injuries):
+        injury["turns"] -= 1
+        if injury["turns"] <= 0:
+            healed.append(injury)
+
+    for i in healed:
+        player.injuries.remove(i)
