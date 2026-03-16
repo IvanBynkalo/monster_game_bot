@@ -1,42 +1,18 @@
 from database.repositories import get_active_monster
 
+RARITY_LABELS = {
+    "common": "Обычный",
+    "rare": "Редкий",
+    "epic": "Эпический",
+    "legendary": "Легендарный",
+    "mythic": "Мифический",
+}
+
 EVOLUTION_RECIPES = [
-    {
-        "base_name": "Эхо-Лис",
-        "min_level": 3,
-        "infection_type": "inspiration",
-        "result_name": "Эфирный Эхо-Лис",
-        "rarity": "epic",
-        "hp_bonus": 8,
-        "attack_bonus": 2,
-    },
-    {
-        "base_name": "Эхо-Лис",
-        "min_level": 3,
-        "infection_type": "fear",
-        "result_name": "Сумрачный Эхо-Лис",
-        "rarity": "epic",
-        "hp_bonus": 10,
-        "attack_bonus": 1,
-    },
-    {
-        "base_name_contains": "Клык",
-        "min_level": 4,
-        "infection_type": "rage",
-        "result_name": "Багровый Клык",
-        "rarity": "legendary",
-        "hp_bonus": 12,
-        "attack_bonus": 3,
-    },
-    {
-        "base_name_contains": "Следопыт",
-        "min_level": 4,
-        "infection_type": "instinct",
-        "result_name": "Кровавый Альфа-Следопыт",
-        "rarity": "legendary",
-        "hp_bonus": 10,
-        "attack_bonus": 4,
-    },
+    {"base_name": "Эхо-Лис", "min_level": 3, "infection_type": "inspiration", "result_name": "Эфирный Эхо-Лис", "rarity": "epic", "hp_bonus": 8, "attack_bonus": 2},
+    {"base_name": "Эхо-Лис", "min_level": 3, "infection_type": "fear", "result_name": "Сумрачный Эхо-Лис", "rarity": "epic", "hp_bonus": 10, "attack_bonus": 1},
+    {"base_name_contains": "Клык", "min_level": 4, "infection_type": "rage", "result_name": "Багровый Клык", "rarity": "legendary", "hp_bonus": 12, "attack_bonus": 3},
+    {"base_name_contains": "Следопыт", "min_level": 4, "infection_type": "instinct", "result_name": "Кровавый Альфа-Следопыт", "rarity": "legendary", "hp_bonus": 10, "attack_bonus": 4},
 ]
 
 def _matches(monster: dict, recipe: dict) -> bool:
@@ -56,7 +32,6 @@ def try_evolve_active_monster(telegram_id: int):
     monster = get_active_monster(telegram_id)
     if not monster:
         return None
-
     for recipe in EVOLUTION_RECIPES:
         if _matches(monster, recipe):
             monster["name"] = recipe["result_name"]
@@ -73,9 +48,9 @@ def render_evolution_text(monster):
     if not monster:
         return ""
     return (
-        f"🦋 Эволюция!\n"
+        f"Эволюция!\n"
         f"Твой монстр принимает новую форму: {monster['name']}\n"
-        f"Редкость: {monster['rarity']}\n"
+        f"Редкость: {RARITY_LABELS.get(monster['rarity'], monster['rarity'])}\n"
         f"HP: {monster['current_hp']}/{monster['max_hp']}\n"
-        f"ATK: {monster['attack']}"
+        f"Атака: {monster['attack']}"
     )

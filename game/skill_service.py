@@ -1,5 +1,4 @@
 import random
-from database.repositories import get_active_monster
 from game.type_service import get_damage_multiplier
 
 SKILL_LABELS = {
@@ -26,51 +25,46 @@ def resolve_skill_use(encounter: dict, monster: dict):
     multiplier = get_damage_multiplier(monster.get("monster_type"), encounter.get("monster_type"))
 
     if skill_key == "rage":
-        dmg = random.randint(atk + 2, atk + 6)
-        dmg = max(1, int(round(dmg * multiplier)))
+        dmg = max(1, int(round(random.randint(atk + 2, atk + 6) * multiplier)))
         encounter["hp"] -= dmg
         if encounter["hp"] <= 0:
             return {"ok": True, "finished": True, "player_damage": 0, "gold": encounter["reward_gold"], "exp": encounter["reward_exp"],
-                    "text": f"✨ {SKILL_LABELS['rage']}! {monster['name']} наносит {dmg} урона и сокрушает {encounter['monster_name']}!"}
+                    "text": f"{SKILL_LABELS['rage']}! {monster['name']} наносит {dmg} урона и сокрушает {encounter['monster_name']}!"}
         enemy = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
         return {"ok": True, "finished": False, "player_damage": enemy,
-                "text": f"✨ {SKILL_LABELS['rage']}! {monster['name']} наносит {dmg} урона.\nОсталось HP врага: {encounter['hp']}/{encounter['max_hp']}\nВраг отвечает на {enemy}."}
+                "text": f"{SKILL_LABELS['rage']}! {monster['name']} наносит {dmg} урона.\nОсталось HP врага: {encounter['hp']}/{encounter['max_hp']}\nВраг отвечает на {enemy}."}
 
     if skill_key == "fear":
-        dmg = random.randint(max(3, atk - 3), max(5, atk - 1))
-        dmg = max(1, int(round(dmg * multiplier)))
+        dmg = max(1, int(round(random.randint(max(3, atk - 3), max(5, atk - 1)) * multiplier)))
         encounter["hp"] -= dmg
         encounter["counter_multiplier"] = 0.5
-        enemy = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
-        enemy = max(0, int(enemy * encounter["counter_multiplier"]))
+        enemy = max(0, int(random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2) * encounter["counter_multiplier"]))
         encounter["counter_multiplier"] = 1.0
         if encounter["hp"] <= 0:
             return {"ok": True, "finished": True, "player_damage": 0, "gold": encounter["reward_gold"], "exp": encounter["reward_exp"],
-                    "text": f"✨ {SKILL_LABELS['fear']}! Враг теряется в тенях и падает."}
+                    "text": f"{SKILL_LABELS['fear']}! Враг теряется в тенях и падает."}
         return {"ok": True, "finished": False, "player_damage": enemy,
-                "text": f"✨ {SKILL_LABELS['fear']}! {monster['name']} скрывает команду тенью и наносит {dmg} урона.\nКонтратака ослаблена до {enemy}."}
+                "text": f"{SKILL_LABELS['fear']}! {monster['name']} скрывает команду тенью и наносит {dmg} урона.\nКонтратака ослаблена до {enemy}."}
 
     if skill_key == "instinct":
-        dmg = random.randint(max(4, atk - 1), atk + 2)
-        dmg = max(1, int(round(dmg * multiplier)))
+        dmg = max(1, int(round(random.randint(max(4, atk - 1), atk + 2) * multiplier)))
         encounter["hp"] -= dmg
         encounter["bonus_capture"] = min(0.30, encounter.get("bonus_capture", 0.0) + 0.15)
         enemy = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
         if encounter["hp"] <= 0:
             return {"ok": True, "finished": True, "player_damage": 0, "gold": encounter["reward_gold"], "exp": encounter["reward_exp"],
-                    "text": f"✨ {SKILL_LABELS['instinct']}! Удар оказался смертельным."}
+                    "text": f"{SKILL_LABELS['instinct']}! Удар оказался смертельным."}
         return {"ok": True, "finished": False, "player_damage": enemy,
-                "text": f"✨ {SKILL_LABELS['instinct']}! {monster['name']} наносит {dmg} урона и отмечает цель.\nШанс поимки увеличен."}
+                "text": f"{SKILL_LABELS['instinct']}! {monster['name']} наносит {dmg} урона и отмечает цель.\nШанс поимки увеличен."}
 
     heal = min(monster.get("max_hp", monster.get("hp", 1)), monster.get("current_hp", monster.get("hp", 1)) + 6)
     healed = heal - monster.get("current_hp", monster.get("hp", 1))
     monster["current_hp"] = heal
-    dmg = random.randint(max(2, atk - 4), max(4, atk - 2))
-    dmg = max(1, int(round(dmg * multiplier)))
+    dmg = max(1, int(round(random.randint(max(2, atk - 4), max(4, atk - 2)) * multiplier)))
     encounter["hp"] -= dmg
     enemy = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
     if encounter["hp"] <= 0:
         return {"ok": True, "finished": True, "player_damage": 0, "gold": encounter["reward_gold"], "exp": encounter["reward_exp"],
-                "text": f"✨ {SKILL_LABELS['inspiration']}! {monster['name']} исцеляется на {healed} и завершает бой вспышкой."}
+                "text": f"{SKILL_LABELS['inspiration']}! {monster['name']} исцеляется на {healed} и завершает бой вспышкой."}
     return {"ok": True, "finished": False, "player_damage": enemy,
-            "text": f"✨ {SKILL_LABELS['inspiration']}! {monster['name']} восстанавливает {healed} HP и наносит {dmg} урона.\nВраг отвечает на {enemy}."}
+            "text": f"{SKILL_LABELS['inspiration']}! {monster['name']} восстанавливает {healed} HP и наносит {dmg} урона.\nВраг отвечает на {enemy}."}

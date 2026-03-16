@@ -1,12 +1,12 @@
 TYPE_LABELS = {
-    "flame": "🔥 Пламя",
-    "shadow": "🌑 Тень",
-    "nature": "🌿 Природа",
-    "spirit": "👻 Дух",
-    "bone": "💀 Кость",
-    "storm": "⚡ Буря",
-    "void": "🕳 Пустота",
-    "echo": "🔊 Эхо",
+    "flame": "Пламя",
+    "shadow": "Тень",
+    "nature": "Природа",
+    "spirit": "Дух",
+    "bone": "Кость",
+    "storm": "Буря",
+    "void": "Пустота",
+    "echo": "Эхо",
 }
 
 TYPE_ADVANTAGES = {
@@ -37,7 +37,7 @@ def get_damage_multiplier(attacker_type: str | None, defender_type: str | None) 
 def render_type_hint(attacker_type: str | None, defender_type: str | None) -> str:
     multiplier = get_damage_multiplier(attacker_type, defender_type)
     if multiplier > 1.0:
-        return "Типовое преимущество: +20% урона"
+        return "Преимущество типа: +20% урона"
     if multiplier < 1.0:
-        return "Типовая слабость: -20% урона"
+        return "Слабость типа: -20% урона"
     return "Типы нейтральны"
