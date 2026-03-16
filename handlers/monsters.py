@@ -15,12 +15,13 @@ def _render_monster_list(monsters):
     for monster in monsters:
         marker = "⭐" if monster.get("is_active") else "▫️"
         source = "🌌" if monster.get("source_type") == "emotion" else "🐾"
+        evo = "🦋" if monster.get("evolution_stage", 0) > 0 else ""
         lines.extend([
-            f"{marker} {source} #{monster['id']} {monster['name']}",
+            f"{marker} {source}{evo} #{monster['id']} {monster['name']}",
             f"   Редкость: {RARITY_LABELS.get(monster['rarity'], monster['rarity'])}",
             f"   Эмоция: {MOOD_LABELS.get(monster['mood'], monster['mood'])}",
             f"   HP: {monster.get('current_hp', monster['hp'])}/{monster.get('max_hp', monster['hp'])} | ATK: {monster['attack']}",
-            f"   Уровень: {monster['level']}",
+            f"   Уровень: {monster['level']} | XP: {monster.get('experience', 0)}/{monster['level'] * 5}",
             f"   {render_monster_infection(monster)}", "",
         ])
     lines.append("Чтобы сделать монстра активным, отправь: ✅ ID")

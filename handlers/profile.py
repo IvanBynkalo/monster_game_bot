@@ -12,21 +12,28 @@ async def profile_handler(message: Message):
         return
     monsters = get_player_monsters(message.from_user.id)
     emotion_monsters = sum(1 for m in monsters if m.get("source_type") == "emotion")
+    evolved_monsters = sum(1 for m in monsters if m.get("evolution_stage", 0) > 0)
     active = get_active_monster(message.from_user.id)
     active_text = active["name"] if active else "нет"
     infection_text = render_monster_infection(active) if active else "Заражение: нет"
     hp_text = f"{active.get('current_hp', active['hp'])}/{active.get('max_hp', active['hp'])}" if active else "-"
+    monster_xp = f"{active.get('experience', 0)}/{active['level'] * 5}" if active else "-"
+    evolution_text = f"Стадия эволюции: {active.get('evolution_stage', 0)}" if active else "Стадия эволюции: -"
     await message.answer(
         f"🧭 Профиль\n\n"
         f"Имя: {player.name}\n"
-        f"Уровень: {player.level}\n"
-        f"Опыт: {player.experience}/{player.level * 10}\n"
+        f"Уровень игрока: {player.level}\n"
+        f"Опыт игрока: {player.experience}/{player.level * 10}\n"
         f"Энергия: {player.energy}/10\n"
         f"Золото: {player.gold}\n"
         f"Монстров всего: {len(monsters)}\n"
         f"Эмоциональных монстров: {emotion_monsters}\n"
+        f"Эволюционировавших монстров: {evolved_monsters}\n"
         f"Активный монстр: {active_text}\n"
+        f"Уровень монстра: {active['level'] if active else '-'}\n"
+        f"Опыт монстра: {monster_xp}\n"
         f"HP активного монстра: {hp_text}\n"
+        f"{evolution_text}\n"
         f"{infection_text}\n\n"
         f"{render_emotions_panel(message.from_user.id)}\n\n"
         f"Текущий регион: {player.current_region_slug}\n"
