@@ -23,13 +23,7 @@ STORY_QUESTS = [
 ]
 
 def _default_story():
-    return {
-        "current_index": 0,
-        "completed_ids": [],
-        "forest_echo": {"explore_count": 0, "win_count": 0, "visited": False},
-        "swamp_sign": {"explore_count": 0, "win_count": 0, "visited": False},
-        "volcano_trial": {"explore_count": 0, "win_count": 0, "visited": False},
-    }
+    return {"current_index": 0, "completed_ids": [], "forest_echo": {"explore_count": 0, "win_count": 0, "visited": False}, "swamp_sign": {"explore_count": 0, "win_count": 0, "visited": False}, "volcano_trial": {"explore_count": 0, "win_count": 0, "visited": False}}
 
 def get_player(telegram_id: int):
     return PLAYERS.get(telegram_id)
@@ -85,9 +79,7 @@ def update_story_progress(telegram_id: int, action_type: str, current_location_s
         elif action_type == "win":
             state["win_count"] += 1
     req = quest["requirements"]
-    if (state["visited"]
-        and state["explore_count"] >= req.get("explore_count", 0)
-        and state["win_count"] >= req.get("win_count", 0)):
+    if state["visited"] and state["explore_count"] >= req.get("explore_count", 0) and state["win_count"] >= req.get("win_count", 0):
         story["completed_ids"].append(quest["id"])
         story["current_index"] += 1
         return quest
@@ -177,11 +169,36 @@ def spend_player_energy(telegram_id: int, amount: int):
     player.energy -= amount
     return True
 
+def _guess_monster_type(name: str, mood: str):
+    name_lower = name.lower()
+    if "плам" in name_lower or "лав" in name_lower or "магм" in name_lower or mood == "rage":
+        return "flame"
+    if "тен" in name_lower or "сумрач" in name_lower or mood == "fear":
+        return "shadow"
+    if "гриб" in name_lower or "мох" in name_lower or "корн" in name_lower:
+        return "nature"
+    if "дух" in name_lower or "оракул" in name_lower:
+        return "spirit"
+    if "кост" in name_lower or "курган" in name_lower:
+        return "bone"
+    if "бур" in name_lower or "искр" in name_lower:
+        return "storm"
+    if "эхо" in name_lower or "шёп" in name_lower:
+        return "echo"
+    return "void"
+
 def add_captured_monster(telegram_id: int, name: str, rarity: str, mood: str, hp: int, attack: int, source_type: str = "wild"):
     global NEXT_MONSTER_ID
     PLAYER_MONSTERS.setdefault(telegram_id, [])
     is_first = len(PLAYER_MONSTERS[telegram_id]) == 0
-    monster = {"id": NEXT_MONSTER_ID, "name": name, "rarity": rarity, "mood": mood, "hp": hp, "max_hp": hp, "current_hp": hp, "attack": attack, "level": 1, "experience": 0, "is_active": is_first, "infection_type": None, "infection_stage": 0, "corruption": 0, "source_type": source_type, "evolution_stage": 0}
+    monster = {
+        "id": NEXT_MONSTER_ID, "name": name, "rarity": rarity, "mood": mood,
+        "monster_type": _guess_monster_type(name, mood),
+        "hp": hp, "max_hp": hp, "current_hp": hp, "attack": attack,
+        "level": 1, "experience": 0, "is_active": is_first,
+        "infection_type": None, "infection_stage": 0, "corruption": 0,
+        "source_type": source_type, "evolution_stage": 0
+    }
     NEXT_MONSTER_ID += 1
     PLAYER_MONSTERS[telegram_id].append(monster)
     return monster
@@ -196,6 +213,7 @@ def get_active_monster(telegram_id: int):
             monster.setdefault("max_hp", monster.get("hp", 1))
             monster.setdefault("experience", 0)
             monster.setdefault("evolution_stage", 0)
+            monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
             return monster
     return None
 
@@ -240,6 +258,7 @@ def set_active_monster(telegram_id: int, monster_id: int):
         monster.setdefault("max_hp", monster.get("hp", 1))
         monster.setdefault("experience", 0)
         monster.setdefault("evolution_stage", 0)
+        monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
         if monster["id"] == monster_id:
             target = monster
     if target:
@@ -253,5 +272,6 @@ def get_monster_by_id(telegram_id: int, monster_id: int):
             monster.setdefault("max_hp", monster.get("hp", 1))
             monster.setdefault("experience", 0)
             monster.setdefault("evolution_stage", 0)
+            monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
             return monster
     return None
