@@ -1,13 +1,14 @@
 import random
+from game.type_service import TYPE_LABELS, get_damage_multiplier, render_type_hint
 
 DISTRICT_POOLS = {
     "mushroom_path": {
         "monsters": [
-            {"name": "Споровый слизень", "rarity": "common", "mood": "fear", "weight": 40},
-            {"name": "Лесной глазун", "rarity": "common", "mood": "fear", "weight": 30},
-            {"name": "Моховой шептун", "rarity": "rare", "mood": "inspiration", "weight": 15},
-            {"name": "Грибной сторож", "rarity": "rare", "mood": "fear", "weight": 10},
-            {"name": "Сумеречный плодник", "rarity": "epic", "mood": "fear", "weight": 5},
+            {"name": "Споровый слизень", "rarity": "common", "mood": "fear", "monster_type": "nature", "weight": 40},
+            {"name": "Лесной глазун", "rarity": "common", "mood": "fear", "monster_type": "echo", "weight": 30},
+            {"name": "Моховой шептун", "rarity": "rare", "mood": "inspiration", "monster_type": "nature", "weight": 15},
+            {"name": "Грибной сторож", "rarity": "rare", "mood": "fear", "monster_type": "spirit", "weight": 10},
+            {"name": "Сумеречный плодник", "rarity": "epic", "mood": "fear", "monster_type": "shadow", "weight": 5},
         ],
         "events": [
             {"type": "anomaly", "text": "Ты замечаешь грибной круг. Воздух внутри него дрожит от страха.", "weight": 20},
@@ -16,11 +17,11 @@ DISTRICT_POOLS = {
     },
     "wet_thicket": {
         "monsters": [
-            {"name": "Корнехват", "rarity": "common", "mood": "fear", "weight": 35},
-            {"name": "Тенелист", "rarity": "rare", "mood": "fear", "weight": 25},
-            {"name": "Сырой охотник", "rarity": "rare", "mood": "instinct", "weight": 20},
-            {"name": "Влажный дух", "rarity": "epic", "mood": "inspiration", "weight": 10},
-            {"name": "Страж чащи", "rarity": "epic", "mood": "fear", "weight": 10},
+            {"name": "Корнехват", "rarity": "common", "mood": "fear", "monster_type": "nature", "weight": 35},
+            {"name": "Тенелист", "rarity": "rare", "mood": "fear", "monster_type": "shadow", "weight": 25},
+            {"name": "Сырой охотник", "rarity": "rare", "mood": "instinct", "monster_type": "nature", "weight": 20},
+            {"name": "Влажный дух", "rarity": "epic", "mood": "inspiration", "monster_type": "spirit", "weight": 10},
+            {"name": "Страж чащи", "rarity": "epic", "mood": "fear", "monster_type": "bone", "weight": 10},
         ],
         "events": [
             {"type": "anomaly", "text": "Чаща на миг сжимается вокруг тебя, будто реагирует на твои эмоции.", "weight": 18},
@@ -29,11 +30,11 @@ DISTRICT_POOLS = {
     },
     "whisper_den": {
         "monsters": [
-            {"name": "Шепчущий зрачок", "rarity": "rare", "mood": "fear", "weight": 30},
-            {"name": "Корневой пророк", "rarity": "epic", "mood": "inspiration", "weight": 20},
-            {"name": "Тревожный скользень", "rarity": "rare", "mood": "fear", "weight": 25},
-            {"name": "Безликий слухач", "rarity": "epic", "mood": "fear", "weight": 15},
-            {"name": "Сердце Шёпота", "rarity": "legendary", "mood": "fear", "weight": 10},
+            {"name": "Шепчущий зрачок", "rarity": "rare", "mood": "fear", "monster_type": "echo", "weight": 30},
+            {"name": "Корневой пророк", "rarity": "epic", "mood": "inspiration", "monster_type": "nature", "weight": 20},
+            {"name": "Тревожный скользень", "rarity": "rare", "mood": "fear", "monster_type": "shadow", "weight": 25},
+            {"name": "Безликий слухач", "rarity": "epic", "mood": "fear", "monster_type": "void", "weight": 15},
+            {"name": "Сердце Шёпота", "rarity": "legendary", "mood": "fear", "monster_type": "echo", "weight": 10},
         ],
         "events": [
             {"type": "anomaly", "text": "Шёпот становится слишком понятным. Он произносит имя твоего активного монстра.", "weight": 24},
@@ -42,11 +43,11 @@ DISTRICT_POOLS = {
     },
     "black_water": {
         "monsters": [
-            {"name": "Зеркальный пиявец", "rarity": "common", "mood": "fear", "weight": 35},
-            {"name": "Илистый наблюдатель", "rarity": "rare", "mood": "fear", "weight": 25},
-            {"name": "Болотный двойник", "rarity": "epic", "mood": "fear", "weight": 15},
-            {"name": "Чёрный сомнамбул", "rarity": "rare", "mood": "inspiration", "weight": 15},
-            {"name": "Топкий хранитель", "rarity": "epic", "mood": "fear", "weight": 10},
+            {"name": "Зеркальный пиявец", "rarity": "common", "mood": "fear", "monster_type": "shadow", "weight": 35},
+            {"name": "Илистый наблюдатель", "rarity": "rare", "mood": "fear", "monster_type": "spirit", "weight": 25},
+            {"name": "Болотный двойник", "rarity": "epic", "mood": "fear", "monster_type": "shadow", "weight": 15},
+            {"name": "Чёрный сомнамбул", "rarity": "rare", "mood": "inspiration", "monster_type": "void", "weight": 15},
+            {"name": "Топкий хранитель", "rarity": "epic", "mood": "fear", "monster_type": "bone", "weight": 10},
         ],
         "events": [
             {"type": "anomaly", "text": "Вода показывает не твоё отражение, а неизвестного монстра.", "weight": 20},
@@ -55,11 +56,11 @@ DISTRICT_POOLS = {
     },
     "fog_trail": {
         "monsters": [
-            {"name": "Туманник", "rarity": "common", "mood": "fear", "weight": 35},
-            {"name": "Скользящий силуэт", "rarity": "rare", "mood": "fear", "weight": 25},
-            {"name": "Слепой следопыт", "rarity": "rare", "mood": "instinct", "weight": 20},
-            {"name": "Дымчатый оракул", "rarity": "epic", "mood": "inspiration", "weight": 10},
-            {"name": "Туманная пасть", "rarity": "epic", "mood": "fear", "weight": 10},
+            {"name": "Туманник", "rarity": "common", "mood": "fear", "monster_type": "shadow", "weight": 35},
+            {"name": "Скользящий силуэт", "rarity": "rare", "mood": "fear", "monster_type": "storm", "weight": 25},
+            {"name": "Слепой следопыт", "rarity": "rare", "mood": "instinct", "monster_type": "echo", "weight": 20},
+            {"name": "Дымчатый оракул", "rarity": "epic", "mood": "inspiration", "monster_type": "spirit", "weight": 10},
+            {"name": "Туманная пасть", "rarity": "epic", "mood": "fear", "monster_type": "void", "weight": 10},
         ],
         "events": [
             {"type": "anomaly", "text": "Туман уплотняется в фигуру и тут же распадается. Район резонирует со страхом.", "weight": 18},
@@ -68,11 +69,11 @@ DISTRICT_POOLS = {
     },
     "grave_of_voices": {
         "monsters": [
-            {"name": "Курганный эхонид", "rarity": "rare", "mood": "fear", "weight": 30},
-            {"name": "Погребальный мотылёк", "rarity": "rare", "mood": "inspiration", "weight": 20},
-            {"name": "Голос из ила", "rarity": "epic", "mood": "fear", "weight": 20},
-            {"name": "Собиратель имён", "rarity": "epic", "mood": "fear", "weight": 15},
-            {"name": "Хор молчания", "rarity": "legendary", "mood": "fear", "weight": 15},
+            {"name": "Курганный эхонид", "rarity": "rare", "mood": "fear", "monster_type": "bone", "weight": 30},
+            {"name": "Погребальный мотылёк", "rarity": "rare", "mood": "inspiration", "monster_type": "spirit", "weight": 20},
+            {"name": "Голос из ила", "rarity": "epic", "mood": "fear", "monster_type": "echo", "weight": 20},
+            {"name": "Собиратель имён", "rarity": "epic", "mood": "fear", "monster_type": "void", "weight": 15},
+            {"name": "Хор молчания", "rarity": "legendary", "mood": "fear", "monster_type": "spirit", "weight": 15},
         ],
         "events": [
             {"type": "anomaly", "text": "Голоса зовут тебя ближе. На миг кажется, что один из них принадлежит тебе.", "weight": 24},
@@ -81,11 +82,11 @@ DISTRICT_POOLS = {
     },
     "ash_slope": {
         "monsters": [
-            {"name": "Пепельный ползун", "rarity": "common", "mood": "rage", "weight": 40},
-            {"name": "Искровой шакал", "rarity": "rare", "mood": "rage", "weight": 25},
-            {"name": "Шлакобой", "rarity": "rare", "mood": "instinct", "weight": 20},
-            {"name": "Жаровой клык", "rarity": "epic", "mood": "rage", "weight": 10},
-            {"name": "Магматический крикун", "rarity": "epic", "mood": "rage", "weight": 5},
+            {"name": "Пепельный ползун", "rarity": "common", "mood": "rage", "monster_type": "flame", "weight": 40},
+            {"name": "Искровой шакал", "rarity": "rare", "mood": "rage", "monster_type": "flame", "weight": 25},
+            {"name": "Шлакобой", "rarity": "rare", "mood": "instinct", "monster_type": "bone", "weight": 20},
+            {"name": "Жаровой клык", "rarity": "epic", "mood": "rage", "monster_type": "flame", "weight": 10},
+            {"name": "Магматический крикун", "rarity": "epic", "mood": "rage", "monster_type": "storm", "weight": 5},
         ],
         "events": [
             {"type": "anomaly", "text": "Пепел поднимается вихрем. Ярость локации словно ищет тело.", "weight": 18},
@@ -94,11 +95,11 @@ DISTRICT_POOLS = {
     },
     "lava_bridge": {
         "monsters": [
-            {"name": "Лавовый гончий", "rarity": "rare", "mood": "rage", "weight": 30},
-            {"name": "Кипящий сторож", "rarity": "rare", "mood": "rage", "weight": 25},
-            {"name": "Огнехребет", "rarity": "epic", "mood": "rage", "weight": 20},
-            {"name": "Мостовой ревун", "rarity": "epic", "mood": "instinct", "weight": 15},
-            {"name": "Расплавленный каратель", "rarity": "legendary", "mood": "rage", "weight": 10},
+            {"name": "Лавовый гончий", "rarity": "rare", "mood": "rage", "monster_type": "flame", "weight": 30},
+            {"name": "Кипящий сторож", "rarity": "rare", "mood": "rage", "monster_type": "storm", "weight": 25},
+            {"name": "Огнехребет", "rarity": "epic", "mood": "rage", "monster_type": "flame", "weight": 20},
+            {"name": "Мостовой ревун", "rarity": "epic", "mood": "instinct", "monster_type": "echo", "weight": 15},
+            {"name": "Расплавленный каратель", "rarity": "legendary", "mood": "rage", "monster_type": "flame", "weight": 10},
         ],
         "events": [
             {"type": "anomaly", "text": "Лава под мостом вспыхивает ярче обычного. Кажется, она реагирует на любое колебание ярости.", "weight": 20},
@@ -107,11 +108,11 @@ DISTRICT_POOLS = {
     },
     "heart_of_magma": {
         "monsters": [
-            {"name": "Ядро пламени", "rarity": "epic", "mood": "rage", "weight": 25},
-            {"name": "Магмовый берсерк", "rarity": "epic", "mood": "rage", "weight": 25},
-            {"name": "Кровь кратера", "rarity": "legendary", "mood": "rage", "weight": 20},
-            {"name": "Фениксовый осколок", "rarity": "legendary", "mood": "inspiration", "weight": 15},
-            {"name": "Сердце магмы", "rarity": "mythic", "mood": "rage", "weight": 15},
+            {"name": "Ядро пламени", "rarity": "epic", "mood": "rage", "monster_type": "flame", "weight": 25},
+            {"name": "Магмовый берсерк", "rarity": "epic", "mood": "rage", "monster_type": "flame", "weight": 25},
+            {"name": "Кровь кратера", "rarity": "legendary", "mood": "rage", "monster_type": "bone", "weight": 20},
+            {"name": "Фениксовый осколок", "rarity": "legendary", "mood": "inspiration", "monster_type": "spirit", "weight": 15},
+            {"name": "Сердце магмы", "rarity": "mythic", "mood": "rage", "monster_type": "storm", "weight": 15},
         ],
         "events": [
             {"type": "anomaly", "text": "Ядро вулкана пульсирует. Это место может усилить агрессивные мутации.", "weight": 24},
@@ -159,6 +160,8 @@ def generate_district_encounter(district_slug: str):
             "rarity_label": RARITY_LABELS.get(monster["rarity"], monster["rarity"]),
             "mood": monster["mood"],
             "mood_label": MOOD_LABELS.get(monster["mood"], monster["mood"]),
+            "monster_type": monster["monster_type"],
+            "monster_type_label": TYPE_LABELS.get(monster["monster_type"], monster["monster_type"]),
             "hp": stats["hp"],
             "max_hp": stats["hp"],
             "attack": stats["attack"],
@@ -171,15 +174,18 @@ def generate_district_encounter(district_slug: str):
         }
     return {"type": "event", "title": "✨ Событие района", "text": event["text"], "hint": "Здесь может скрываться особая эмоциональная реакция или редкая форма."}
 
-def render_encounter_text(encounter: dict):
+def render_encounter_text(encounter: dict, attacker_type: str | None = None):
     if encounter["type"] == "monster":
         extra = ""
         if encounter.get("bonus_capture", 0) > 0:
-            extra = f"\nБонус поимки: +{int(encounter['bonus_capture'] * 100)}%"
+            extra += f"\nБонус поимки: +{int(encounter['bonus_capture'] * 100)}%"
+        type_hint = render_type_hint(attacker_type, encounter.get("monster_type"))
         return "\n".join([
             encounter["title"], "", encounter["text"],
             f"Редкость: {encounter['rarity_label']}",
             f"Эмоциональный след: {encounter['mood_label']}",
+            f"Тип: {encounter.get('monster_type_label', '—')}",
+            type_hint,
             f"HP: {encounter['hp']}/{encounter.get('max_hp', encounter['hp'])}",
             f"ATK: {encounter['attack']}{extra}", "",
             "Выбери действие: ⚔️ Атаковать / ✨ Навык / 🎯 Поймать / 🏃 Убежать",
@@ -191,10 +197,12 @@ def render_encounter_text(encounter: dict):
         return "\n".join(lines)
     return encounter["text"]
 
-def resolve_attack(encounter: dict, active_monster_attack: int = 10):
+def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_type: str | None = None):
     if encounter["type"] != "monster":
         return {"ok": False, "text": "Здесь не на кого нападать."}
+    multiplier = get_damage_multiplier(attacker_type, encounter.get("monster_type"))
     player_attack = random.randint(max(4, active_monster_attack - 2), active_monster_attack + 3)
+    player_attack = max(1, int(round(player_attack * multiplier)))
     encounter["hp"] -= player_attack
     if encounter["hp"] <= 0:
         return {"ok": True, "finished": True, "victory": True, "monster_defeated": True, "player_damage": 0,
@@ -203,8 +211,9 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10):
     enemy_attack = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
     enemy_attack = max(0, int(enemy_attack * encounter.get("counter_multiplier", 1.0)))
     encounter["counter_multiplier"] = 1.0
+    hint = render_type_hint(attacker_type, encounter.get("monster_type"))
     return {"ok": True, "finished": False, "victory": False, "monster_defeated": False, "player_damage": enemy_attack,
-            "text": f"⚔️ Ты наносишь {player_attack} урона.\n{encounter['monster_name']} ещё держится. Осталось HP: {encounter['hp']}/{encounter.get('max_hp', encounter['hp'])}\nВ ответ монстр атакует на {enemy_attack}."}
+            "text": f"⚔️ Ты наносишь {player_attack} урона.\n{hint}\n{encounter['monster_name']} ещё держится. Осталось HP: {encounter['hp']}/{encounter.get('max_hp', encounter['hp'])}\nВ ответ монстр атакует на {enemy_attack}."}
 
 def resolve_capture(encounter: dict):
     if encounter["type"] != "monster":

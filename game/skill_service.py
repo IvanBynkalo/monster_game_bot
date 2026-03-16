@@ -1,5 +1,6 @@
 import random
 from database.repositories import get_active_monster
+from game.type_service import get_damage_multiplier
 
 SKILL_LABELS = {
     "rage": "Вспышка ярости",
@@ -22,9 +23,11 @@ def resolve_skill_use(encounter: dict, monster: dict):
         return {"ok": False, "text": "Сейчас навык использовать не на ком."}
     skill_key = get_active_skill(monster)
     atk = monster.get("attack", 6)
+    multiplier = get_damage_multiplier(monster.get("monster_type"), encounter.get("monster_type"))
 
     if skill_key == "rage":
         dmg = random.randint(atk + 2, atk + 6)
+        dmg = max(1, int(round(dmg * multiplier)))
         encounter["hp"] -= dmg
         if encounter["hp"] <= 0:
             return {"ok": True, "finished": True, "player_damage": 0, "gold": encounter["reward_gold"], "exp": encounter["reward_exp"],
@@ -35,6 +38,7 @@ def resolve_skill_use(encounter: dict, monster: dict):
 
     if skill_key == "fear":
         dmg = random.randint(max(3, atk - 3), max(5, atk - 1))
+        dmg = max(1, int(round(dmg * multiplier)))
         encounter["hp"] -= dmg
         encounter["counter_multiplier"] = 0.5
         enemy = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
@@ -48,6 +52,7 @@ def resolve_skill_use(encounter: dict, monster: dict):
 
     if skill_key == "instinct":
         dmg = random.randint(max(4, atk - 1), atk + 2)
+        dmg = max(1, int(round(dmg * multiplier)))
         encounter["hp"] -= dmg
         encounter["bonus_capture"] = min(0.30, encounter.get("bonus_capture", 0.0) + 0.15)
         enemy = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
@@ -57,11 +62,11 @@ def resolve_skill_use(encounter: dict, monster: dict):
         return {"ok": True, "finished": False, "player_damage": enemy,
                 "text": f"✨ {SKILL_LABELS['instinct']}! {monster['name']} наносит {dmg} урона и отмечает цель.\nШанс поимки увеличен."}
 
-    # inspiration or default
     heal = min(monster.get("max_hp", monster.get("hp", 1)), monster.get("current_hp", monster.get("hp", 1)) + 6)
     healed = heal - monster.get("current_hp", monster.get("hp", 1))
     monster["current_hp"] = heal
     dmg = random.randint(max(2, atk - 4), max(4, atk - 2))
+    dmg = max(1, int(round(dmg * multiplier)))
     encounter["hp"] -= dmg
     enemy = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
     if encounter["hp"] <= 0:
