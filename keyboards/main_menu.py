@@ -6,6 +6,5 @@ def main_menu(location_slug: str):
         [KeyboardButton(text="🌲 Исследовать"), KeyboardButton(text="🎒 Инвентарь")],
         [KeyboardButton(text="🧾 Сюжет"), KeyboardButton(text="📜 Квесты")],
         [KeyboardButton(text="🧭 Перемещение"), KeyboardButton(text="📂 Ещё")],
-        [KeyboardButton(text="🛠 Админ-панель")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
