@@ -1,14 +1,17 @@
 # Changelog
 
-## v2.2.2
-- Returned emoji labels in the main and encounter menus
-- Reduced main menu height by splitting navigation into a dedicated compact screen
-- Added `🧭 Перемещение` button for travel actions
-- Added quick action row with `🌲 Исследовать`
-- Added direct active-monster switch buttons in monster list: `✅ 1`, `✅ 2`, ...
-- Kept backward-compatible text matching for old plain-text buttons
+## v2.3
+- Added inventory system
+- Added starter consumable items
+- Added inventory screen `🎒 Инвентарь`
+- Added usable items:
+  - `🧪 Малое зелье`
+  - `⚡ Капсула энергии`
+  - `🪤 Простая ловушка`
+- Added trap usage during encounters
+- Added item buttons and item storage in repositories
 
-## v2.2.1
-- Fixed Telegram menu labels and handler matching
-- Switched main and encounter menus to plain Russian text without emoji dependency
-- Added backward-compatible aliases for old emoji buttons
+## v2.2.6
+- Refactored internal infection progress field from `corruption` to `distortion`
+- Added backward-compatible migration support for old monster data
+- Kept player-facing UI term as `Искажение`

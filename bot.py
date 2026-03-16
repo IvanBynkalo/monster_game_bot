@@ -9,8 +9,9 @@ from handlers.world import world_handler
 from handlers.story import story_handler
 from handlers.district import district_handler, district_move_handler
 from handlers.explore import explore_handler
-from handlers.encounter import attack_handler, capture_handler, flee_handler, skill_handler
+from handlers.encounter import attack_handler, capture_handler, flee_handler, skill_handler, trap_handler
 from handlers.monsters import monsters_handler, set_active_monster_handler, heal_monster_handler
+from handlers.inventory import inventory_handler, use_small_potion_handler, use_energy_capsule_handler, back_to_menu_handler
 from handlers.profile import profile_handler, restore_energy_handler
 from handlers.quests import quests_handler
 from handlers.admin import (
@@ -43,6 +44,7 @@ dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
 dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
 dp.message.register(restore_energy_handler, text_is("Восстановить энергию", "⚡ Восстановить энергию"))
 dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
+dp.message.register(inventory_handler, text_is("🎒 Инвентарь", "Инвентарь"))
 dp.message.register(heal_monster_handler, text_is("Лечить монстра", "❤️ Лечить монстра"))
 dp.message.register(world_handler, text_is("Мир", "🌍 Мир"))
 dp.message.register(map_handler, text_is("Карта", "🗺 Карта"))
@@ -54,7 +56,11 @@ dp.message.register(district_move_handler, lambda message: (message.text or "").
 dp.message.register(explore_handler, text_is("Исследовать", "🌲 Исследовать"))
 dp.message.register(attack_handler, text_is("Атаковать", "⚔️ Атаковать"))
 dp.message.register(skill_handler, text_is("Навык", "✨ Навык"))
+dp.message.register(use_small_potion_handler, text_is("🧪 Малое зелье"))
+dp.message.register(use_energy_capsule_handler, text_is("⚡ Капсула энергии"))
+dp.message.register(back_to_menu_handler, text_is("⬅️ Назад в меню"))
 dp.message.register(capture_handler, text_is("Поймать", "🎯 Поймать"))
+dp.message.register(trap_handler, text_is("🪤 Простая ловушка", "🪤 Ловушка"))
 dp.message.register(flee_handler, text_is("Убежать", "🏃 Убежать"))
 dp.message.register(set_active_monster_handler, lambda message: (message.text or "").startswith("Активный ") or (message.text or "").startswith("✅ "))
 
