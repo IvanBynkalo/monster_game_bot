@@ -1,23 +1,6 @@
 # Monster Game Bot
 
-Current stage: first closed playtest build with starter quests.
-
-Included:
-- world map
-- region map
-- districts
-- district encounters
-- battle / capture / flee actions
-- captured monsters collection
-- active monster selection
-- player emotions
-- active monster infection growth
-- emotional monster births
-- active monster HP
-- healing and energy recovery actions
-- admin commands
-- action logging
-- starter quests
+Current stage: v2.2 with story, skills, and monster types.
 
 ## Launch
 
@@ -28,4 +11,4 @@ python bot.py
 
 Environment variables:
 - BOT_TOKEN
-- ADMIN_IDS (comma-separated telegram ids)
+- ADMIN_IDS
