@@ -632,3 +632,38 @@ def clear_player_injuries(telegram_id: int):
     player.is_defeated = False
     player.hp = player.max_hp
     return player
+# ==============================
+# Система типов монстров
+# ==============================
+
+TYPE_DAMAGE = {
+    ("Эхо", "Тень"): 1.2,
+    ("Тень", "Эхо"): 0.8,
+
+    ("Свет", "Тень"): 1.4,
+    ("Тень", "Свет"): 0.6,
+
+    ("Эхо", "Свет"): 1.1,
+    ("Свет", "Эхо"): 0.9,
+}
+
+
+def get_damage_multiplier(attacker_type: str, defender_type: str) -> float:
+    """
+    Возвращает множитель урона между типами монстров
+    """
+    return TYPE_DAMAGE.get((attacker_type, defender_type), 1.0)
+
+
+def render_type_hint(attacker_type: str, defender_type: str) -> str:
+    """
+    Текстовая подсказка эффективности атаки
+    """
+    mult = get_damage_multiplier(attacker_type, defender_type)
+
+    if mult > 1:
+        return "⚡ Атака особенно эффективна!"
+    elif mult < 1:
+        return "🛡 Цель сопротивляется урону."
+    else:
+        return ""
