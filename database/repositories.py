@@ -667,3 +667,13 @@ def render_type_hint(attacker_type: str, defender_type: str) -> str:
         return "🛡 Цель сопротивляется урону."
     else:
         return ""
+# ==============================
+# Заглушка прогресса гильдейских квестов
+# ==============================
+
+def progress_guild_quests(telegram_id: int, action: str):
+    """
+    Пока система гильдий отключена.
+    Эта функция нужна, чтобы не падали импорты.
+    """
+    return []
