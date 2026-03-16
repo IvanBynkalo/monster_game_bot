@@ -2,7 +2,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, ADMIN_IDS
 from handlers.start import start_handler
 from handlers.map import map_handler, location_handler, move_handler, navigation_handler
 from handlers.world import world_handler
@@ -16,6 +16,7 @@ from handlers.profile import profile_handler, restore_energy_handler
 from handlers.quests import quests_handler
 from handlers.admin import (
     admin_panel_handler,
+    admin_buttons_handler,
     grant_gold_handler,
     grant_energy_handler,
     heal_all_handler,
@@ -45,7 +46,12 @@ dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты")
 dp.message.register(restore_energy_handler, text_is("Восстановить энергию", "⚡ Восстановить энергию"))
 dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
 dp.message.register(inventory_handler, text_is("🎒 Инвентарь", "Инвентарь"))
+dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
 dp.message.register(heal_monster_handler, text_is("Лечить монстра", "❤️ Лечить монстра"))
+dp.message.register(admin_buttons_handler, lambda message: (message.text or "").strip() in {
+    "💰 Выдать золото", "⚡ Выдать энергию", "❤️ Вылечить монстров", "🧹 Сбросить игрока",
+    "🗺 Телепорт по локации", "🧭 Телепорт по району", "❌ Закрыть админ-панель"
+} or False)
 dp.message.register(world_handler, text_is("Мир", "🌍 Мир"))
 dp.message.register(map_handler, text_is("Карта", "🗺 Карта"))
 dp.message.register(location_handler, text_is("Локация", "📍 Локация"))
@@ -62,6 +68,7 @@ dp.message.register(back_to_menu_handler, text_is("⬅️ Назад в меню
 dp.message.register(capture_handler, text_is("Поймать", "🎯 Поймать"))
 dp.message.register(trap_handler, text_is("🪤 Простая ловушка", "🪤 Ловушка"))
 dp.message.register(flee_handler, text_is("Убежать", "🏃 Убежать"))
+dp.message.register(admin_buttons_handler, lambda message: message.from_user.id in set(ADMIN_IDS or []))
 dp.message.register(set_active_monster_handler, lambda message: (message.text or "").startswith("Активный ") or (message.text or "").startswith("✅ "))
 
 async def main():
