@@ -28,13 +28,14 @@ async def district_move_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
-
+    if (message.text or "").strip() == "⬅️ Назад в меню":
+        await message.answer("Главное меню", reply_markup=main_menu(player.location_slug))
+        return
     normalized = _normalize_district_text(message.text)
     available_names = set(get_district_move_commands(player.location_slug))
     if normalized not in available_names:
         await message.answer("Из текущей локации в этот район перейти нельзя.")
         return
-
     district_name = normalized.replace("🧭→ ", "", 1).strip()
     districts = get_districts_for_location(player.location_slug)
     target = None
@@ -45,9 +46,8 @@ async def district_move_handler(message: Message):
     if not target:
         await message.answer("Не удалось определить район.")
         return
-
     update_player_district(message.from_user.id, target["slug"])
     await message.answer(
-        f"Ты переместился в район: {target['name']}\n\n{render_district_card(player.location_slug, target['slug'])}",
+        f"🧭 Ты переместился в район: {target['name']}\n\n{render_district_card(player.location_slug, target['slug'])}",
         reply_markup=main_menu(player.location_slug),
     )
