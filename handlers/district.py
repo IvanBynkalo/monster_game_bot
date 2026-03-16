@@ -28,7 +28,7 @@ async def district_move_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
-    if (message.text or "").strip() == "⬅️ Назад в меню":
+    if (message.text or "").strip() == "⬅️ Назад":
         await message.answer("Главное меню", reply_markup=main_menu(player.location_slug))
         return
     normalized = _normalize_district_text(message.text)

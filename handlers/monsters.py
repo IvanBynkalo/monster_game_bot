@@ -3,6 +3,7 @@ from database.repositories import get_active_monster, get_monster_by_id, get_pla
 from game.infection_service import render_monster_infection
 from game.type_service import get_type_label
 from keyboards.main_menu import main_menu
+from keyboards.monsters_menu import monsters_menu
 from utils.logger import log_event
 
 RARITY_LABELS = {"common": "Обычный", "rare": "Редкий", "epic": "Эпический", "legendary": "Легендарный", "mythic": "Мифический"}
@@ -25,10 +26,13 @@ def _render_monster_list(monsters):
             f"Уровень: {monster['level']} | Опыт: {monster.get('experience', 0)}/{monster['level'] * 5}",
             f"Состояние: {evo}",
             f"{render_monster_infection(monster)}",
+            "",
         ])
-        if not monster.get("is_active"):
-            lines.append(f"Сделать активным: ✅ {monster['id']}")
-        lines.append("")
+    inactive = [m for m in monsters if not m.get("is_active")]
+    if inactive:
+        lines.append("Нажми кнопку с ID ниже, чтобы сделать монстра активным.")
+    else:
+        lines.append("У тебя пока только один монстр — он уже активный.")
     return "\n".join(lines)
 
 async def monsters_handler(message: Message):
@@ -37,7 +41,7 @@ async def monsters_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     monsters = get_player_monsters(message.from_user.id)
-    await message.answer(_render_monster_list(monsters), reply_markup=main_menu(player.location_slug))
+    await message.answer(_render_monster_list(monsters), reply_markup=monsters_menu(monsters))
 
 async def set_active_monster_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -56,7 +60,8 @@ async def set_active_monster_handler(message: Message):
     set_active_monster(message.from_user.id, monster_id)
     active = get_active_monster(message.from_user.id)
     log_event("active_monster_changed", message.from_user.id, active["name"])
-    await message.answer(f"✅ Активный монстр изменён: {active['name']}", reply_markup=main_menu(player.location_slug))
+    monsters = get_player_monsters(message.from_user.id)
+    await message.answer(f"✅ Активный монстр изменён: {active['name']}", reply_markup=monsters_menu(monsters))
 
 async def heal_monster_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -64,12 +69,15 @@ async def heal_monster_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     if player.gold < 8:
-        await message.answer("Недостаточно золота. Лечение стоит 8 золота.")
+        await message.answer("Недостаточно золота. Лечение стоит 8 золота.", reply_markup=main_menu(player.location_slug))
         return
     active = heal_active_monster(message.from_user.id)
     if not active:
-        await message.answer("У тебя нет активного монстра.")
+        await message.answer("У тебя нет активного монстра.", reply_markup=main_menu(player.location_slug))
         return
     player.gold -= 8
     log_event("monster_healed", message.from_user.id, active["name"])
-    await message.answer(f"❤️ {active['name']} полностью восстановлен. HP: {active['current_hp']}/{active['max_hp']}\nПотрачено: 8 золота", reply_markup=main_menu(player.location_slug))
+    await message.answer(
+        f"❤️ {active['name']} полностью восстановлен. HP: {active['current_hp']}/{active['max_hp']}\nПотрачено: 8 золота",
+        reply_markup=main_menu(player.location_slug),
+    )
