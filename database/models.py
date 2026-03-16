@@ -11,6 +11,7 @@ class Player:
     level: int = 1
     experience: int = 0
     energy: int = 12
+    birth_cooldown_actions: int = 0
 
 @dataclass
 class Location:

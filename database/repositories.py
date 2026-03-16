@@ -6,6 +6,8 @@ PLAYER_MONSTERS = {}
 PLAYER_EMOTIONS = {}
 PLAYER_QUESTS = {}
 PLAYER_STORY = {}
+PLAYER_ACTION_FLAGS = {}
+PLAYER_ITEMS = {}
 NEXT_MONSTER_ID = 1
 
 DEFAULT_EMOTIONS = {"rage": 0, "fear": 0, "instinct": 0, "inspiration": 0}
@@ -20,7 +22,7 @@ STORY_QUESTS = [
     {"id": "forest_echo", "title": "Шёпот леса", "description": "Исследуй Тёмный лес 2 раза.", "requirements": {"location_slug": "dark_forest", "explore_count": 2}, "reward_gold": 25, "reward_exp": 12, "reward_text": "След уходит в Болото теней."},
     {"id": "swamp_sign", "title": "Тени у воды", "description": "Доберись до Болота теней и исследуй его 1 раз.", "requirements": {"location_slug": "shadow_swamp", "explore_count": 1}, "reward_gold": 35, "reward_exp": 16, "reward_text": "Голоса ведут к Вулкану ярости."},
     {"id": "volcano_trial", "title": "Испытание жаром", "description": "Доберись до Вулкана ярости и победи там 1 монстра.", "requirements": {"location_slug": "volcano_wrath", "win_count": 1}, "reward_gold": 50, "reward_exp": 25, "reward_text": "Первый акт истории региона завершён."},
-]
+}
 
 def _default_story():
     return {"current_index": 0, "completed_ids": [], "forest_echo": {"explore_count": 0, "win_count": 0, "visited": False}, "swamp_sign": {"explore_count": 0, "win_count": 0, "visited": False}, "volcano_trial": {"explore_count": 0, "win_count": 0, "visited": False}}
@@ -28,13 +30,22 @@ def _default_story():
 def get_player(telegram_id: int):
     return PLAYERS.get(telegram_id)
 
+def _ensure_player_collections(telegram_id: int):
+    PLAYER_MONSTERS.setdefault(telegram_id, [])
+    PLAYER_EMOTIONS.setdefault(telegram_id, DEFAULT_EMOTIONS.copy())
+    PLAYER_QUESTS.setdefault(telegram_id, {k: {"progress": 0, "completed": False, **v} for k, v in STARTER_QUESTS.items()})
+    PLAYER_STORY.setdefault(telegram_id, _default_story())
+    PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
+    PLAYER_ITEMS.setdefault(telegram_id, {
+        "small_potion": 2,
+        "energy_capsule": 1,
+        "basic_trap": 3,
+    })
+
 def create_player(telegram_id: int, name: str):
     player = Player(telegram_id=telegram_id, name=name)
     PLAYERS[telegram_id] = player
-    PLAYER_MONSTERS[telegram_id] = []
-    PLAYER_EMOTIONS[telegram_id] = DEFAULT_EMOTIONS.copy()
-    PLAYER_QUESTS[telegram_id] = {k: {"progress": 0, "completed": False, **v} for k, v in STARTER_QUESTS.items()}
-    PLAYER_STORY[telegram_id] = _default_story()
+    _ensure_player_collections(telegram_id)
     return player
 
 def reset_player_state(telegram_id: int, name: str = "Игрок"):
@@ -43,21 +54,57 @@ def reset_player_state(telegram_id: int, name: str = "Игрок"):
     PLAYER_EMOTIONS[telegram_id] = DEFAULT_EMOTIONS.copy()
     PLAYER_QUESTS[telegram_id] = {k: {"progress": 0, "completed": False, **v} for k, v in STARTER_QUESTS.items()}
     PLAYER_STORY[telegram_id] = _default_story()
+    PLAYER_ACTION_FLAGS[telegram_id] = {}
+    PLAYER_ITEMS[telegram_id] = {
+        "small_potion": 2,
+        "energy_capsule": 1,
+        "basic_trap": 3,
+    }
     PENDING_ENCOUNTERS.pop(telegram_id, None)
     return PLAYERS[telegram_id]
 
 def get_or_create_player(telegram_id: int, name: str):
     player = get_player(telegram_id)
     if player:
-        PLAYER_MONSTERS.setdefault(telegram_id, [])
-        PLAYER_EMOTIONS.setdefault(telegram_id, DEFAULT_EMOTIONS.copy())
-        PLAYER_QUESTS.setdefault(telegram_id, {k: {"progress": 0, "completed": False, **v} for k, v in STARTER_QUESTS.items()})
-        PLAYER_STORY.setdefault(telegram_id, _default_story())
+        _ensure_player_collections(telegram_id)
         return player, False
     return create_player(telegram_id, name), True
 
+def begin_action_scope(telegram_id: int, action_key: str):
+    flags = PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
+    flags["current_action"] = action_key
+    flags["birth_done"] = False
+    return flags
+
+def get_action_flags(telegram_id: int):
+    return PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
+
+def mark_birth_done(telegram_id: int):
+    flags = PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
+    flags["birth_done"] = True
+    return flags
+
+def is_birth_done(telegram_id: int):
+    return PLAYER_ACTION_FLAGS.setdefault(telegram_id, {}).get("birth_done", False)
+
+def tick_birth_cooldown(telegram_id: int):
+    player = get_player(telegram_id)
+    if not player:
+        return 0
+    if getattr(player, "birth_cooldown_actions", 0) > 0:
+        player.birth_cooldown_actions -= 1
+    return player.birth_cooldown_actions
+
+def start_birth_cooldown(telegram_id: int, actions: int = 3):
+    player = get_player(telegram_id)
+    if not player:
+        return 0
+    player.birth_cooldown_actions = actions
+    return player.birth_cooldown_actions
+
 def get_player_story(telegram_id: int):
-    return PLAYER_STORY.setdefault(telegram_id, _default_story())
+    _ensure_player_collections(telegram_id)
+    return PLAYER_STORY[telegram_id]
 
 def get_current_story_quest(telegram_id: int):
     story = get_player_story(telegram_id)
@@ -86,7 +133,8 @@ def update_story_progress(telegram_id: int, action_type: str, current_location_s
     return None
 
 def get_player_quests(telegram_id: int):
-    return PLAYER_QUESTS.setdefault(telegram_id, {k: {"progress": 0, "completed": False, **v} for k, v in STARTER_QUESTS.items()})
+    _ensure_player_collections(telegram_id)
+    return PLAYER_QUESTS[telegram_id]
 
 def progress_quests(telegram_id: int, action_type: str):
     quests = get_player_quests(telegram_id)
@@ -101,7 +149,8 @@ def progress_quests(telegram_id: int, action_type: str):
     return completed_now
 
 def get_player_emotions(telegram_id: int):
-    return PLAYER_EMOTIONS.setdefault(telegram_id, DEFAULT_EMOTIONS.copy())
+    _ensure_player_collections(telegram_id)
+    return PLAYER_EMOTIONS[telegram_id]
 
 def add_emotions(telegram_id: int, changes: dict):
     emotions = get_player_emotions(telegram_id)
@@ -169,6 +218,26 @@ def spend_player_energy(telegram_id: int, amount: int):
     player.energy -= amount
     return True
 
+def get_inventory(telegram_id: int):
+    _ensure_player_collections(telegram_id)
+    return PLAYER_ITEMS[telegram_id]
+
+def get_item_count(telegram_id: int, item_slug: str):
+    return get_inventory(telegram_id).get(item_slug, 0)
+
+def add_item(telegram_id: int, item_slug: str, amount: int = 1):
+    inventory = get_inventory(telegram_id)
+    inventory[item_slug] = inventory.get(item_slug, 0) + amount
+    return inventory[item_slug]
+
+def spend_item(telegram_id: int, item_slug: str, amount: int = 1):
+    inventory = get_inventory(telegram_id)
+    current = inventory.get(item_slug, 0)
+    if current < amount:
+        return False
+    inventory[item_slug] = current - amount
+    return True
+
 def _guess_monster_type(name: str, mood: str):
     name_lower = name.lower()
     if "плам" in name_lower or "лав" in name_lower or "магм" in name_lower or mood == "rage":
@@ -187,16 +256,31 @@ def _guess_monster_type(name: str, mood: str):
         return "echo"
     return "void"
 
+def _migrate_monster_fields(monster: dict):
+    if "distortion" not in monster:
+        if "corruption" in monster:
+            monster["distortion"] = monster.pop("corruption")
+        else:
+            monster["distortion"] = 0
+    monster.setdefault("infection_type", None)
+    monster.setdefault("infection_stage", 0)
+    monster.setdefault("current_hp", monster.get("hp", 1))
+    monster.setdefault("max_hp", monster.get("hp", 1))
+    monster.setdefault("experience", 0)
+    monster.setdefault("evolution_stage", 0)
+    monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
+    return monster
+
 def add_captured_monster(telegram_id: int, name: str, rarity: str, mood: str, hp: int, attack: int, source_type: str = "wild"):
     global NEXT_MONSTER_ID
-    PLAYER_MONSTERS.setdefault(telegram_id, [])
+    _ensure_player_collections(telegram_id)
     is_first = len(PLAYER_MONSTERS[telegram_id]) == 0
     monster = {
         "id": NEXT_MONSTER_ID, "name": name, "rarity": rarity, "mood": mood,
         "monster_type": _guess_monster_type(name, mood),
         "hp": hp, "max_hp": hp, "current_hp": hp, "attack": attack,
         "level": 1, "experience": 0, "is_active": is_first,
-        "infection_type": None, "infection_stage": 0, "corruption": 0,
+        "infection_type": None, "infection_stage": 0, "distortion": 0,
         "source_type": source_type, "evolution_stage": 0
     }
     NEXT_MONSTER_ID += 1
@@ -204,17 +288,16 @@ def add_captured_monster(telegram_id: int, name: str, rarity: str, mood: str, hp
     return monster
 
 def get_player_monsters(telegram_id: int):
-    return PLAYER_MONSTERS.get(telegram_id, [])
+    _ensure_player_collections(telegram_id)
+    monsters = PLAYER_MONSTERS[telegram_id]
+    for monster in monsters:
+        _migrate_monster_fields(monster)
+    return monsters
 
 def get_active_monster(telegram_id: int):
-    for monster in PLAYER_MONSTERS.get(telegram_id, []):
+    for monster in get_player_monsters(telegram_id):
         if monster.get("is_active"):
-            monster.setdefault("current_hp", monster.get("hp", 1))
-            monster.setdefault("max_hp", monster.get("hp", 1))
-            monster.setdefault("experience", 0)
-            monster.setdefault("evolution_stage", 0)
-            monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
-            return monster
+            return _migrate_monster_fields(monster)
     return None
 
 def damage_active_monster(telegram_id: int, amount: int):
@@ -230,7 +313,7 @@ def heal_active_monster(telegram_id: int, amount: int = 999):
     return monster
 
 def heal_all_monsters(telegram_id: int):
-    monsters = PLAYER_MONSTERS.get(telegram_id, [])
+    monsters = get_player_monsters(telegram_id)
     for monster in monsters:
         monster["current_hp"] = monster.get("max_hp", monster.get("hp", 1))
     return monsters
@@ -252,13 +335,9 @@ def add_active_monster_experience(telegram_id: int, amount: int):
 
 def set_active_monster(telegram_id: int, monster_id: int):
     target = None
-    for monster in PLAYER_MONSTERS.get(telegram_id, []):
+    for monster in get_player_monsters(telegram_id):
         monster["is_active"] = False
-        monster.setdefault("current_hp", monster.get("hp", 1))
-        monster.setdefault("max_hp", monster.get("hp", 1))
-        monster.setdefault("experience", 0)
-        monster.setdefault("evolution_stage", 0)
-        monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
+        _migrate_monster_fields(monster)
         if monster["id"] == monster_id:
             target = monster
     if target:
@@ -266,12 +345,7 @@ def set_active_monster(telegram_id: int, monster_id: int):
     return target
 
 def get_monster_by_id(telegram_id: int, monster_id: int):
-    for monster in PLAYER_MONSTERS.get(telegram_id, []):
+    for monster in get_player_monsters(telegram_id):
         if monster["id"] == monster_id:
-            monster.setdefault("current_hp", monster.get("hp", 1))
-            monster.setdefault("max_hp", monster.get("hp", 1))
-            monster.setdefault("experience", 0)
-            monster.setdefault("evolution_stage", 0)
-            monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
-            return monster
+            return _migrate_monster_fields(monster)
     return None
