@@ -23,6 +23,9 @@ from handlers.admin import (
     reset_player_handler,
 )
 
+def text_is(*variants):
+    return lambda message: (message.text or "").strip() in variants
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -35,24 +38,24 @@ dp.message.register(teleport_location_handler, Command("teleport_location"))
 dp.message.register(teleport_district_handler, Command("teleport_district"))
 dp.message.register(reset_player_handler, Command("reset_player"))
 
-dp.message.register(profile_handler, lambda message: message.text == "🧭 Профиль")
-dp.message.register(story_handler, lambda message: message.text == "🧾 Сюжет")
-dp.message.register(quests_handler, lambda message: message.text == "📜 Квесты")
-dp.message.register(restore_energy_handler, lambda message: message.text == "⚡ Восстановить энергию")
-dp.message.register(monsters_handler, lambda message: message.text == "🐲 Мои монстры")
-dp.message.register(heal_monster_handler, lambda message: message.text == "❤️ Лечить монстра")
-dp.message.register(world_handler, lambda message: message.text == "🌍 Мир")
-dp.message.register(map_handler, lambda message: message.text == "🗺 Карта")
-dp.message.register(location_handler, lambda message: message.text == "📍 Локация")
-dp.message.register(district_handler, lambda message: message.text == "🧭 Район")
-dp.message.register(move_handler, lambda message: message.text and message.text.startswith("🚶 "))
-dp.message.register(district_move_handler, lambda message: message.text and message.text.startswith("🧭→ "))
-dp.message.register(explore_handler, lambda message: message.text == "🌲 Исследовать")
-dp.message.register(attack_handler, lambda message: message.text == "⚔️ Атаковать")
-dp.message.register(skill_handler, lambda message: message.text == "✨ Навык")
-dp.message.register(capture_handler, lambda message: message.text == "🎯 Поймать")
-dp.message.register(flee_handler, lambda message: message.text == "🏃 Убежать")
-dp.message.register(set_active_monster_handler, lambda message: message.text and message.text.startswith("✅ "))
+dp.message.register(profile_handler, text_is("Профиль", "🧭 Профиль", "🧭 Профіль"))
+dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
+dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
+dp.message.register(restore_energy_handler, text_is("Восстановить энергию", "⚡ Восстановить энергию"))
+dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
+dp.message.register(heal_monster_handler, text_is("Лечить монстра", "❤️ Лечить монстра"))
+dp.message.register(world_handler, text_is("Мир", "🌍 Мир"))
+dp.message.register(map_handler, text_is("Карта", "🗺 Карта"))
+dp.message.register(location_handler, text_is("Локация", "📍 Локация"))
+dp.message.register(district_handler, text_is("Район", "🧭 Район"))
+dp.message.register(move_handler, lambda message: (message.text or "").startswith("Перейти: ") or (message.text or "").startswith("🚶 "))
+dp.message.register(district_move_handler, lambda message: (message.text or "").startswith("Район: ") or (message.text or "").startswith("🧭→ "))
+dp.message.register(explore_handler, text_is("Исследовать", "🌲 Исследовать"))
+dp.message.register(attack_handler, text_is("Атаковать", "⚔️ Атаковать"))
+dp.message.register(skill_handler, text_is("Навык", "✨ Навык"))
+dp.message.register(capture_handler, text_is("Поймать", "🎯 Поймать"))
+dp.message.register(flee_handler, text_is("Убежать", "🏃 Убежать"))
+dp.message.register(set_active_monster_handler, lambda message: (message.text or "").startswith("Активный ") or (message.text or "").startswith("✅ "))
 
 async def main():
     await dp.start_polling(bot)

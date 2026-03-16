@@ -1,14 +1,19 @@
 # Monster Game Bot
 
-Current stage: v2.2 with story, skills, and monster types.
+Текущая версия: v2.2.1
 
-## Launch
+Что исправлено:
+- кнопки меню переведены на обычный русский текст
+- убрана зависимость от эмодзи в обработчиках
+- улучшена русская локализация интерфейса
+
+## Запуск
 
 ```bash
 pip install -r requirements.txt
 python bot.py
 ```
 
-Environment variables:
+Переменные окружения:
 - BOT_TOKEN
 - ADMIN_IDS
