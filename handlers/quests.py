@@ -4,7 +4,7 @@ from database.repositories import get_player, get_player_quests
 from keyboards.main_menu import main_menu
 
 def _render_quests(quests: dict):
-    lines = ["📜 Стартовые квесты", ""]
+    lines = ["📜 Квесты игрока", ""]
     for quest_id, quest in quests.items():
         status = "✅ Выполнен" if quest["completed"] else "🕒 В процессе"
         lines.extend([

@@ -2,13 +2,14 @@ from aiogram.types import Message
 from database.repositories import (
     add_active_monster_experience, add_captured_monster, add_player_experience, add_player_gold,
     begin_action_scope, clear_pending_encounter, damage_active_monster, get_active_monster, get_item_count, get_pending_encounter,
-    get_player, progress_quests, save_pending_encounter, spend_item, tick_birth_cooldown, update_story_progress,
+    get_player, progress_guild_quests, progress_quests, save_pending_encounter, spend_item, tick_birth_cooldown, update_story_progress,
 )
 from game.district_service import get_district
 from game.emotion_birth_service import render_birth_text, try_birth_emotional_monster
 from game.emotion_service import grant_event_emotions, render_emotion_changes
 from game.encounter_service import resolve_attack, resolve_capture, resolve_flee
 from game.evolution_service import render_evolution_text, try_evolve_active_monster
+from game.monster_abilities import get_attack_bonus, get_capture_bonus, mitigate_incoming_damage, try_regeneration
 from game.infection_service import apply_dominant_emotion_infection, render_infection_update
 from game.skill_service import resolve_skill_use, get_active_skill_label
 from game.story_service import apply_story_reward
@@ -24,10 +25,17 @@ def _apply_enemy_damage(player_id: int, result: dict):
     damage = result.get("player_damage", 0)
     if damage <= 0:
         return None, ""
-    monster = damage_active_monster(player_id, damage)
+    active_before = get_active_monster(player_id)
+    final_damage, ability_text = mitigate_incoming_damage(active_before, damage) if active_before else (damage, "")
+    monster = damage_active_monster(player_id, final_damage)
     if not monster:
         return None, ""
-    text = f"❤️ Твой активный монстр получает {damage} урона. Текущее HP: {monster['current_hp']}/{monster['max_hp']}"
+    text = f"❤️ Твой активный монстр получает {final_damage} урона. Текущее HP: {monster['current_hp']}/{monster['max_hp']}"
+    if ability_text:
+        text += "\n" + ability_text
+    healed = try_regeneration(monster)
+    if healed > 0:
+        text += f"\n💚 Регенерация восстанавливает {healed} HP. Теперь HP: {monster['current_hp']}/{monster['max_hp']}"
     if monster["current_hp"] <= 0:
         text += "\n☠️ Активный монстр повержен. Лечи его перед следующими тяжёлыми боями."
     return monster, text
@@ -112,28 +120,75 @@ async def _handle_finished_result(message: Message, player, result: dict, emotio
             text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
     elif emotion_key == "capture_success":
         extras = _render_completed_quests(message.from_user.id, progress_quests(message.from_user.id, "capture"))
+        guild_done = progress_guild_quests(message.from_user.id, "capture", 1)
+        if guild_done:
+            extras.extend([f"📜 Квест выполнен: {q['title']}\n💰 Награда: +{q['reward_gold']} золота\n✨ Награда: +{q['reward_exp']} опыта" for q in guild_done])
+            for q in guild_done:
+                add_player_gold(message.from_user.id, q["reward_gold"])
+                add_player_experience(message.from_user.id, q["reward_exp"])
         if extras:
             text += "\n\n" + "\n\n".join(extras)
     if damage_text:
         text += "\n\n" + damage_text
     await message.answer(text, reply_markup=main_menu(player.location_slug))
 
+async def poison_trap_handler(message: Message):
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    encounter = get_pending_encounter(message.from_user.id)
+    if not encounter or encounter.get("type") != "monster":
+        await message.answer("🪤 Ловушку можно использовать только во время встречи с монстром.", reply_markup=main_menu(player.location_slug))
+        return
+    if get_item_count(message.from_user.id, "poison_trap") <= 0:
+        await message.answer("🪤 У тебя нет ядовитой ловушки.", reply_markup=encounter_menu())
+        return
+    spend_item(message.from_user.id, "poison_trap", 1)
+    encounter["bonus_capture"] = min(0.60, encounter.get("bonus_capture", 0.0) + 0.25)
+    encounter["counter_multiplier"] = 0.7
+    save_pending_encounter(message.from_user.id, encounter)
+    await message.answer("🪤 Ты ставишь ядовитую ловушку.\nШанс поимки повышен на 25%.\nСила ответа врага немного снижена.", reply_markup=encounter_menu())
+
+async def trap_handler(message: Message):
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    encounter = get_pending_encounter(message.from_user.id)
+    if not encounter or encounter.get("type") != "monster":
+        await message.answer("🪤 Ловушку можно использовать только во время встречи с монстром.", reply_markup=main_menu(player.location_slug))
+        return
+    if get_item_count(message.from_user.id, "basic_trap") <= 0:
+        await message.answer("🪤 У тебя нет простой ловушки.", reply_markup=encounter_menu())
+        return
+    spend_item(message.from_user.id, "basic_trap", 1)
+    encounter["bonus_capture"] = min(0.45, encounter.get("bonus_capture", 0.0) + 0.15)
+    save_pending_encounter(message.from_user.id, encounter)
+    await message.answer(f"🪤 Ты активируешь простую ловушку.\nШанс поимки повышен на 15%.\nТекущий бонус: +{int(encounter['bonus_capture'] * 100)}%", reply_markup=encounter_menu())
+
 async def attack_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
-        await message.answer("Сначала напиши /start"); return
+        await message.answer("Сначала напиши /start")
+        return
     begin_action_scope(message.from_user.id, "battle_attack")
     tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
-        await message.answer("У тебя нет активного монстра."); return
+        await message.answer("У тебя нет активного монстра.")
+        return
     if active.get("current_hp", active.get("hp", 1)) <= 0:
-        await message.answer("☠️ Активный монстр повержен. Используй ❤️ Лечить монстра."); return
+        await message.answer("☠️ Активный монстр повержен. Используй ❤️ Лечить монстра.")
+        return
     encounter = get_pending_encounter(message.from_user.id)
     if not encounter:
-        await message.answer("Сейчас нет активной встречи."); return
-
-    result = resolve_attack(encounter, active_monster_attack=active.get("attack", 8), attacker_type=active.get("monster_type"))
+        await message.answer("Сейчас нет активной встречи.")
+        return
+    attack_bonus = get_attack_bonus(active, encounter)
+    result = resolve_attack(encounter, active_monster_attack=active.get("attack", 8) + attack_bonus, attacker_type=active.get("monster_type"))
+    if attack_bonus > 0:
+        result["text"] += f"\n🔥 Способность усиливает атаку на {attack_bonus}."
     damaged, damage_text = _apply_enemy_damage(message.from_user.id, result)
     if damaged and damaged["current_hp"] <= 0 and not result.get("finished"):
         clear_pending_encounter(message.from_user.id)
@@ -146,48 +201,35 @@ async def attack_handler(message: Message):
     save_pending_encounter(message.from_user.id, encounter)
     await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_menu())
 
-
-async def trap_handler(message: Message):
-    player = get_player(message.from_user.id)
-    if not player:
-        await message.answer("Сначала напиши /start"); return
-    encounter = get_pending_encounter(message.from_user.id)
-    if not encounter or encounter.get("type") != "monster":
-        await message.answer("🪤 Ловушку можно использовать только во время встречи с монстром.", reply_markup=main_menu(player.location_slug)); return
-    if get_item_count(message.from_user.id, "basic_trap") <= 0:
-        await message.answer("🪤 У тебя нет простой ловушки.", reply_markup=encounter_menu()); return
-    spend_item(message.from_user.id, "basic_trap", 1)
-    encounter["bonus_capture"] = min(0.45, encounter.get("bonus_capture", 0.0) + 0.15)
-    save_pending_encounter(message.from_user.id, encounter)
-    await message.answer(
-        f"🪤 Ты активируешь простую ловушку.\n"
-        f"Шанс поимки повышен на 15%.\n"
-        f"Текущий бонус: +{int(encounter['bonus_capture'] * 100)}%",
-        reply_markup=encounter_menu(),
-    )
-
 async def skill_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
-        await message.answer("Сначала напиши /start"); return
+        await message.answer("Сначала напиши /start")
+        return
     begin_action_scope(message.from_user.id, "battle_skill")
     tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
-        await message.answer("У тебя нет активного монстра."); return
+        await message.answer("У тебя нет активного монстра.")
+        return
     if active.get("current_hp", active.get("hp", 1)) <= 0:
-        await message.answer("☠️ Активный монстр повержен. Используй ❤️ Лечить монстра."); return
+        await message.answer("☠️ Активный монстр повержен. Используй ❤️ Лечить монстра.")
+        return
     encounter = get_pending_encounter(message.from_user.id)
     if not encounter:
-        await message.answer("Сейчас нет активной встречи."); return
-
-    result = resolve_skill_use(encounter, active)
+        await message.answer("Сейчас нет активной встречи.")
+        return
+    skill_bonus = get_attack_bonus(active, encounter)
+    temp_active = dict(active)
+    temp_active["attack"] = temp_active.get("attack", 0) + skill_bonus
+    result = resolve_skill_use(encounter, temp_active)
+    if skill_bonus > 0 and result.get("ok"):
+        result["text"] += f"\n🔥 Способность усиливает эффект навыка на {skill_bonus} атаки."
     if not result.get("ok"):
-        await message.answer(result["text"], reply_markup=encounter_menu()); return
-
+        await message.answer(result["text"], reply_markup=encounter_menu())
+        return
     damaged, damage_text = _apply_enemy_damage(message.from_user.id, result)
     skill_name = get_active_skill_label(active)
-
     if damaged and damaged["current_hp"] <= 0 and not result.get("finished"):
         clear_pending_encounter(message.from_user.id)
         await message.answer(result["text"] + "\n\n" + damage_text + f"\n\nНавык «{skill_name}» не спасает от поражения.", reply_markup=main_menu(player.location_slug))
@@ -196,26 +238,33 @@ async def skill_handler(message: Message):
         clear_pending_encounter(message.from_user.id)
         await _handle_finished_result(message, player, result, "battle_win", damage_text)
         return
-
     save_pending_encounter(message.from_user.id, encounter)
     await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_menu())
 
 async def capture_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
-        await message.answer("Сначала напиши /start"); return
+        await message.answer("Сначала напиши /start")
+        return
     begin_action_scope(message.from_user.id, "battle_capture")
     tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
-        await message.answer("У тебя нет активного монстра."); return
+        await message.answer("У тебя нет активного монстра.")
+        return
     if active.get("current_hp", active.get("hp", 1)) <= 0:
-        await message.answer("☠️ Активный монстр повержен. Используй ❤️ Лечить монстра."); return
+        await message.answer("☠️ Активный монстр повержен. Используй ❤️ Лечить монстра.")
+        return
     encounter = get_pending_encounter(message.from_user.id)
     if not encounter:
-        await message.answer("Сейчас нет активной встречи."); return
-
+        await message.answer("Сейчас нет активной встречи.")
+        return
+    encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + min(0.20, 0.03 * max(0, player.hunter_level - 1) + 0.02 * max(0, player.agility - 1))
+    ability_capture = get_capture_bonus(active)
+    encounter["bonus_capture"] += ability_capture
     result = resolve_capture(encounter)
+    if ability_capture > 0:
+        result["text"] += f"\n🎯 Способность повышает шанс поимки ещё на {int(ability_capture * 100)}%."
     damaged, damage_text = _apply_enemy_damage(message.from_user.id, result)
     if damaged and damaged["current_hp"] <= 0 and not result.get("finished"):
         clear_pending_encounter(message.from_user.id)
@@ -227,6 +276,12 @@ async def capture_handler(message: Message):
         text = _append_progression(message.from_user.id, result["text"], result, _district_mood_from_player(player), "capture_success")
         text += f"\n\n🐲 Монстр добавлен в коллекцию: {captured['name']}\nID: {captured['id']}"
         extras = _render_completed_quests(message.from_user.id, progress_quests(message.from_user.id, "capture"))
+        guild_done = progress_guild_quests(message.from_user.id, "capture", 1)
+        if guild_done:
+            extras.extend([f"📜 Квест выполнен: {q['title']}\n💰 Награда: +{q['reward_gold']} золота\n✨ Награда: +{q['reward_exp']} опыта" for q in guild_done])
+            for q in guild_done:
+                add_player_gold(message.from_user.id, q["reward_gold"])
+                add_player_experience(message.from_user.id, q["reward_exp"])
         if extras:
             text += "\n\n" + "\n\n".join(extras)
         if damage_text:
@@ -239,16 +294,18 @@ async def capture_handler(message: Message):
 async def flee_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
-        await message.answer("Сначала напиши /start"); return
+        await message.answer("Сначала напиши /start")
+        return
     begin_action_scope(message.from_user.id, "battle_flee")
     tick_birth_cooldown(message.from_user.id)
     active = get_active_monster(message.from_user.id)
     if not active:
-        await message.answer("У тебя нет активного монстра."); return
+        await message.answer("У тебя нет активного монстра.")
+        return
     encounter = get_pending_encounter(message.from_user.id)
     if not encounter:
-        await message.answer("Сейчас нет активной встречи."); return
-
+        await message.answer("Сейчас нет активной встречи.")
+        return
     result = resolve_flee(encounter)
     damaged, damage_text = _apply_enemy_damage(message.from_user.id, result)
     if result.get("finished"):

@@ -2,6 +2,7 @@ from aiogram.types import Message
 from database.repositories import get_active_monster, get_monster_by_id, get_player, get_player_monsters, heal_active_monster, set_active_monster
 from game.infection_service import render_monster_infection
 from game.type_service import get_type_label
+from game.monster_abilities import render_abilities
 from keyboards.main_menu import main_menu
 from keyboards.monsters_menu import monsters_menu
 from utils.logger import log_event
@@ -21,6 +22,7 @@ def _render_monster_card(monster: dict):
         f"HP: {monster.get('current_hp', monster['hp'])}/{monster.get('max_hp', monster['hp'])} | Атака: {monster['attack']}",
         f"Уровень: {monster['level']} | Опыт: {monster.get('experience', 0)}/{monster['level'] * 5}",
         f"Состояние: {evo}",
+        f"{render_abilities(monster)}",
         f"{render_monster_infection(monster)}",
     ])
 
