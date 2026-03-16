@@ -4,6 +4,12 @@ from game.map_service import WORLD_MAP_PATH, build_map_caption, render_map_overv
 from game.story_service import apply_story_reward
 from keyboards.main_menu import main_menu
 
+def _normalize_move_text(text: str) -> str:
+    text = (text or "").strip()
+    if text.startswith("Перейти: "):
+        return "🚶 " + text.replace("Перейти: ", "", 1)
+    return text
+
 async def map_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -27,16 +33,18 @@ async def move_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
-    target = resolve_location_by_move_text(message.text)
+    normalized = _normalize_move_text(message.text)
+    target = resolve_location_by_move_text(normalized)
     if not target:
         await message.answer("Не удалось определить локацию для перехода.")
         return
-    if f"🚶 {target.name}" not in set(get_move_commands(player.location_slug)):
+    available_names = set(get_move_commands(player.location_slug))
+    if f"🚶 {target.name}" not in available_names:
         await message.answer("Из текущей локации туда пройти нельзя.")
         return
     update_player_location(message.from_user.id, target.slug)
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
-    text = f"🚶 Ты переместился в новую область.\n\n{render_location_card(target.slug)}"
+    text = f"Ты переместился в новую область.\n\n{render_location_card(target.slug)}"
     if story_done:
         text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
     await message.answer(text, reply_markup=main_menu(target.slug))

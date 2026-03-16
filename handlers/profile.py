@@ -22,7 +22,7 @@ async def profile_handler(message: Message):
     evolution_text = f"Стадия эволюции: {active.get('evolution_stage', 0)}" if active else "Стадия эволюции: -"
     monster_type = get_type_label(active.get("monster_type")) if active else "-"
     await message.answer(
-        f"🧭 Профиль\n\n"
+        f"Профиль\n\n"
         f"Имя: {player.name}\n"
         f"Уровень игрока: {player.level}\n"
         f"Опыт игрока: {player.experience}/{player.level * 10}\n"
@@ -51,9 +51,9 @@ async def restore_energy_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     if player.gold < 3:
-        await message.answer("💰 Недостаточно золота. Восстановление энергии стоит 3 золота.")
+        await message.answer("Недостаточно золота. Восстановление энергии стоит 3 золота.")
         return
     restore_player_energy(message.from_user.id, amount=5, max_energy=10)
     player.gold -= 3
     log_event("energy_restored", message.from_user.id, "gold_spent=3")
-    await message.answer(f"⚡ Энергия восстановлена. Текущее значение: {player.energy}/10\n💰 Потрачено: 3 золота", reply_markup=main_menu(player.location_slug))
+    await message.answer(f"Энергия восстановлена. Текущее значение: {player.energy}/10\nПотрачено: 3 золота", reply_markup=main_menu(player.location_slug))
