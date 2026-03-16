@@ -7,51 +7,41 @@ EMOTION_LABELS = {
     "inspiration": "✨ Вдохновение",
 }
 
-EMOTION_REWARDS = {
+EVENT_EMOTIONS = {
     "battle_win": {"rage": 1},
-    "capture_success": {"instinct": 2},
-    "flee_success": {"fear": 1},
-    "anomaly": {"inspiration": 1},
+    "capture_success": {"instinct": 1},
+    "flee_success": {"fear": 0},
+    "anomaly": {"fear": 1, "inspiration": 1},
 }
 
-def grant_event_emotions(telegram_id: int, event_key: str, district_mood: str | None = None):
-    changes = {}
-    for key, value in EMOTION_REWARDS.get(event_key, {}).items():
-        changes[key] = changes.get(key, 0) + value
-    if district_mood:
-        changes[district_mood] = changes.get(district_mood, 0) + 1
-    if not changes:
-        return get_player_emotions(telegram_id), {}
-    emotions = add_emotions(telegram_id, changes)
-    return emotions, changes
-
-def dominant_emotion(telegram_id: int):
-    emotions = get_player_emotions(telegram_id)
-    top_key = None
-    top_val = -1
-    tied = False
-    for key, value in emotions.items():
-        if value > top_val:
-            top_key = key
-            top_val = value
-            tied = False
-        elif value == top_val:
-            tied = True
-    if top_val <= 0 or tied:
-        return None
-    return top_key
-
-def render_emotion_changes(changes: dict):
-    if not changes:
-        return ""
-    lines = ["Эмоции:"]
-    for key, value in changes.items():
-        lines.append(f"{EMOTION_LABELS.get(key, key)} +{value}")
-    return "\n".join(lines)
+DISTRICT_MOOD_TO_EMOTION = {
+    "rage": "rage",
+    "fear": "fear",
+    "instinct": "instinct",
+    "inspiration": "inspiration",
+}
 
 def render_emotions_panel(telegram_id: int):
     emotions = get_player_emotions(telegram_id)
-    lines = ["Эмоциональный след:"]
+    lines = ["Эмоции:"]
     for key in ["rage", "fear", "instinct", "inspiration"]:
         lines.append(f"{EMOTION_LABELS[key]}: {emotions.get(key, 0)}")
     return "\n".join(lines)
+
+def grant_event_emotions(telegram_id: int, event_type: str, district_mood: str | None = None):
+    changes = dict(EVENT_EMOTIONS.get(event_type, {}))
+    if district_mood in DISTRICT_MOOD_TO_EMOTION and event_type in {"battle_win", "capture_success", "anomaly"}:
+        mood_key = DISTRICT_MOOD_TO_EMOTION[district_mood]
+        changes[mood_key] = changes.get(mood_key, 0) + 1
+    add_emotions(telegram_id, changes)
+    return get_player_emotions(telegram_id), changes
+
+def render_emotion_changes(changes: dict):
+    lines = []
+    for key in ["rage", "fear", "instinct", "inspiration"]:
+        value = changes.get(key, 0)
+        if value:
+            lines.append(f"{EMOTION_LABELS[key]} +{value}")
+    if not lines:
+        return ""
+    return "Эмоции:\n" + "\n".join(lines)

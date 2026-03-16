@@ -9,10 +9,10 @@ RARITY_LABELS = {
 }
 
 EVOLUTION_RECIPES = [
-    {"base_name": "Эхо-Лис", "min_level": 3, "infection_type": "inspiration", "result_name": "Эфирный Эхо-Лис", "rarity": "epic", "hp_bonus": 8, "attack_bonus": 2},
-    {"base_name": "Эхо-Лис", "min_level": 3, "infection_type": "fear", "result_name": "Сумрачный Эхо-Лис", "rarity": "epic", "hp_bonus": 10, "attack_bonus": 1},
-    {"base_name_contains": "Клык", "min_level": 4, "infection_type": "rage", "result_name": "Багровый Клык", "rarity": "legendary", "hp_bonus": 12, "attack_bonus": 3},
-    {"base_name_contains": "Следопыт", "min_level": 4, "infection_type": "instinct", "result_name": "Кровавый Альфа-Следопыт", "rarity": "legendary", "hp_bonus": 10, "attack_bonus": 4},
+    {"base_name": "Эхо-Лис", "min_level": 3, "min_infection_stage": 2, "infection_type": "inspiration", "result_name": "Эфирный Эхо-Лис", "rarity": "epic", "hp_bonus": 8, "attack_bonus": 2},
+    {"base_name": "Эхо-Лис", "min_level": 3, "min_infection_stage": 2, "infection_type": "fear", "result_name": "Сумрачный Эхо-Лис", "rarity": "epic", "hp_bonus": 10, "attack_bonus": 1},
+    {"base_name_contains": "Клык", "min_level": 4, "min_infection_stage": 3, "infection_type": "rage", "result_name": "Багровый Клык", "rarity": "legendary", "hp_bonus": 12, "attack_bonus": 3},
+    {"base_name_contains": "Следопыт", "min_level": 4, "min_infection_stage": 3, "infection_type": "instinct", "result_name": "Кровавый Альфа-Следопыт", "rarity": "legendary", "hp_bonus": 10, "attack_bonus": 4},
 ]
 
 def _matches(monster: dict, recipe: dict) -> bool:
@@ -21,6 +21,8 @@ def _matches(monster: dict, recipe: dict) -> bool:
     if monster.get("level", 1) < recipe["min_level"]:
         return False
     if monster.get("infection_type") != recipe["infection_type"]:
+        return False
+    if monster.get("infection_stage", 0) < recipe.get("min_infection_stage", 1):
         return False
     if "base_name" in recipe and monster.get("name") != recipe["base_name"]:
         return False
