@@ -120,20 +120,8 @@ DISTRICT_POOLS = {
     },
 }
 
-RARITY_LABELS = {
-    "common": "Обычный",
-    "rare": "Редкий",
-    "epic": "Эпический",
-    "legendary": "Легендарный",
-    "mythic": "Мифический",
-}
-
-MOOD_LABELS = {
-    "rage": "🔥 Ярость",
-    "fear": "😱 Страх",
-    "instinct": "🎯 Инстинкт",
-    "inspiration": "✨ Вдохновение",
-}
+RARITY_LABELS = {"common": "Обычный", "rare": "Редкий", "epic": "Эпический", "legendary": "Легендарный", "mythic": "Мифический"}
+MOOD_LABELS = {"rage": "🔥 Ярость", "fear": "😱 Страх", "instinct": "🎯 Инстинкт", "inspiration": "✨ Вдохновение"}
 
 RARITY_STATS = {
     "common": {"hp": 20, "attack": 5, "capture": 0.72, "gold": 5, "exp": 4},
@@ -157,18 +145,10 @@ def generate_district_encounter(district_slug: str):
     pool = DISTRICT_POOLS.get(district_slug)
     if not pool:
         return {"type": "empty", "text": "В этом районе пока нет настроенных встреч."}
-
     monster = _weighted_choice(pool["monsters"])
     event = _weighted_choice(pool["events"])
-
     if random.random() < 0.18:
-        return {
-            "type": "anomaly",
-            "title": "⚠️ Эмоциональная аномалия",
-            "text": event["text"],
-            "hint": f"Эмоция района усиливается: {MOOD_LABELS.get(monster['mood'], monster['mood'])}",
-        }
-
+        return {"type": "anomaly", "title": "⚠️ Эмоциональная аномалия", "text": event["text"], "hint": f"Эмоция района усиливается: {MOOD_LABELS.get(monster['mood'], monster['mood'])}"}
     if random.random() < 0.72:
         stats = RARITY_STATS[monster["rarity"]]
         return {
@@ -183,27 +163,26 @@ def generate_district_encounter(district_slug: str):
             "max_hp": stats["hp"],
             "attack": stats["attack"],
             "capture_chance": stats["capture"],
+            "bonus_capture": 0.0,
+            "counter_multiplier": 1.0,
             "reward_gold": stats["gold"],
             "reward_exp": stats["exp"],
             "text": f"Ты встречаешь существо: {monster['name']}",
         }
-
-    return {
-        "type": "event",
-        "title": "✨ Событие района",
-        "text": event["text"],
-        "hint": "Здесь может скрываться особая эмоциональная реакция или редкая форма.",
-    }
+    return {"type": "event", "title": "✨ Событие района", "text": event["text"], "hint": "Здесь может скрываться особая эмоциональная реакция или редкая форма."}
 
 def render_encounter_text(encounter: dict):
     if encounter["type"] == "monster":
+        extra = ""
+        if encounter.get("bonus_capture", 0) > 0:
+            extra = f"\nБонус поимки: +{int(encounter['bonus_capture'] * 100)}%"
         return "\n".join([
             encounter["title"], "", encounter["text"],
             f"Редкость: {encounter['rarity_label']}",
             f"Эмоциональный след: {encounter['mood_label']}",
             f"HP: {encounter['hp']}/{encounter.get('max_hp', encounter['hp'])}",
-            f"ATK: {encounter['attack']}", "",
-            "Выбери действие: ⚔️ Атаковать / 🎯 Поймать / 🏃 Убежать",
+            f"ATK: {encounter['attack']}{extra}", "",
+            "Выбери действие: ⚔️ Атаковать / ✨ Навык / 🎯 Поймать / 🏃 Убежать",
         ])
     if encounter["type"] in {"anomaly", "event"}:
         lines = [encounter["title"], "", encounter["text"]]
@@ -222,6 +201,8 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10):
                 "text": f"⚔️ Ты наносишь {player_attack} урона и побеждаешь {encounter['monster_name']}!",
                 "gold": encounter["reward_gold"], "exp": encounter["reward_exp"]}
     enemy_attack = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
+    enemy_attack = max(0, int(enemy_attack * encounter.get("counter_multiplier", 1.0)))
+    encounter["counter_multiplier"] = 1.0
     return {"ok": True, "finished": False, "victory": False, "monster_defeated": False, "player_damage": enemy_attack,
             "text": f"⚔️ Ты наносишь {player_attack} урона.\n{encounter['monster_name']} ещё держится. Осталось HP: {encounter['hp']}/{encounter.get('max_hp', encounter['hp'])}\nВ ответ монстр атакует на {enemy_attack}."}
 
@@ -230,13 +211,15 @@ def resolve_capture(encounter: dict):
         return {"ok": False, "text": "Здесь нечего ловить."}
     base_hp = encounter.get("max_hp", encounter["hp"])
     bonus = 0.15 if encounter["hp"] <= max(1, base_hp // 2) else 0
-    chance = min(0.95, encounter["capture_chance"] + bonus)
+    chance = min(0.95, encounter["capture_chance"] + bonus + encounter.get("bonus_capture", 0.0))
     success = random.random() <= chance
     if success:
         return {"ok": True, "finished": True, "captured": True, "player_damage": 0,
                 "text": f"🎯 Ты успешно ловишь {encounter['monster_name']}!",
                 "gold": encounter["reward_gold"] // 2, "exp": encounter["reward_exp"] + 1}
     enemy_attack = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
+    enemy_attack = max(0, int(enemy_attack * encounter.get("counter_multiplier", 1.0)))
+    encounter["counter_multiplier"] = 1.0
     return {"ok": True, "finished": False, "captured": False, "player_damage": enemy_attack,
             "text": f"🎯 Попытка поимки провалилась. {encounter['monster_name']} вырывается!\nВ ответ монстр атакует на {enemy_attack}."}
 
@@ -247,5 +230,7 @@ def resolve_flee(encounter: dict):
     if success:
         return {"ok": True, "finished": True, "player_damage": 0, "text": f"🏃 Ты успешно сбегаешь от {encounter['monster_name']}."}
     enemy_attack = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
+    enemy_attack = max(0, int(enemy_attack * encounter.get("counter_multiplier", 1.0)))
+    encounter["counter_multiplier"] = 1.0
     return {"ok": True, "finished": False, "player_damage": enemy_attack,
             "text": f"🏃 Побег не удался. {encounter['monster_name']} успевает атаковать на {enemy_attack}."}
