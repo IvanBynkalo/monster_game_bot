@@ -31,9 +31,9 @@ from handlers.inventory import (
     back_to_menu_handler,
 )
 from handlers.craft import craft_handler, resources_handler, craft_item_handler, back_from_craft_handler
-from handlers.profile import profile_handler
-from handlers.healing import heal_hero_handler, rest_hero_handler
 from handlers.profile import profile_handler, restore_energy_handler
+from handlers.healing import heal_hero_handler, rest_hero_handler
+from handlers.codex import codex_handler
 from handlers.relics import relics_handler
 from handlers.progression import (
     progression_handler,
