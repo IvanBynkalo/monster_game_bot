@@ -685,3 +685,48 @@ def render_type_hint(attacker_type: str | None, defender_type: str | None) -> st
     if multiplier < 1.0:
         return "🛡 Слабо"
     return "➖ Без преимущества"
+
+def get_player_guild_quests(telegram_id: int):
+    _ensure_player_collections(telegram_id)
+    return PLAYER_GUILD_QUESTS[telegram_id]
+
+
+def progress_guild_quests(
+    telegram_id: int,
+    action_type: str,
+    guild_key: str | None = None,
+    amount: int = 1,
+):
+    """
+    Универсальное продвижение гильдейских квестов.
+
+    Поддерживает мягкую совместимость:
+    - если хендлер передаёт только action_type -> тоже работает
+    - если у квеста нет guild_key / action_type / target_type -> не падаем
+    """
+    quests = get_player_guild_quests(telegram_id)
+    completed_now = []
+
+    for quest_id, quest in quests.items():
+        if quest.get("completed"):
+            continue
+
+        quest_action_type = quest.get("target_type") or quest.get("action_type")
+        quest_guild_key = quest.get("guild_key") or quest.get("guild")
+
+        if quest_action_type and quest_action_type != action_type:
+            continue
+
+        if guild_key and quest_guild_key and quest_guild_key != guild_key:
+            continue
+
+        current_progress = quest.get("progress", 0)
+        target_value = quest.get("target_value", quest.get("count", 1))
+
+        quest["progress"] = current_progress + amount
+
+        if quest["progress"] >= target_value:
+            quest["completed"] = True
+            completed_now.append((quest_id, quest))
+
+    return completed_now
