@@ -641,3 +641,47 @@ def get_damage_multiplier(attacker_type=None, defender_type=None):
     }
 
     return multipliers.get((attacker_type, defender_type), 1.0)
+
+def get_damage_multiplier(attacker_type: str | None, defender_type: str | None) -> float:
+    """
+    Базовая таблица эффективности типов для MVP.
+    Если пара не описана — обычный урон 1.0
+    """
+    if not attacker_type or not defender_type:
+        return 1.0
+
+    chart = {
+        ("flame", "nature"): 1.5,
+        ("nature", "storm"): 1.25,
+        ("storm", "shadow"): 1.25,
+        ("shadow", "spirit"): 1.25,
+        ("spirit", "bone"): 1.25,
+        ("bone", "flame"): 1.25,
+        ("echo", "void"): 1.25,
+        ("void", "echo"): 1.25,
+
+        ("nature", "flame"): 0.75,
+        ("storm", "nature"): 0.85,
+        ("shadow", "storm"): 0.85,
+        ("spirit", "shadow"): 0.85,
+        ("bone", "spirit"): 0.85,
+        ("flame", "bone"): 0.85,
+    }
+
+    return chart.get((attacker_type, defender_type), 1.0)
+
+
+def render_type_hint(attacker_type: str | None, defender_type: str | None) -> str:
+    """
+    Возвращает короткую текстовую подсказку по эффективности атаки.
+    Нужна для encounter_service, чтобы не падал импорт и чтобы игрок видел фидбек.
+    """
+    multiplier = get_damage_multiplier(attacker_type, defender_type)
+
+    if multiplier >= 1.5:
+        return "🔥 Очень эффективно"
+    if multiplier > 1.0:
+        return "⚔️ Эффективно"
+    if multiplier < 1.0:
+        return "🛡 Слабо"
+    return "➖ Без преимущества"
