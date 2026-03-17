@@ -632,3 +632,12 @@ def clear_player_injuries(telegram_id: int):
     player.is_defeated = False
     player.hp = player.max_hp
     return player
+
+def get_damage_multiplier(attacker_type=None, defender_type=None):
+    multipliers = {
+        ("fire", "nature"): 1.5,
+        ("nature", "water"): 1.5,
+        ("water", "fire"): 1.5,
+    }
+
+    return multipliers.get((attacker_type, defender_type), 1.0)
