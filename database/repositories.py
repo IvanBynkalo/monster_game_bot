@@ -730,3 +730,41 @@ def progress_guild_quests(
             completed_now.append((quest_id, quest))
 
     return completed_now
+
+def progress_extra_quests(
+    telegram_id: int,
+    action_type: str,
+    amount: int = 1,
+):
+    """
+    Прогресс дополнительных (extra) квестов.
+    Безопасная версия — не ломает игру, даже если структура квестов разная.
+    """
+
+    # если таких квестов нет — просто ничего не делаем
+    extra_quests = PLAYER_EXTRA_QUESTS.get(telegram_id)
+
+    if not extra_quests:
+        return []
+
+    completed_now = []
+
+    for quest_id, quest in extra_quests.items():
+        if quest.get("completed"):
+            continue
+
+        quest_action = quest.get("target_type") or quest.get("action_type")
+
+        if quest_action and quest_action != action_type:
+            continue
+
+        current = quest.get("progress", 0)
+        target = quest.get("target_value", quest.get("count", 1))
+
+        quest["progress"] = current + amount
+
+        if quest["progress"] >= target:
+            quest["completed"] = True
+            completed_now.append((quest_id, quest))
+
+    return completed_now
