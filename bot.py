@@ -219,14 +219,17 @@ dp.message.register(rest_hero_handler, text_is("Отдых героя", "😴 О
 dp.message.register(move_handler, text_startswith("Перейти:", "🚶 "))
 dp.message.register(district_move_handler, text_startswith("Район:", "🧭→ "))
 
-dp.message.register(boss_attack_handler, text_is("Атаковать", "⚔️ Атаковать"))
+# Обычный бой с монстром
 dp.message.register(attack_handler, text_is("Атаковать", "⚔️ Атаковать"))
 dp.message.register(skill_handler, text_is("Навык", "✨ Навык"))
 dp.message.register(capture_handler, text_is("Поймать", "🎯 Поймать"))
 dp.message.register(trap_handler, text_is("🪤 Простая ловушка", "🪤 Ловушка", "Ловушка"))
 dp.message.register(poison_trap_handler, text_is("🪤 Ядовитая ловушка", "Ядовитая ловушка"))
-dp.message.register(boss_flee_handler, text_is("Убежать", "🏃 Убежать"))
 dp.message.register(flee_handler, text_is("Убежать", "🏃 Убежать"))
+
+# Бой с мировым боссом — отдельные кнопки, чтобы не было конфликта
+dp.message.register(boss_attack_handler, text_is("Атаковать босса", "⚔️ Атаковать босса"))
+dp.message.register(boss_flee_handler, text_is("Убежать от босса", "🏃 Убежать от босса"))
 
 dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
 dp.message.register(
