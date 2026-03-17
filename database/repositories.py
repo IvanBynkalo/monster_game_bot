@@ -199,3 +199,16 @@ def add_resource(telegram_id, resource, amount=1):
         res[resource] = 0
 
     res[resource] += amount
+
+def add_resource(telegram_id, resource, amount=1):
+
+    res = get_player_resources(telegram_id)
+
+    if resource not in res:
+        res[resource] = 0
+
+    res[resource] += amount
+
+
+def get_or_create_player(telegram_id):
+    return get_player(telegram_id)
