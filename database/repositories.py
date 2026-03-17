@@ -768,3 +768,39 @@ def progress_extra_quests(
             completed_now.append((quest_id, quest))
 
     return completed_now
+    def progress_board_quests(
+    telegram_id: int,
+    action_type: str,
+    amount: int = 1,
+):
+    """
+    Прогресс квестов доски (городских заказов).
+    Безопасная версия — не ломает игру даже при разной структуре.
+    """
+
+    board_quests = PLAYER_BOARD_QUESTS.get(telegram_id)
+
+    if not board_quests:
+        return []
+
+    completed_now = []
+
+    for quest_id, quest in board_quests.items():
+        if quest.get("completed"):
+            continue
+
+        quest_action = quest.get("target_type") or quest.get("action_type")
+
+        if quest_action and quest_action != action_type:
+            continue
+
+        current = quest.get("progress", 0)
+        target = quest.get("target_value", quest.get("count", 1))
+
+        quest["progress"] = current + amount
+
+        if quest["progress"] >= target:
+            quest["completed"] = True
+            completed_now.append((quest_id, quest))
+
+    return completed_now
