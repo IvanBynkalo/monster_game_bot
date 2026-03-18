@@ -1,11 +1,12 @@
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from database.repositories import get_player, update_player_district
+
+from database.repositories import get_player, update_player_district, set_ui_screen
 from game.district_service import (
     get_district_move_commands,
     get_districts_for_location,
     render_district_card,
 )
-from keyboards.city_menu import district_actions_menu
+from keyboards.city_menu import city_menu, district_actions_menu
 from keyboards.main_menu import main_menu
 
 
@@ -56,7 +57,7 @@ def district_menu(location_slug: str) -> ReplyKeyboardMarkup:
     if current_row:
         rows.append(current_row)
 
-    rows.append([KeyboardButton(text="⬅️ Назад")])
+    rows.append([KeyboardButton(text="⬅️ Назад в город")])
 
     return ReplyKeyboardMarkup(
         keyboard=rows,
@@ -77,6 +78,7 @@ async def district_handler(message: Message):
         )
         return
 
+    set_ui_screen(message.from_user.id, "district_select")
     await message.answer(
         render_district_card(player.location_slug, player.current_district_slug),
         reply_markup=district_menu(player.location_slug),
@@ -89,10 +91,11 @@ async def district_move_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
 
-    if (message.text or "").strip() == "⬅️ Назад":
+    if (message.text or "").strip() == "⬅️ Назад в город":
+        set_ui_screen(message.from_user.id, "city")
         await message.answer(
-            "Городское меню",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
+            "🏙 Городское меню",
+            reply_markup=city_menu(),
         )
         return
 
@@ -126,6 +129,7 @@ async def district_move_handler(message: Message):
     new_slug = target["slug"]
 
     update_player_district(message.from_user.id, new_slug)
+    set_ui_screen(message.from_user.id, "district")
 
     transition_text = _district_transition_text(old_slug, new_slug)
     district_card = render_district_card(player.location_slug, new_slug)
