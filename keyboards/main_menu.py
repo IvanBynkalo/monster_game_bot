@@ -1,11 +1,18 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+from game.location_rules import is_city
+from keyboards.city_menu import city_menu
+
+
 def main_menu(location_slug: str):
+    if is_city(location_slug):
+        return city_menu()
+
     buttons = [
         [KeyboardButton(text="🧭 Профиль"), KeyboardButton(text="🐲 Мои монстры")],
-        [KeyboardButton(text="🌲 Исследовать"), KeyboardButton(text="🔥 Элитная экспедиция")],
-        [KeyboardButton(text="🕳 Подземелье"), KeyboardButton(text="📜 Квесты")],
-        [KeyboardButton(text="🧾 Сюжет"), KeyboardButton(text="📂 Ещё")],
+        [KeyboardButton(text="🌲 Исследовать"), KeyboardButton(text="🕳 Подземелье")],
+        [KeyboardButton(text="📜 Квесты"), KeyboardButton(text="🧾 Сюжет")],
+        [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="📂 Ещё")],
         [KeyboardButton(text="🩹 Лечить героя"), KeyboardButton(text="😴 Отдых героя")],
         [KeyboardButton(text="🧭 Перемещение")],
     ]
