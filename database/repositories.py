@@ -578,22 +578,76 @@ def update_story_progress(telegram_id: int, action_type: str, current_location_s
 def get_player_quests(telegram_id: int):
     _ensure_player_collections(telegram_id)
     quests = PLAYER_QUESTS[telegram_id]
+
     for key, value in STARTER_QUESTS.items():
         if key not in quests:
-            quests[key] = {"progress": 0, "completed": False, **value}
+            quests[key] = {
+                "progress": 0,
+                "completed": False,
+                "active": False,
+                "source": "starter",
+                **value,
+            }
+
+    # Активируем только первый незавершённый стартовый квест
+    active_found = False
+    for quest_id in STARTER_QUEST_CHAIN:
+        quest = quests[quest_id]
+
+        if quest.get("completed"):
+            quest["active"] = False
+            continue
+
+        if not active_found:
+            quest["active"] = True
+            active_found = True
+        else:
+            quest["active"] = False
+
     return quests
+
+def get_active_player_quests(telegram_id: int):
+    quests = get_player_quests(telegram_id)
+    active = {}
+
+    for quest_id, quest in quests.items():
+        if quest.get("active") and not quest.get("completed"):
+            active[quest_id] = quest
+
+    return active
 
 
 def progress_quests(telegram_id: int, action_type: str):
     quests = get_player_quests(telegram_id)
     completed_now = []
-    for quest_id, quest in quests.items():
-        if quest["completed"] or quest["target_type"] != action_type:
+
+    for quest_id in STARTER_QUEST_CHAIN:
+        quest = quests[quest_id]
+
+        if quest.get("completed"):
             continue
+        if not quest.get("active"):
+            continue
+        if quest["target_type"] != action_type:
+            continue
+
         quest["progress"] += 1
+
         if quest["progress"] >= quest["target_value"]:
             quest["completed"] = True
+            quest["active"] = False
             completed_now.append((quest_id, quest))
+
+            # сразу открываем следующий квест в цепочке
+            current_index = STARTER_QUEST_CHAIN.index(quest_id)
+            if current_index + 1 < len(STARTER_QUEST_CHAIN):
+                next_quest_id = STARTER_QUEST_CHAIN[current_index + 1]
+                if not quests[next_quest_id].get("completed"):
+                    quests[next_quest_id]["active"] = True
+
+        # только один активный стартовый квест обрабатываем за раз
+        break
+
     return completed_now
 
 
