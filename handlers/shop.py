@@ -195,10 +195,9 @@ async def sell_resource_item_handler(message: Message):
         await message.answer("У тебя нет этого ресурса.", reply_markup=shop_menu())
         return
     spend_resource(message.from_user.id, slug, 1)
-    gold = get_resource_sell_price(slug, merchant_level=player.merchant_level, amount=1)
+       gold = get_resource_sell_price(slug, merchant_level=player.merchant_level, amount=1)
     player.gold += gold
-    if player.merchant_level < 5:
-        player.merchant_level += 1
+    profession_gain = improve_profession_from_action(message.from_user.id, "merchant", 1)
     extras = []
     for quest in progress_board_quests(message.from_user.id, "sell_resource", slug, 1):
         add_player_gold(message.from_user.id, quest["reward_gold"])
@@ -208,7 +207,16 @@ async def sell_resource_item_handler(message: Message):
         add_player_gold(message.from_user.id, quest["reward_gold"])
         add_player_experience(message.from_user.id, quest["reward_exp"])
         extras.append(f"📜 Квест выполнен: {quest['title']}\n💰 Награда: +{quest['reward_gold']} золота\n✨ Награда: +{quest['reward_exp']} опыта")
-    text = f"💰 Продажа успешна. Получено: {gold} золота\nТеперь золота: {player.gold}\n💼 Торговец: {player.merchant_level}"
+        profession_text = ""
+    if profession_gain:
+        if profession_gain.get("is_max_level"):
+            profession_text = "\n💼 Торговец: максимальный уровень."
+        elif profession_gain.get("leveled_up"):
+            profession_text = f"\n🎉 💼 Торговец повышен до {profession_gain['level_after']} уровня!"
+        else:
+            profession_text = f"\n💼 Торговец: +{profession_gain['gained_exp']} опыта ({profession_gain['exp_after']}/{profession_gain['exp_to_next']})"
+
+    text = f"💰 Продажа успешна. Получено: {gold} золота\nТеперь золота: {player.gold}{profession_text}"
     if extras:
         text += "\n\n" + "\n\n".join(extras)
     set_ui_screen(message.from_user.id, "sell_shop")
