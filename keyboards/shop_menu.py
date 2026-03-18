@@ -1,17 +1,6 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
-def shop_menu():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🧪 Магазин предметов"), KeyboardButton(text="🐲 Магазин монстров")],
-            [KeyboardButton(text="🎒 Сумки"), KeyboardButton(text="💰 Продать ресурсы")],
-            [KeyboardButton(text="⬅️ Назад в район")],
-        ],
-        resize_keyboard=True,
-    )
-
-
 def item_shop_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -69,8 +58,10 @@ def sell_menu(resources: dict):
         "dark_resin": "🕯 Тёмная смола",
         "ghost_reed": "🎐 Призрачный камыш",
     }
+
     for slug, qty in resources.items():
         if qty > 0:
             keyboard.append([KeyboardButton(text=f"💰 Продать: {labels.get(slug, slug)}")])
+
     keyboard.append([KeyboardButton(text="⬅️ Назад в район")])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
