@@ -18,6 +18,8 @@ PLAYER_GUILD_QUESTS = {}
 MARKET_ITEMS = {}
 MARKET_MONSTERS = {}
 NEXT_MONSTER_ID = 1
+PLAYER_UI = {}
+PLAYER_UI = {}
 
 DEFAULT_EMOTIONS = {"rage": 0, "fear": 0, "instinct": 0, "inspiration": 0}
 
@@ -344,6 +346,28 @@ def purchase_market_monster(telegram_id: int, monster_slug: str):
     return price
 
 
+def _default_ui_state():
+    return {
+        "screen": "main",
+        "context": {},
+    }
+
+
+def get_ui_state(telegram_id: int):
+    return PLAYER_UI.setdefault(telegram_id, _default_ui_state())
+
+
+def set_ui_screen(telegram_id: int, screen: str, **context):
+    state = get_ui_state(telegram_id)
+    state["screen"] = screen
+    state["context"] = context
+    return state
+
+
+def get_ui_screen(telegram_id: int) -> str:
+    return get_ui_state(telegram_id).get("screen", "main")
+
+
 def get_player(telegram_id: int):
     player = PLAYERS.get(telegram_id)
     if player:
@@ -394,6 +418,7 @@ def create_player(telegram_id: int, name: str):
     player = Player(telegram_id=telegram_id, name=name)
     PLAYERS[telegram_id] = player
     _ensure_player_collections(telegram_id)
+    get_ui_state(telegram_id)
     return player
 
 
@@ -415,6 +440,7 @@ def reset_player_state(telegram_id: int, name: str = "Игрок"):
     PLAYER_CODEX[telegram_id] = set()
     PLAYER_RELICS[telegram_id] = []
     PENDING_ENCOUNTERS.pop(telegram_id, None)
+    set_ui_screen(telegram_id, "main")
     return PLAYERS[telegram_id]
 
 
