@@ -98,6 +98,18 @@ STARTER_QUESTS = {
     },
 }
 
+STARTER_QUEST_CHAIN = [
+    "first_steps",
+    "first_hunt",
+    "collector",
+    "veteran_scout",
+    "field_hunter",
+    "fields_explorer",
+    "hills_miner",
+    "marsh_survivor",
+    "monster_research",
+]
+
 STORY_QUESTS = [
     {
         "id": "forest_echo",
