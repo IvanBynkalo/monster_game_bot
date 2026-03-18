@@ -1,4 +1,4 @@
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from database.repositories import get_player, update_player_district
 from game.district_service import (
     get_district_move_commands,
@@ -40,6 +40,29 @@ def _district_transition_text(from_slug: str | None, to_slug: str) -> str:
     return transitions.get((from_slug, to_slug), "🧭 Ты переходишь в другой район города.")
 
 
+def district_menu(location_slug: str) -> ReplyKeyboardMarkup:
+    commands = get_district_move_commands(location_slug)
+
+    rows: list[list[KeyboardButton]] = []
+    current_row: list[KeyboardButton] = []
+
+    for command in commands:
+        current_row.append(KeyboardButton(text=command))
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+
+    if current_row:
+        rows.append(current_row)
+
+    rows.append([KeyboardButton(text="⬅️ Назад")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=rows,
+        resize_keyboard=True,
+    )
+
+
 async def district_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -55,7 +78,7 @@ async def district_handler(message: Message):
 
     await message.answer(
         render_district_card(player.location_slug, player.current_district_slug),
-        reply_markup=main_menu(player.location_slug, player.current_district_slug),
+        reply_markup=district_menu(player.location_slug),
     )
 
 
@@ -76,7 +99,10 @@ async def district_move_handler(message: Message):
     available_names = set(get_district_move_commands(player.location_slug))
 
     if normalized not in available_names:
-        await message.answer("Из текущей локации в этот район перейти нельзя.")
+        await message.answer(
+            "Из текущей локации в этот район перейти нельзя.",
+            reply_markup=district_menu(player.location_slug),
+        )
         return
 
     district_name = normalized.replace("🧭→ ", "", 1).strip()
@@ -89,7 +115,10 @@ async def district_move_handler(message: Message):
             break
 
     if not target:
-        await message.answer("Не удалось определить район.")
+        await message.answer(
+            "Не удалось определить район.",
+            reply_markup=district_menu(player.location_slug),
+        )
         return
 
     old_slug = player.current_district_slug
@@ -102,5 +131,5 @@ async def district_move_handler(message: Message):
 
     await message.answer(
         f"{transition_text}\n\n{district_card}",
-        reply_markup=main_menu(player.location_slug, new_slug),
+        reply_markup=district_menu(player.location_slug),
     )
