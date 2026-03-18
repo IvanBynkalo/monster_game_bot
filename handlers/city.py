@@ -18,6 +18,7 @@ from keyboards.city_menu import city_menu
 from keyboards.main_menu import main_menu
 from keyboards.shop_menu import shop_menu, item_shop_menu, monster_shop_menu, bag_shop_menu, sell_menu
 from keyboards.craft_menu import craft_menu
+from utils.board_orders import get_active_board_order, set_active_board_order
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "city"
 
@@ -75,6 +76,8 @@ async def city_board_handler(message: Message):
         await message.answer("Доска заказов доступна только в городе.")
         return
 
+    active_order = get_active_board_order(message.from_user.id)
+
     text = (
         "📜 Доска заказов\n\n"
         "Заказ травника\n"
@@ -82,10 +85,24 @@ async def city_board_handler(message: Message):
         "Награда: 35 золота, 12 опыта\n\n"
         "Нужна руда для печей\n"
         "Продай 2 🔥 Угольный камень.\n"
-        "Награда: 40 золота, 14 опыта\n\n"
-        "Выбери заказ ниже."
+        "Награда: 40 золота, 14 опыта"
     )
-    await _answer_with_city_image(message, "bag_market.png", text, board_menu())
+
+    if active_order:
+        text += (
+            "\n\n"
+            "⚠️ У тебя уже есть активный городской заказ.\n"
+            "Новые заказы можно брать только после завершения текущего."
+        )
+    else:
+        text += "\n\nВыбери заказ ниже."
+
+    await _answer_with_city_image(
+        message,
+        "bag_market.png",
+        text,
+        board_menu(has_active_order=bool(active_order)),
+    )
 
 
 async def take_herbalist_order_handler(message: Message):
@@ -94,11 +111,31 @@ async def take_herbalist_order_handler(message: Message):
         await message.answer("Доска заказов доступна только в городе.")
         return
 
+    existing = get_active_board_order(message.from_user.id)
+    if existing:
+        await message.answer(
+            "⚠️ У тебя уже есть активный городской заказ.\n\n"
+            f"Текущий заказ: {existing['title']}\n"
+            f"Награда: {existing['reward_gold']} золота, {existing['reward_exp']} опыта",
+            reply_markup=board_menu(has_active_order=True),
+        )
+        return
+
+    order = {
+        "slug": "herbalist_order",
+        "title": "Заказ травника",
+        "goal": "Продать 3 🌿 Лесная трава скупщику ресурсов.",
+        "reward_gold": 35,
+        "reward_exp": 12,
+    }
+    set_active_board_order(message.from_user.id, order)
+
     await message.answer(
         "✅ Ты взял заказ: Заказ травника.\n\n"
         "Цель: продать 3 🌿 Лесная трава скупщику ресурсов.\n"
-        "После продажи прогресс обновится автоматически.",
-        reply_markup=board_menu(),
+        "Награда: 35 золота, 12 опыта\n\n"
+        "Пока этот заказ не завершён, новый взять нельзя.",
+        reply_markup=board_menu(has_active_order=True),
     )
 
 
@@ -108,12 +145,56 @@ async def take_ore_order_handler(message: Message):
         await message.answer("Доска заказов доступна только в городе.")
         return
 
+    existing = get_active_board_order(message.from_user.id)
+    if existing:
+        await message.answer(
+            "⚠️ У тебя уже есть активный городской заказ.\n\n"
+            f"Текущий заказ: {existing['title']}\n"
+            f"Награда: {existing['reward_gold']} золота, {existing['reward_exp']} опыта",
+            reply_markup=board_menu(has_active_order=True),
+        )
+        return
+
+    order = {
+        "slug": "ore_order",
+        "title": "Нужна руда для печей",
+        "goal": "Продать 2 🔥 Угольный камень.",
+        "reward_gold": 40,
+        "reward_exp": 14,
+    }
+    set_active_board_order(message.from_user.id, order)
+
     await message.answer(
         "✅ Ты взял заказ: Нужна руда для печей.\n\n"
         "Цель: продать 2 🔥 Угольный камень.\n"
-        "После продажи прогресс обновится автоматически.",
-        reply_markup=board_menu(),
+        "Награда: 40 золота, 14 опыта\n\n"
+        "Пока этот заказ не завершён, новый взять нельзя.",
+        reply_markup=board_menu(has_active_order=True),
     )
+
+
+async def my_board_orders_handler(message: Message):
+    player = get_player(message.from_user.id)
+    if not player or not is_city(player.location_slug):
+        await message.answer("Просмотр заказов доступен только в городе.")
+        return
+
+    active_order = get_active_board_order(message.from_user.id)
+    if not active_order:
+        await message.answer(
+            "📒 У тебя нет активных городских заказов.\n\n"
+            "Открой доску заказов и возьми один заказ.",
+            reply_markup=board_menu(has_active_order=False),
+        )
+        return
+
+    text = (
+        "📒 Мои заказы\n\n"
+        f"Активный заказ: {active_order['title']}\n"
+        f"Цель: {active_order['goal']}\n"
+        f"Награда: {active_order['reward_gold']} золота, {active_order['reward_exp']} опыта"
+    )
+    await message.answer(text, reply_markup=board_menu(has_active_order=True))
 
 
 async def back_to_city_from_board_handler(message: Message):
