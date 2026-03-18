@@ -1,12 +1,19 @@
 from aiogram.types import Message
 
-from database.repositories import get_player, get_player_quests
+from database.repositories import get_active_player_quests, get_player
 from keyboards.main_menu import main_menu
 
+
 def _render_quests(quests: dict):
-    lines = ["📜 Квесты игрока", ""]
+    lines = ["📜 Активные квесты", ""]
+
+    if not quests:
+        lines.append("Сейчас у тебя нет активных квестов.")
+        lines.append("Новые задания откроются по сюжету, событиям или у NPC.")
+        return "\n".join(lines)
+
     for quest_id, quest in quests.items():
-        status = "✅ Выполнен" if quest["completed"] else "🕒 В процессе"
+        status = "🕒 В процессе"
         lines.extend([
             f"{quest['title']}",
             f"{quest['description']}",
@@ -15,12 +22,19 @@ def _render_quests(quests: dict):
             f"Статус: {status}",
             "",
         ])
+
     return "\n".join(lines)
+
 
 async def quests_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start")
         return
-    quests = get_player_quests(message.from_user.id)
-    await message.answer(_render_quests(quests), reply_markup=main_menu(player.location_slug))
+
+    quests = get_active_player_quests(message.from_user.id)
+
+    await message.answer(
+        _render_quests(quests),
+        reply_markup=main_menu(player.location_slug, player.current_district_slug),
+    )
