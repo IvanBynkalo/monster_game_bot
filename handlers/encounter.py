@@ -2,7 +2,7 @@ from aiogram.types import Message
 from database.repositories import (
     add_active_monster_experience, add_captured_monster, add_player_experience, add_player_gold,
     begin_action_scope, clear_pending_encounter, damage_active_monster, get_active_monster, get_item_count, get_pending_encounter,
-    get_player, progress_guild_quests, progress_quests, save_pending_encounter, spend_item, tick_birth_cooldown, update_story_progress,
+    get_player, progress_guild_quests, progress_quests, save_pending_encounter, spend_item, tick_birth_cooldown, update_story_progress, improve_profession_from_action,
 )
 from game.district_service import get_district
 from game.emotion_birth_service import render_birth_text, try_birth_emotional_monster
@@ -273,8 +273,26 @@ async def capture_handler(message: Message):
     if result.get("finished"):
         clear_pending_encounter(message.from_user.id)
         captured = add_captured_monster(message.from_user.id, encounter["monster_name"], encounter["rarity"], encounter["mood"], max(1, encounter["hp"]), encounter["attack"])
+        rarity_xp = {
+            "common": 1,
+            "rare": 2,
+            "epic": 3,
+            "legendary": 4,
+        }
+        hunter_gain = improve_profession_from_action(
+            message.from_user.id,
+            "hunter",
+            rarity_xp.get(encounter.get("rarity"), 1),
+        )
         text = _append_progression(message.from_user.id, result["text"], result, _district_mood_from_player(player), "capture_success")
         text += f"\n\n🐲 Монстр добавлен в коллекцию: {captured['name']}\nID: {captured['id']}"
+                if hunter_gain:
+            if hunter_gain.get("is_max_level"):
+                text += "\n🎯 Ловец: максимальный уровень."
+            elif hunter_gain.get("leveled_up"):
+                text += f"\n🎉 🎯 Ловец повышен до {hunter_gain['level_after']} уровня!"
+            else:
+                text += f"\n🎯 Ловец: +{hunter_gain['gained_exp']} опыта ({hunter_gain['exp_after']}/{hunter_gain['exp_to_next']})"
         extras = _render_completed_quests(message.from_user.id, progress_quests(message.from_user.id, "capture"))
         guild_done = progress_guild_quests(message.from_user.id, "capture", 1)
         if guild_done:
