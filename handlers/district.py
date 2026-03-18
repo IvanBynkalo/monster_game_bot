@@ -1,8 +1,11 @@
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from database.repositories import get_player, set_ui_screen, update_player_district
-from game.district_service import get_district_move_commands, get_districts_for_location, render_district_card
-from game.location_rules import is_city
-from keyboards.city_menu import city_menu
+from database.repositories import get_player, update_player_district
+from game.district_service import (
+    get_district_move_commands,
+    get_districts_for_location,
+    render_district_card,
+)
+from keyboards.city_menu import district_actions_menu
 from keyboards.main_menu import main_menu
 
 
@@ -18,34 +21,47 @@ def _district_transition_text(from_slug: str | None, to_slug: str) -> str:
         ("market_square", "craft_quarter"): "🧭 Ты проходишь мимо торговых рядов и сворачиваешь в ремесленный квартал.",
         ("market_square", "guild_quarter"): "🧭 Ты уходишь с шумной площади к залам городских гильдий.",
         ("market_square", "main_gate"): "🧭 Ты покидаешь центр города и направляешься к главным воротам.",
+
         ("craft_quarter", "market_square"): "🧭 Ты выходишь из ремесленного квартала обратно на рыночную площадь.",
         ("craft_quarter", "guild_quarter"): "🧭 Оставив запах зелий и металла позади, ты идёшь к кварталу гильдий.",
         ("craft_quarter", "main_gate"): "🧭 Ты проходишь через городские улицы к главным воротам.",
+
         ("guild_quarter", "market_square"): "🧭 Ты покидаешь квартал гильдий и возвращаешься на рыночную площадь.",
         ("guild_quarter", "craft_quarter"): "🧭 От залов гильдий ты переходишь к мастерским и алхимическим лавкам.",
         ("guild_quarter", "main_gate"): "🧭 Ты идёшь от квартала гильдий в сторону главных ворот.",
+
         ("main_gate", "market_square"): "🧭 От городских ворот ты возвращаешься в оживлённый центр Сереброграда.",
         ("main_gate", "craft_quarter"): "🧭 От ворот ты сворачиваешь к мастерским ремесленного квартала.",
         ("main_gate", "guild_quarter"): "🧭 Оставив стражу позади, ты направляешься к кварталу гильдий.",
     }
+
     if from_slug == to_slug:
         return "🧭 Ты остаёшься в этом районе."
+
     return transitions.get((from_slug, to_slug), "🧭 Ты переходишь в другой район города.")
 
 
 def district_menu(location_slug: str) -> ReplyKeyboardMarkup:
     commands = get_district_move_commands(location_slug)
+
     rows: list[list[KeyboardButton]] = []
     current_row: list[KeyboardButton] = []
+
     for command in commands:
         current_row.append(KeyboardButton(text=command))
         if len(current_row) == 2:
             rows.append(current_row)
             current_row = []
+
     if current_row:
         rows.append(current_row)
+
     rows.append([KeyboardButton(text="⬅️ Назад")])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+    return ReplyKeyboardMarkup(
+        keyboard=rows,
+        resize_keyboard=True,
+    )
 
 
 async def district_handler(message: Message):
@@ -55,11 +71,16 @@ async def district_handler(message: Message):
         return
 
     if not player.current_district_slug:
-        await message.answer("В этой локации пока нет доступных районов.", reply_markup=main_menu(player.location_slug, None))
+        await message.answer(
+            "В этой локации пока нет доступных районов.",
+            reply_markup=main_menu(player.location_slug, None),
+        )
         return
 
-    set_ui_screen(message.from_user.id, "district")
-    await message.answer(render_district_card(player.location_slug, player.current_district_slug), reply_markup=district_menu(player.location_slug))
+    await message.answer(
+        render_district_card(player.location_slug, player.current_district_slug),
+        reply_markup=district_menu(player.location_slug),
+    )
 
 
 async def district_move_handler(message: Message):
@@ -69,30 +90,47 @@ async def district_move_handler(message: Message):
         return
 
     if (message.text or "").strip() == "⬅️ Назад":
-        set_ui_screen(message.from_user.id, "main")
-        if is_city(player.location_slug):
-            await message.answer("Главное меню города", reply_markup=city_menu(player.current_district_slug))
-        else:
-            await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))
+        await message.answer(
+            "Городское меню",
+            reply_markup=main_menu(player.location_slug, player.current_district_slug),
+        )
         return
 
     normalized = _normalize_district_text(message.text)
     available_names = set(get_district_move_commands(player.location_slug))
+
     if normalized not in available_names:
-        await message.answer("Из текущей локации в этот район перейти нельзя.", reply_markup=district_menu(player.location_slug))
+        await message.answer(
+            "Из текущей локации в этот район перейти нельзя.",
+            reply_markup=district_menu(player.location_slug),
+        )
         return
 
     district_name = normalized.replace("🧭→ ", "", 1).strip()
-    target = next((d for d in get_districts_for_location(player.location_slug) if d["name"] == district_name), None)
+    districts = get_districts_for_location(player.location_slug)
+
+    target = None
+    for district in districts:
+        if district["name"] == district_name:
+            target = district
+            break
+
     if not target:
-        await message.answer("Не удалось определить район.", reply_markup=district_menu(player.location_slug))
+        await message.answer(
+            "Не удалось определить район.",
+            reply_markup=district_menu(player.location_slug),
+        )
         return
 
     old_slug = player.current_district_slug
     new_slug = target["slug"]
+
     update_player_district(message.from_user.id, new_slug)
-    set_ui_screen(message.from_user.id, "district")
 
     transition_text = _district_transition_text(old_slug, new_slug)
     district_card = render_district_card(player.location_slug, new_slug)
-    await message.answer(f"{transition_text}\n\n{district_card}", reply_markup=district_menu(player.location_slug))
+
+    await message.answer(
+        f"{transition_text}\n\n{district_card}",
+        reply_markup=district_actions_menu(new_slug),
+    )
