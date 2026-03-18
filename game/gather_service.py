@@ -1,4 +1,5 @@
 import random
+
 from database.repositories import add_resource, get_resources_count_total, improve_profession_from_action
 
 RESOURCES_BY_LOCATION = {
@@ -34,10 +35,60 @@ RESOURCES_BY_LOCATION = {
     ],
 }
 
+LOCATION_TITLES = {
+    "dark_forest": "🌲 Тёмный лес",
+    "shadow_swamp": "🪷 Теневое болото",
+    "volcano_wrath": "🌋 Гнев вулкана",
+    "emerald_fields": "🌾 Изумрудные поля",
+    "stone_hills": "⛰ Каменные холмы",
+    "shadow_marsh": "🌫 Мрачные топи",
+}
+
+
+def get_gatherable_resources(location_slug: str) -> list[dict]:
+    return RESOURCES_BY_LOCATION.get(location_slug, [])
+
+
+def get_location_title(location_slug: str) -> str:
+    return LOCATION_TITLES.get(location_slug, location_slug)
+
+
+def render_gather_hint(location_slug: str) -> str:
+    pool = get_gatherable_resources(location_slug)
+    if not pool:
+        return "В этой местности собирать нечего."
+
+    common = [item["name"] for item in pool if not item["rare"]]
+    rare = [item["name"] for item in pool if item["rare"]]
+
+    lines = [
+        f"🧺 Сбор ресурсов: {get_location_title(location_slug)}",
+        "",
+        "Можно найти:",
+    ]
+    for name in common:
+        lines.append(f"— {name}")
+
+    if rare:
+        lines.append("")
+        lines.append("Редкие находки:")
+        for name in rare:
+            lines.append(f"— {name}")
+
+    lines.append("")
+    lines.append("Чем выше профильная специализация, тем лучше добыча.")
+    return "\n".join(lines)
+
+
 def gather_resource(player, location_slug):
     current_total = get_resources_count_total(player.telegram_id)
     if current_total >= player.bag_capacity:
-        return {"error": f"Сумка заполнена: {current_total}/{player.bag_capacity}. Освободи место или купи новую сумку в городе."}
+        return {
+            "error": (
+                f"🎒 Сумка заполнена: {current_total}/{player.bag_capacity}.\n"
+                "Освободи место, продай ресурсы в городе или купи сумку побольше."
+            )
+        }
 
     pool = RESOURCES_BY_LOCATION.get(location_slug, [])
     if not pool:
@@ -80,4 +131,7 @@ def gather_resource(player, location_slug):
         "amount": amount,
         "rare": picked["rare"],
         "kind": picked["kind"],
+        "location_title": get_location_title(location_slug),
+        "bag_total_after": current_total + amount,
+        "bag_capacity": player.bag_capacity,
     }
