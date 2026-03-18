@@ -1,23 +1,52 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
-def city_menu(district_slug: str | None = None):
+def city_menu():
     keyboard = [
         [KeyboardButton(text="🏬 Торговый квартал"), KeyboardButton(text="📜 Доска заказов")],
         [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="🧭 Профиль")],
         [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="📈 Развитие")],
+        [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
+    ]
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+    )
+
+
+def district_actions_menu(district_slug: str):
+    keyboard = [
+        [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
     ]
 
     if district_slug == "market_square":
-        keyboard.append([KeyboardButton(text="🎒 Лавка сумок"), KeyboardButton(text="🐲 Рынок монстров")])
-        keyboard.append([KeyboardButton(text="💰 Скупщик ресурсов")])
-    elif district_slug == "craft_quarter":
-        keyboard.append([KeyboardButton(text="⚗ Алхимическая лаборатория"), KeyboardButton(text="🪤 Мастер ловушек")])
-    elif district_slug == "guild_quarter":
-        keyboard.append([KeyboardButton(text="🎯 Гильдия ловцов"), KeyboardButton(text="🌿 Гильдия собирателей")])
-        keyboard.append([KeyboardButton(text="⛏ Гильдия геологов"), KeyboardButton(text="⚗ Гильдия алхимиков")])
-    elif district_slug == "main_gate":
-        keyboard.append([KeyboardButton(text="🛡 Городская стража"), KeyboardButton(text="🚶 Покинуть город")])
+        keyboard = [
+            [KeyboardButton(text="🎒 Лавка сумок"), KeyboardButton(text="🐲 Рынок монстров")],
+            [KeyboardButton(text="💰 Скупщик ресурсов")],
+            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
+        ]
 
-    keyboard.append([KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+    elif district_slug == "craft_quarter":
+        keyboard = [
+            [KeyboardButton(text="⚗ Алхимическая лаборатория"), KeyboardButton(text="🪤 Мастер ловушек")],
+            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
+        ]
+
+    elif district_slug == "guild_quarter":
+        keyboard = [
+            [KeyboardButton(text="🎯 Гильдия ловцов"), KeyboardButton(text="🌿 Гильдия собирателей")],
+            [KeyboardButton(text="⛏ Гильдия геологов"), KeyboardButton(text="⚗ Гильдия алхимиков")],
+            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
+        ]
+
+    elif district_slug == "main_gate":
+        keyboard = [
+            [KeyboardButton(text="🛡 Городская стража"), KeyboardButton(text="🚶 Покинуть город")],
+            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
+        ]
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+    )
