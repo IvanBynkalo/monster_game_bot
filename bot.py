@@ -73,6 +73,7 @@ from handlers.city import (
     city_traps_handler,
     take_herbalist_order_handler,
     take_ore_order_handler,
+    my_board_orders_handler,
     back_to_city_from_board_handler,
 )
 from handlers.admin import (
@@ -204,6 +205,7 @@ dp.message.register(city_monsters_handler, text_is("🐲 Рынок монстр
 dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов"))
 dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов"))
 dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
+dp.message.register(my_board_orders_handler, text_is("📒 Мои заказы"))
 dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
 dp.message.register(back_to_city_from_board_handler, text_is("⬅️ Назад в город"))
 dp.message.register(city_alchemy_handler, text_is("⚗ Алхимическая лаборатория", "Алхимическая лаборатория"))
