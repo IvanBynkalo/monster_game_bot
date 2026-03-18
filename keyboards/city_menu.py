@@ -16,8 +16,8 @@ def city_menu(district_slug: str | None = None):
 
 
 def district_actions_menu(district_slug: str):
+    # дефолт
     keyboard = [
-        [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
         [KeyboardButton(text="⬅️ Назад")],
     ]
 
@@ -25,14 +25,12 @@ def district_actions_menu(district_slug: str):
         keyboard = [
             [KeyboardButton(text="🎒 Лавка сумок"), KeyboardButton(text="🐲 Рынок монстров")],
             [KeyboardButton(text="💰 Скупщик ресурсов")],
-            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 
     elif district_slug == "craft_quarter":
         keyboard = [
             [KeyboardButton(text="⚗ Алхимическая лаборатория"), KeyboardButton(text="🪤 Мастер ловушек")],
-            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 
@@ -40,14 +38,12 @@ def district_actions_menu(district_slug: str):
         keyboard = [
             [KeyboardButton(text="🎯 Гильдия ловцов"), KeyboardButton(text="🌿 Гильдия собирателей")],
             [KeyboardButton(text="⛏ Гильдия геологов"), KeyboardButton(text="⚗ Гильдия алхимиков")],
-            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 
     elif district_slug == "main_gate":
         keyboard = [
             [KeyboardButton(text="🛡 Городская стража"), KeyboardButton(text="🚶 Покинуть город")],
-            [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 
