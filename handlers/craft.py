@@ -64,7 +64,6 @@ async def resources_handler(message: Message):
         reply_markup=craft_menu(player, resources),
     )
 
-
 async def craft_item_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -133,7 +132,7 @@ async def craft_item_handler(message: Message):
         amount += 1
         bonus_text = "\n⚗ Благодаря навыкам алхимика удалось создать дополнительный экземпляр."
 
-        add_item(message.from_user.id, recipe["result_item"], amount)
+    add_item(message.from_user.id, recipe["result_item"], amount)
     profession_gain = improve_profession_from_action(message.from_user.id, "alchemist", 2)
 
     extras = []
@@ -160,16 +159,23 @@ async def craft_item_handler(message: Message):
     updated_resources = get_resources(message.from_user.id)
     set_ui_screen(message.from_user.id, "craft")
 
-        profession_text = ""
+    profession_text = ""
     if profession_gain:
         if profession_gain.get("is_max_level"):
             profession_text = "\n⚗ Алхимик: максимальный уровень."
         elif profession_gain.get("leveled_up"):
             profession_text = f"\n🎉 ⚗ Алхимик повышен до {profession_gain['level_after']} уровня!"
         else:
-            profession_text = f"\n⚗ Алхимик: +{profession_gain['gained_exp']} опыта ({profession_gain['exp_after']}/{profession_gain['exp_to_next']})"
+            profession_text = (
+                f"\n⚗ Алхимик: +{profession_gain['gained_exp']} опыта "
+                f"({profession_gain['exp_after']}/{profession_gain['exp_to_next']})"
+            )
 
-    text = f"{recipe['emoji']} Создан предмет: {recipe['name']} x{amount}" + bonus_text + profession_text
+    text = (
+        f"{recipe['emoji']} Создан предмет: {recipe['name']} x{amount}"
+        f"{bonus_text}"
+        f"{profession_text}"
+    )
 
     if extras:
         text += "\n\n" + "\n\n".join(extras)
