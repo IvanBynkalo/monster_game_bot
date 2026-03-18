@@ -4,9 +4,9 @@ from game.location_rules import is_city
 from keyboards.city_menu import city_menu
 
 
-def main_menu(location_slug: str):
+def main_menu(location_slug: str, district_slug: str | None = None):
     if is_city(location_slug):
-        return city_menu()
+        return city_menu(district_slug)
 
     buttons = [
         [KeyboardButton(text="🧭 Профиль"), KeyboardButton(text="🐲 Мои монстры")],
