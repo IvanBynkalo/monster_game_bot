@@ -1,14 +1,23 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+from game.market_service import (
+    BAG_OFFERS,
+    make_buy_button_text,
+    make_sell_button_text,
+)
+
+
 def shop_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🧪 Магазин предметов"), KeyboardButton(text="🐲 Магазин монстров")],
             [KeyboardButton(text="🎒 Сумки"), KeyboardButton(text="💰 Продать ресурсы")],
+            [KeyboardButton(text="🛒 Купить ресурсы")],
             [KeyboardButton(text="⬅️ Назад")],
         ],
         resize_keyboard=True,
     )
+
 
 def item_shop_menu():
     return ReplyKeyboardMarkup(
@@ -19,6 +28,7 @@ def item_shop_menu():
         ],
         resize_keyboard=True,
     )
+
 
 def monster_shop_menu():
     return ReplyKeyboardMarkup(
@@ -31,41 +41,68 @@ def monster_shop_menu():
         resize_keyboard=True,
     )
 
+
 def bag_shop_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🛒 Купить сумку: Поясная сумка")],
-            [KeyboardButton(text="🛒 Купить сумку: Полевой ранец")],
-            [KeyboardButton(text="🛒 Купить сумку: Экспедиционный рюкзак")],
+            [KeyboardButton(text=f"🛒 Купить сумку: {BAG_OFFERS['waist_bag']['name']} • {BAG_OFFERS['waist_bag']['price']}з")],
+            [KeyboardButton(text=f"🛒 Купить сумку: {BAG_OFFERS['field_pack']['name']} • {BAG_OFFERS['field_pack']['price']}з")],
+            [KeyboardButton(text=f"🛒 Купить сумку: {BAG_OFFERS['expedition_backpack']['name']} • {BAG_OFFERS['expedition_backpack']['price']}з")],
             [KeyboardButton(text="⬅️ Назад в магазин")],
         ],
         resize_keyboard=True,
     )
 
-def sell_menu(resources: dict):
+
+def sell_menu(city_slug: str, resources: dict, merchant_level: int):
     keyboard = []
-    labels = {
-        "forest_herb": "🌿 Лесная трава",
-        "mushroom_cap": "🍄 Шляпка гриба",
-        "silver_moss": "✨ Серебряный мох",
-        "swamp_moss": "🪴 Болотный мох",
-        "toxic_spore": "🧫 Токсичная спора",
-        "black_pearl": "⚫ Чёрная жемчужина тины",
-        "ember_stone": "🔥 Угольный камень",
-        "ash_leaf": "🍂 Пепельный лист",
-        "magma_core": "💠 Ядро магмы",
-        "field_grass": "🌾 Полевая трава",
-        "sun_blossom": "🌼 Солнечный цветок",
-        "dew_crystal": "💧 Кристалл росы",
-        "raw_ore": "⛏ Сырая руда",
-        "granite_shard": "🪨 Осколок гранита",
-        "sky_crystal": "💎 Небесный кристалл",
-        "bog_flower": "🪷 Болотный цветок",
-        "dark_resin": "🕯 Тёмная смола",
-        "ghost_reed": "🎐 Призрачный камыш",
-    }
+
     for slug, qty in resources.items():
         if qty > 0:
-            keyboard.append([KeyboardButton(text=f"💰 Продать: {labels.get(slug, slug)}")])
+            keyboard.append(
+                [
+                    KeyboardButton(
+                        text=make_sell_button_text(
+                            slug=slug,
+                            city_slug=city_slug,
+                            merchant_level=merchant_level,
+                            player_qty=qty,
+                        )
+                    )
+                ]
+            )
+
     keyboard.append([KeyboardButton(text="⬅️ Назад в магазин")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+    )
+
+
+def buy_resources_menu(city_slug: str, market: dict):
+    keyboard = []
+
+    for slug, entry in market.items():
+        stock = int(entry.get("stock", 0))
+        if stock <= 0:
+            continue
+
+        keyboard.append(
+            [
+                KeyboardButton(
+                    text=make_buy_button_text(
+                        slug=slug,
+                        city_slug=city_slug,
+                        stock=stock,
+                    )
+                )
+            ]
+        )
+
+    keyboard.append([KeyboardButton(text="⬅️ Назад в магазин")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+    )
