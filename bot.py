@@ -75,6 +75,7 @@ from handlers.city import (
     take_ore_order_handler,
     my_board_orders_handler,
     back_to_city_from_board_handler,
+    back_to_current_district_handler,
 )
 from handlers.admin import (
     admin_panel_handler,
@@ -205,6 +206,7 @@ dp.message.register(take_herbalist_order_handler, text_is("📌 Взять за�
 dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
 dp.message.register(my_board_orders_handler, text_is("📒 Мои заказы"))
 dp.message.register(back_to_city_from_board_handler, text_is("⬅️ Назад в город"))
+dp.message.register(back_to_current_district_handler, text_is("⬅️ Назад в район", "Назад в район"))
 dp.message.register(city_alchemy_handler, text_is("⚗ Алхимическая лаборатория", "Алхимическая лаборатория"))
 dp.message.register(city_traps_handler, text_is("🪤 Мастер ловушек", "Мастер ловушек"))
 dp.message.register(guild_hunters_handler, text_is("🎯 Гильдия ловцов", "Гильдия ловцов"))
