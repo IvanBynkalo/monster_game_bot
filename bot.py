@@ -21,6 +21,7 @@ from handlers.world_boss import boss_attack_handler, boss_flee_handler
 from handlers.monsters import monsters_handler, set_active_monster_handler, heal_monster_handler
 from handlers.inventory import (
     inventory_handler,
+    inventory_resources_handler,
     use_small_potion_handler,
     use_big_potion_handler,
     use_energy_capsule_handler,
@@ -155,7 +156,8 @@ dp.message.register(set_active_monster_handler, text_startswith("✅ "))
 
 dp.message.register(inventory_handler, text_is("🎒 Инвентарь", "Инвентарь"))
 dp.message.register(craft_handler, text_is("🛠 Мастерская", "Мастерская"))
-dp.message.register(resources_handler, text_is("📦 Ресурсы", "Ресурсы"))
+dp.message.register(inventory_resources_handler, text_is("📦 Ресурсы", "Ресурсы"))
+dp.message.register(resources_handler, text_is("📦 Ресурсы лаборатории", "Ресурсы лаборатории"))
 dp.message.register(use_small_potion_handler, text_is("🧪 Малое зелье", "Малое зелье"))
 dp.message.register(use_big_potion_handler, text_is("🧪 Большое зелье", "Большое зелье"))
 dp.message.register(use_energy_capsule_handler, text_is("⚡ Капсула энергии", "Капсула энергии"))
@@ -234,7 +236,7 @@ dp.message.register(restore_energy_handler, text_is("Восстановить э
 dp.message.register(heal_hero_handler, text_is("Лечить героя", "🩹 Лечить героя"))
 dp.message.register(rest_hero_handler, text_is("Отдых героя", "😴 Отдых героя"))
 
-dp.message.register(back_handler, text_is("⬅️ Назад", "Назад"))
+dp.message.register(back_from_craft_handler, text_is("⬅️ Назад", "Назад"))
 
 dp.message.register(move_handler, text_startswith("Перейти:", "🚶 "))
 dp.message.register(district_move_handler, text_startswith("Район:", "🧭→ "))
