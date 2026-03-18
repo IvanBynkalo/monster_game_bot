@@ -1,12 +1,17 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-def city_menu(district_slug: str):
-    rows = []
-    mapping = {
+
+def city_menu(district_slug: str | None = None):
+    keyboard = [
+        [KeyboardButton(text="🏪 Торговая лавка"), KeyboardButton(text="📜 Доска заказов")],
+        [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="🧭 Профиль")],
+        [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="📈 Развитие")],
+    ]
+
+    district_actions = {
         "market_square": [
-            [KeyboardButton(text="🏪 Торговая лавка"), KeyboardButton(text="🎒 Лавка сумок")],
-            [KeyboardButton(text="🐲 Рынок монстров"), KeyboardButton(text="💰 Скупщик ресурсов")],
-            [KeyboardButton(text="📜 Доска заказов")],
+            [KeyboardButton(text="🎒 Лавка сумок"), KeyboardButton(text="🐲 Рынок монстров")],
+            [KeyboardButton(text="💰 Скупщик ресурсов")],
         ],
         "craft_quarter": [
             [KeyboardButton(text="⚗ Алхимическая лаборатория"), KeyboardButton(text="🪤 Мастер ловушек")],
@@ -16,9 +21,18 @@ def city_menu(district_slug: str):
             [KeyboardButton(text="⛏ Гильдия геологов"), KeyboardButton(text="⚗ Гильдия алхимиков")],
         ],
         "main_gate": [
-            [KeyboardButton(text="🚶 Покинуть город"), KeyboardButton(text="🛡 Городская стража")],
+            [KeyboardButton(text="🛡 Городская стража"), KeyboardButton(text="🚶 Покинуть город")],
         ],
     }
-    rows.extend(mapping.get(district_slug, []))
-    rows.append([KeyboardButton(text="🧭 Район"), KeyboardButton(text="⬅️ Назад")])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+    keyboard.extend(district_actions.get(district_slug, []))
+
+    if district_slug != "main_gate":
+        keyboard.append([KeyboardButton(text="🛡 Городская стража")])
+
+    keyboard.append([KeyboardButton(text="🧭 Район"), KeyboardButton(text="⬅️ Назад")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+    )
