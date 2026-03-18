@@ -246,70 +246,134 @@ async def capture_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+
     begin_action_scope(message.from_user.id, "battle_capture")
     tick_birth_cooldown(message.from_user.id)
+
     active = get_active_monster(message.from_user.id)
     if not active:
         await message.answer("У тебя нет активного монстра.")
         return
+
     if active.get("current_hp", active.get("hp", 1)) <= 0:
         await message.answer("☠️ Активный монстр повержен. Используй ❤️ Лечить монстра.")
         return
+
     encounter = get_pending_encounter(message.from_user.id)
     if not encounter:
         await message.answer("Сейчас нет активной встречи.")
         return
-    encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + min(0.20, 0.03 * max(0, player.hunter_level - 1) + 0.02 * max(0, player.agility - 1))
+
+    encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + min(
+        0.20,
+        0.03 * max(0, player.hunter_level - 1) + 0.02 * max(0, player.agility - 1),
+    )
+
     ability_capture = get_capture_bonus(active)
     encounter["bonus_capture"] += ability_capture
+
     result = resolve_capture(encounter)
+
     if ability_capture > 0:
-        result["text"] += f"\n🎯 Способность повышает шанс поимки ещё на {int(ability_capture * 100)}%."
+        result["text"] += (
+            f"\n🎯 Способность повышает шанс поимки ещё на {int(ability_capture * 100)}%."
+        )
+
     damaged, damage_text = _apply_enemy_damage(message.from_user.id, result)
+
     if damaged and damaged["current_hp"] <= 0 and not result.get("finished"):
         clear_pending_encounter(message.from_user.id)
-        await message.answer(result["text"] + "\n\n" + damage_text + "\n\nПопытка сорвалась: твой монстр не может продолжать.", reply_markup=main_menu(player.location_slug))
+        await message.answer(
+            result["text"]
+            + "\n\n"
+            + damage_text
+            + "\n\nПопытка сорвалась: твой монстр не может продолжать.",
+            reply_markup=main_menu(player.location_slug),
+        )
         return
+
     if result.get("finished"):
         clear_pending_encounter(message.from_user.id)
-        captured = add_captured_monster(message.from_user.id, encounter["monster_name"], encounter["rarity"], encounter["mood"], max(1, encounter["hp"]), encounter["attack"])
+
+        captured = add_captured_monster(
+            message.from_user.id,
+            encounter["monster_name"],
+            encounter["rarity"],
+            encounter["mood"],
+            max(1, encounter["hp"]),
+            encounter["attack"],
+        )
+
         rarity_xp = {
             "common": 1,
             "rare": 2,
             "epic": 3,
             "legendary": 4,
         }
+
         hunter_gain = improve_profession_from_action(
             message.from_user.id,
             "hunter",
             rarity_xp.get(encounter.get("rarity"), 1),
         )
-        text = _append_progression(message.from_user.id, result["text"], result, _district_mood_from_player(player), "capture_success")
+
+        text = _append_progression(
+            message.from_user.id,
+            result["text"],
+            result,
+            _district_mood_from_player(player),
+            "capture_success",
+        )
+
         text += f"\n\n🐲 Монстр добавлен в коллекцию: {captured['name']}\nID: {captured['id']}"
 
-if hunter_gain:
-    if hunter_gain.get("is_max_level"):
-        text += "\n🎯 Ловец: максимальный уровень."
-    elif hunter_gain.get("leveled_up"):
-        text += f"\n🎉 🎯 Ловец повышен до {hunter_gain['level_after']} уровня!"
-    else:
-        text += f"\n🎯 Ловец: +{hunter_gain['gained_exp']} опыта ({hunter_gain['exp_after']}/{hunter_gain['exp_to_next']})"
-        extras = _render_completed_quests(message.from_user.id, progress_quests(message.from_user.id, "capture"))
+        if hunter_gain:
+            if hunter_gain.get("is_max_level"):
+                text += "\n🎯 Ловец: максимальный уровень."
+            elif hunter_gain.get("leveled_up"):
+                text += f"\n🎉 🎯 Ловец повышен до {hunter_gain['level_after']} уровня!"
+            else:
+                text += (
+                    f"\n🎯 Ловец: +{hunter_gain['gained_exp']} опыта "
+                    f"({hunter_gain['exp_after']}/{hunter_gain['exp_to_next']})"
+                )
+
+        extras = _render_completed_quests(
+            message.from_user.id,
+            progress_quests(message.from_user.id, "capture"),
+        )
+
         guild_done = progress_guild_quests(message.from_user.id, "capture", 1)
         if guild_done:
-            extras.extend([f"📜 Квест выполнен: {q['title']}\n💰 Награда: +{q['reward_gold']} золота\n✨ Награда: +{q['reward_exp']} опыта" for q in guild_done])
+            extras.extend(
+                [
+                    f"📜 Квест выполнен: {q['title']}\n"
+                    f"💰 Награда: +{q['reward_gold']} золота\n"
+                    f"✨ Награда: +{q['reward_exp']} опыта"
+                    for q in guild_done
+                ]
+            )
             for q in guild_done:
                 add_player_gold(message.from_user.id, q["reward_gold"])
                 add_player_experience(message.from_user.id, q["reward_exp"])
+
         if extras:
             text += "\n\n" + "\n\n".join(extras)
+
         if damage_text:
             text += "\n\n" + damage_text
-        await message.answer(text, reply_markup=main_menu(player.location_slug))
-        return
-    save_pending_encounter(message.from_user.id, encounter)
-    await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_menu())
 
+        await message.answer(
+            text,
+            reply_markup=main_menu(player.location_slug),
+        )
+        return
+
+    save_pending_encounter(message.from_user.id, encounter)
+    await message.answer(
+        result["text"] + (("\n\n" + damage_text) if damage_text else ""),
+        reply_markup=encounter_menu(),
+    )
 async def flee_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
