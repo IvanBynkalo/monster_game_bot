@@ -1,5 +1,5 @@
 from aiogram.types import Message
-from database.repositories import get_player, spend_stat_point
+from database.repositories import get_player, set_ui_screen, spend_stat_point
 from game.progression_service import render_attributes, render_professions
 from keyboards.progression_menu import progression_menu
 from keyboards.main_menu import main_menu
@@ -16,6 +16,7 @@ async def progression_handler(message: Message):
         + "🎒 Сумки больше не улучшаются напрямую. Новую сумку можно купить только в городе у продавца.\n"
         + f"Текущая вместимость сумки: {player.bag_capacity}"
     )
+    set_ui_screen(message.from_user.id, "progression")
     await message.answer(text, reply_markup=progression_menu())
 
 async def add_strength_handler(message: Message):
@@ -35,6 +36,7 @@ async def _spend_stat(message: Message, stat_name: str, title: str):
     if not spend_stat_point(message.from_user.id, stat_name):
         await message.answer("Нет свободных очков характеристик.", reply_markup=progression_menu())
         return
+    set_ui_screen(message.from_user.id, "progression")
     await message.answer(title + "\n\n" + render_attributes(player), reply_markup=progression_menu())
 
 async def upgrade_bag_handler(message: Message):
@@ -42,6 +44,7 @@ async def upgrade_bag_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    set_ui_screen(message.from_user.id, "progression")
     await message.answer("🎒 Сумки больше не улучшаются напрямую. Покупай новые сумки только в городе, в лавке.", reply_markup=progression_menu())
 
 async def back_from_progression_handler(message: Message):
@@ -49,4 +52,5 @@ async def back_from_progression_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    set_ui_screen(message.from_user.id, "main")
     await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))

@@ -11,6 +11,7 @@ from database.repositories import (
     count_active_city_orders,
     has_active_city_order,
     add_city_order,
+    set_ui_screen,
 )
 from game.city_service import render_city_board, render_city_menu, render_guild_text, GUILD_QUESTS
 from game.location_rules import is_city
@@ -73,6 +74,8 @@ async def city_handler(message: Message):
         )
         return
 
+    set_ui_screen(message.from_user.id, "city")
+
     district_to_image = {
         "market_square": "city_square.png",
         "craft_quarter": "alchemy_lab.png",
@@ -106,6 +109,7 @@ async def city_board_handler(message: Message):
         f"Активных заказов: {len(active_orders)}/{CITY_ORDER_LIMIT}"
     )
 
+    set_ui_screen(message.from_user.id, "board")
     await _answer_with_city_image(
         message,
         "bag_market.png",
@@ -197,6 +201,7 @@ async def back_to_city_from_board_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
 
+    set_ui_screen(message.from_user.id, "city")
     await message.answer(
         "🏙 Возвращаемся в городское меню.",
         reply_markup=city_menu(player.current_district_slug),
@@ -267,6 +272,7 @@ async def city_guard_handler(message: Message):
         "Стражник напоминает: за воротами опасно.\n"
         "Подготовь сумку, купи расходники и выходи только через главные ворота."
     )
+    set_ui_screen(message.from_user.id, "city")
     await _answer_with_city_image(message, "city_square.png", text, city_menu(player.current_district_slug))
 
 
@@ -282,6 +288,7 @@ async def leave_city_handler(message: Message):
         )
         return
     update_player_location(message.from_user.id, "dark_forest")
+    set_ui_screen(message.from_user.id, "main")
     await message.answer(
         "🚶 Ты покидаешь Сереброград через главные ворота и выходишь в Тёмный лес.",
         reply_markup=main_menu("dark_forest", None),
@@ -302,6 +309,7 @@ async def city_market_handler(message: Message):
         "— сумки\n"
         "— продажа ресурсов"
     )
+    set_ui_screen(message.from_user.id, "shop")
     await _answer_with_city_image(message, "city_square.png", text, shop_menu())
 
 
@@ -310,6 +318,7 @@ async def city_bags_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Лавка сумок доступна только в городе.")
         return
+    set_ui_screen(message.from_user.id, "bag_shop")
     await _answer_with_city_image(message, "bag_market.png", "🎒 Лавка сумок открыта.", bag_shop_menu())
 
 
@@ -318,6 +327,7 @@ async def city_monsters_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Рынок монстров доступен только в городе.")
         return
+    set_ui_screen(message.from_user.id, "monster_shop")
     await _answer_with_city_image(message, "bag_market.png", "🐲 Рынок монстров открыт.", monster_shop_menu())
 
 
@@ -326,6 +336,7 @@ async def city_buyer_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Скупщик доступен только в городе.")
         return
+    set_ui_screen(message.from_user.id, "sell_shop")
     await _answer_with_city_image(
         message,
         "bag_market.png",
@@ -339,6 +350,7 @@ async def city_alchemy_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Лаборатория доступна только в городе.")
         return
+    set_ui_screen(message.from_user.id, "craft")
     await _answer_with_city_image(
         message,
         "alchemy_lab.png",
@@ -356,4 +368,5 @@ async def city_traps_handler(message: Message):
         "🪤 Мастер ловушек\n\n"
         "Он советует всегда держать в запасе хотя бы одну ловушку и приносить редкие материалы для будущих улучшений."
     )
+    set_ui_screen(message.from_user.id, "city")
     await _answer_with_city_image(message, "trap_workshop.png", text, city_menu(player.current_district_slug))

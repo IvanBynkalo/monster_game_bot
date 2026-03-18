@@ -12,6 +12,7 @@ from database.repositories import (
     progress_extra_quests,
     add_player_gold,
     add_player_experience,
+    set_ui_screen,
 )
 from game.shop_service import MONSTER_SHOP_OFFERS, render_item_shop_text, render_monster_shop_text, render_shop_menu_text
 from game.location_rules import has_shop, get_shop_name, is_city
@@ -76,6 +77,7 @@ async def item_shop_handler(message: Message):
     if not _check_city_shop(player):
         await message.answer("Покупки доступны только в городе.", reply_markup=main_menu(player.location_slug))
         return
+    set_ui_screen(message.from_user.id, "item_shop")
     await message.answer(render_item_shop_text(), reply_markup=item_shop_menu())
 
 async def monster_shop_handler(message: Message):
@@ -83,6 +85,7 @@ async def monster_shop_handler(message: Message):
     if not _check_city_shop(player):
         await message.answer("Покупки доступны только в городе.", reply_markup=main_menu(player.location_slug))
         return
+    set_ui_screen(message.from_user.id, "monster_shop")
     await message.answer(render_monster_shop_text(), reply_markup=monster_shop_menu())
 
 async def bag_shop_handler(message: Message):
@@ -175,6 +178,7 @@ async def sell_resources_handler(message: Message):
     if not _check_city_shop(player):
         await message.answer("Продавать можно только в городе у торговца.", reply_markup=main_menu(player.location_slug))
         return
+    set_ui_screen(message.from_user.id, "sell_shop")
     await message.answer("Выбери ресурс для продажи.", reply_markup=sell_menu(get_resources(message.from_user.id)))
 
 async def sell_resource_item_handler(message: Message):
@@ -207,6 +211,7 @@ async def sell_resource_item_handler(message: Message):
     text = f"💰 Продажа успешна. Получено: {gold} золота\nТеперь золота: {player.gold}\n💼 Торговец: {player.merchant_level}"
     if extras:
         text += "\n\n" + "\n\n".join(extras)
+    set_ui_screen(message.from_user.id, "sell_shop")
     await message.answer(text, reply_markup=shop_menu())
 
 async def back_to_shop_handler(message: Message):
@@ -214,4 +219,5 @@ async def back_to_shop_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    set_ui_screen(message.from_user.id, "shop")
     await message.answer(render_shop_menu_text(), reply_markup=shop_menu())

@@ -1,5 +1,5 @@
 from aiogram.types import Message
-from database.repositories import get_or_create_player
+from database.repositories import get_or_create_player, set_ui_screen
 from game.player_service import ensure_starter_monster
 from keyboards.main_menu import main_menu
 from game.map_service import render_location_card
@@ -43,7 +43,8 @@ async def start_handler(message: Message):
             f"Эмоция: {MOOD_LABELS.get(starter_monster['mood'], starter_monster['mood'])}"
         )
 
+    set_ui_screen(message.from_user.id, "main")
     await message.answer(
         render_location_card(player.location_slug),
-        reply_markup=main_menu(player.location_slug),
+        reply_markup=main_menu(player.location_slug, player.current_district_slug),
     )

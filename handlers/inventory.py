@@ -5,6 +5,7 @@ from database.repositories import (
     get_player,
     restore_player_energy,
     set_temp_effect,
+    set_ui_screen,
     spend_item,
     heal_active_monster,
 )
@@ -17,6 +18,7 @@ async def inventory_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    set_ui_screen(message.from_user.id, "inventory")
     await message.answer(render_inventory_text(get_inventory(message.from_user.id)), reply_markup=inventory_menu())
 
 async def use_small_potion_handler(message: Message):
@@ -27,22 +29,12 @@ async def use_small_potion_handler(message: Message):
     if get_item_count(message.from_user.id, "small_potion") <= 0:
         await message.answer("🧪 У тебя нет малого зелья.", reply_markup=inventory_menu())
         return
-    monster_before = heal_active_monster(message.from_user.id, 0)
-    if not monster_before:
-        await message.answer("У тебя нет активного монстра.", reply_markup=inventory_menu())
-        return
-    before_hp = monster_before["current_hp"]
-    if before_hp >= monster_before["max_hp"]:
-        await message.answer("🧪 Активный монстр уже полностью здоров.", reply_markup=inventory_menu())
+    if player.hp >= player.max_hp:
+        await message.answer("❤️ Здоровье уже полное.", reply_markup=inventory_menu())
         return
     spend_item(message.from_user.id, "small_potion", 1)
-    monster = heal_active_monster(message.from_user.id, 12)
-    healed = monster["current_hp"] - before_hp
-    await message.answer(
-        f"🧪 Использовано малое зелье.\n{monster['name']} восстанавливает {healed} HP.\n"
-        f"Текущее HP: {monster['current_hp']}/{monster['max_hp']}",
-        reply_markup=inventory_menu(),
-    )
+    heal_active_monster(message.from_user.id, 8)
+    await message.answer(f"🧪 Использовано малое зелье.\n❤️ HP: {player.hp}/{player.max_hp}", reply_markup=inventory_menu())
 
 async def use_big_potion_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -52,22 +44,12 @@ async def use_big_potion_handler(message: Message):
     if get_item_count(message.from_user.id, "big_potion") <= 0:
         await message.answer("🧪 У тебя нет большого зелья.", reply_markup=inventory_menu())
         return
-    monster_before = heal_active_monster(message.from_user.id, 0)
-    if not monster_before:
-        await message.answer("У тебя нет активного монстра.", reply_markup=inventory_menu())
-        return
-    before_hp = monster_before["current_hp"]
-    if before_hp >= monster_before["max_hp"]:
-        await message.answer("🧪 Активный монстр уже полностью здоров.", reply_markup=inventory_menu())
+    if player.hp >= player.max_hp:
+        await message.answer("❤️ Здоровье уже полное.", reply_markup=inventory_menu())
         return
     spend_item(message.from_user.id, "big_potion", 1)
-    monster = heal_active_monster(message.from_user.id, 25)
-    healed = monster["current_hp"] - before_hp
-    await message.answer(
-        f"🧪 Использовано большое зелье.\n{monster['name']} восстанавливает {healed} HP.\n"
-        f"Текущее HP: {monster['current_hp']}/{monster['max_hp']}",
-        reply_markup=inventory_menu(),
-    )
+    heal_active_monster(message.from_user.id, 16)
+    await message.answer(f"🧪 Использовано большое зелье.\n❤️ HP: {player.hp}/{player.max_hp}", reply_markup=inventory_menu())
 
 async def use_energy_capsule_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -81,7 +63,7 @@ async def use_energy_capsule_handler(message: Message):
         await message.answer("⚡ Энергия уже полная.", reply_markup=inventory_menu())
         return
     spend_item(message.from_user.id, "energy_capsule", 1)
-    restore_player_energy(message.from_user.id, 3, max_energy=12)
+    restore_player_energy(message.from_user.id, 6, max_energy=12)
     await message.answer(f"⚡ Использована капсула энергии.\nЭнергия: {player.energy}/12", reply_markup=inventory_menu())
 
 async def use_spark_tonic_handler(message: Message):
@@ -153,4 +135,5 @@ async def back_to_menu_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    set_ui_screen(message.from_user.id, "main")
     await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))

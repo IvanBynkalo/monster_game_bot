@@ -1,6 +1,6 @@
 import random
 from aiogram.types import Message
-from database.repositories import add_item, add_player_experience, add_player_gold, get_player, get_resources, progress_crafting_quests, progress_guild_quests, spend_resource
+from database.repositories import add_item, add_player_experience, add_player_gold, get_player, get_resources, progress_crafting_quests, progress_guild_quests, set_ui_screen, spend_resource
 from game.craft_service import RECIPES, render_craft_text, render_resources_text
 from game.location_rules import is_city
 from keyboards.craft_menu import craft_menu
@@ -20,6 +20,7 @@ async def craft_handler(message: Message):
     if not is_city(player.location_slug):
         await message.answer("Мастерская и здания работают только в городе.", reply_markup=main_menu(player.location_slug, player.current_district_slug))
         return
+    set_ui_screen(message.from_user.id, "craft")
     await message.answer(render_craft_text(get_resources(message.from_user.id)), reply_markup=craft_menu())
 
 async def resources_handler(message: Message):
@@ -27,6 +28,7 @@ async def resources_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    set_ui_screen(message.from_user.id, "craft")
     await message.answer(render_resources_text(get_resources(message.from_user.id)), reply_markup=craft_menu())
 
 async def craft_item_handler(message: Message):
@@ -74,6 +76,7 @@ async def craft_item_handler(message: Message):
     text = f"{recipe['emoji']} Создан предмет: {recipe['name']} x{amount}" + bonus_text + f"\n⚗ Алхимик: {player.alchemist_level}"
     if extras:
         text += "\n\n" + "\n\n".join(extras)
+    set_ui_screen(message.from_user.id, "craft")
     await message.answer(text, reply_markup=craft_menu())
 
 async def back_from_craft_handler(message: Message):
@@ -81,4 +84,5 @@ async def back_from_craft_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    set_ui_screen(message.from_user.id, "main")
     await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))
