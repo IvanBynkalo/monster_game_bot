@@ -81,3 +81,5 @@ def gather_resource(player, location_slug):
         "rare": picked["rare"],
         "kind": picked["kind"],
     }
+def has_gathering_in_location(location_slug: str) -> bool:
+    return bool(RESOURCES_BY_LOCATION.get(location_slug))
