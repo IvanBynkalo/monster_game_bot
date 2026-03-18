@@ -286,13 +286,14 @@ async def capture_handler(message: Message):
         )
         text = _append_progression(message.from_user.id, result["text"], result, _district_mood_from_player(player), "capture_success")
         text += f"\n\n🐲 Монстр добавлен в коллекцию: {captured['name']}\nID: {captured['id']}"
-                if hunter_gain:
-            if hunter_gain.get("is_max_level"):
-                text += "\n🎯 Ловец: максимальный уровень."
-            elif hunter_gain.get("leveled_up"):
-                text += f"\n🎉 🎯 Ловец повышен до {hunter_gain['level_after']} уровня!"
-            else:
-                text += f"\n🎯 Ловец: +{hunter_gain['gained_exp']} опыта ({hunter_gain['exp_after']}/{hunter_gain['exp_to_next']})"
+
+if hunter_gain:
+    if hunter_gain.get("is_max_level"):
+        text += "\n🎯 Ловец: максимальный уровень."
+    elif hunter_gain.get("leveled_up"):
+        text += f"\n🎉 🎯 Ловец повышен до {hunter_gain['level_after']} уровня!"
+    else:
+        text += f"\n🎯 Ловец: +{hunter_gain['gained_exp']} опыта ({hunter_gain['exp_after']}/{hunter_gain['exp_to_next']})"
         extras = _render_completed_quests(message.from_user.id, progress_quests(message.from_user.id, "capture"))
         guild_done = progress_guild_quests(message.from_user.id, "capture", 1)
         if guild_done:
