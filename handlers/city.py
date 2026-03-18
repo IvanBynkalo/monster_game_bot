@@ -89,7 +89,10 @@ async def back_to_current_district_handler(message: Message):
         return
 
     if not is_city(player.location_slug):
-        await message.answer("Сейчас район недоступен.", reply_markup=main_menu(player.location_slug, None))
+        await message.answer(
+            "Сейчас район недоступен.",
+            reply_markup=main_menu(player.location_slug, None),
+        )
         return
 
     if not player.current_district_slug:
@@ -339,7 +342,20 @@ async def leave_city_handler(message: Message):
 
 
 async def city_market_handler(message: Message):
-    await _open_district(message, "market_square", "bag_market.png")
+    player = get_player(message.from_user.id)
+    if not player or not is_city(player.location_slug):
+        await message.answer("Торговый квартал доступен только в городе.")
+        return
+
+    update_player_district(message.from_user.id, "market_square")
+    set_ui_screen(message.from_user.id, "district")
+
+    await _answer_with_city_image(
+        message,
+        "bag_market.png",
+        render_district_card(player.location_slug, "market_square"),
+        district_actions_menu("market_square"),
+    )
 
 
 async def city_bags_handler(message: Message):
@@ -412,4 +428,9 @@ async def city_traps_handler(message: Message):
         "🪤 Мастер ловушек\n\n"
         "Он советует всегда держать в запасе хотя бы одну ловушку и приносить редкие материалы для будущих улучшений."
     )
-    await _answer_with_city_image(message, "trap_workshop.png", text, district_actions_menu("craft_quarter"))
+    await _answer_with_city_image(
+        message,
+        "trap_workshop.png",
+        text,
+        district_actions_menu("craft_quarter"),
+    )
