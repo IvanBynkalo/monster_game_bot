@@ -22,6 +22,7 @@ from game.craft_service import (
 from game.location_rules import is_city
 from keyboards.craft_menu import craft_menu
 from keyboards.main_menu import main_menu
+from keyboards.city_menu import district_actions_menu
 
 
 def _craft_markup(player_id: int):
@@ -151,6 +152,13 @@ async def back_from_craft_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start")
+        return
+
+    if player.location_slug == "silver_city" and player.current_district_slug == "craft_quarter":
+        await message.answer(
+            "Возвращаемся в ремесленный квартал.",
+            reply_markup=district_actions_menu("craft_quarter"),
+        )
         return
 
     await message.answer(
