@@ -15,6 +15,31 @@ def _normalize_district_text(text: str) -> str:
     return text
 
 
+def _district_transition_text(from_slug: str | None, to_slug: str) -> str:
+    transitions = {
+        ("market_square", "craft_quarter"): "🧭 Ты проходишь мимо торговых рядов и сворачиваешь в ремесленный квартал.",
+        ("market_square", "guild_quarter"): "🧭 Ты уходишь с шумной площади к залам городских гильдий.",
+        ("market_square", "main_gate"): "🧭 Ты покидаешь центр города и направляешься к главным воротам.",
+
+        ("craft_quarter", "market_square"): "🧭 Ты выходишь из ремесленного квартала обратно на рыночную площадь.",
+        ("craft_quarter", "guild_quarter"): "🧭 Оставив запах зелий и металла позади, ты идёшь к кварталу гильдий.",
+        ("craft_quarter", "main_gate"): "🧭 Ты проходишь через городские улицы к главным воротам.",
+
+        ("guild_quarter", "market_square"): "🧭 Ты покидаешь квартал гильдий и возвращаешься на рыночную площадь.",
+        ("guild_quarter", "craft_quarter"): "🧭 От залов гильдий ты переходишь к мастерским и алхимическим лавкам.",
+        ("guild_quarter", "main_gate"): "🧭 Ты идёшь от квартала гильдий в сторону главных ворот.",
+
+        ("main_gate", "market_square"): "🧭 От городских ворот ты возвращаешься в оживлённый центр Сереброграда.",
+        ("main_gate", "craft_quarter"): "🧭 От ворот ты сворачиваешь к мастерским ремесленного квартала.",
+        ("main_gate", "guild_quarter"): "🧭 Оставив стражу позади, ты направляешься к кварталу гильдий.",
+    }
+
+    if from_slug == to_slug:
+        return "🧭 Ты остаёшься в этом районе."
+
+    return transitions.get((from_slug, to_slug), "🧭 Ты переходишь в другой район города.")
+
+
 async def district_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -67,10 +92,15 @@ async def district_move_handler(message: Message):
         await message.answer("Не удалось определить район.")
         return
 
-    update_player_district(message.from_user.id, target["slug"])
+    old_slug = player.current_district_slug
+    new_slug = target["slug"]
+
+    update_player_district(message.from_user.id, new_slug)
+
+    transition_text = _district_transition_text(old_slug, new_slug)
+    district_card = render_district_card(player.location_slug, new_slug)
 
     await message.answer(
-        f"🧭 Ты переместился в район: {target['name']}\n\n"
-        f"{render_district_card(player.location_slug, target['slug'])}",
-        reply_markup=main_menu(player.location_slug, target["slug"]),
+        f"{transition_text}\n\n{district_card}",
+        reply_markup=main_menu(player.location_slug, new_slug),
     )
