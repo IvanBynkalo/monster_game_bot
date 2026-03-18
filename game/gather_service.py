@@ -71,8 +71,13 @@ def gather_resource(player, location_slug):
         if picked["kind"] == "geologist" and player.geologist_level >= 3 and random.random() < 0.15:
             amount = 2
 
-    add_resource(player.telegram_id, picked["slug"], amount)
-    improve_profession_from_action(player.telegram_id, picked["kind"], 1)
+        add_resource(player.telegram_id, picked["slug"], amount)
+
+    profession_gain = improve_profession_from_action(
+        player.telegram_id,
+        picked["kind"],
+        2 if picked["rare"] else 1,
+    )
 
     return {
         "slug": picked["slug"],
@@ -80,6 +85,7 @@ def gather_resource(player, location_slug):
         "amount": amount,
         "rare": picked["rare"],
         "kind": picked["kind"],
+        "profession_gain": profession_gain,
     }
 def has_gathering_in_location(location_slug: str) -> bool:
     return bool(RESOURCES_BY_LOCATION.get(location_slug))
