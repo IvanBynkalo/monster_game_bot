@@ -71,6 +71,9 @@ from handlers.city import (
     city_buyer_handler,
     city_alchemy_handler,
     city_traps_handler,
+    take_herbalist_order_handler,
+    take_ore_order_handler,
+    back_to_city_from_board_handler,
 )
 from handlers.admin import (
     admin_panel_handler,
@@ -184,11 +187,22 @@ dp.message.register(upgrade_bag_handler, text_is("🎒 Улучшить сумк
 dp.message.register(back_from_progression_handler, text_is("⬅️ Назад", "Назад"))
 
 dp.message.register(shop_handler, text_is("🏪 Магазин", "Магазин"))
-dp.message.register(city_market_handler, text_is("🏪 Торговая лавка", "Торговая лавка"))
+dp.message.register(
+    city_market_handler,
+    text_is(
+        "🏬 Торговый квартал",
+        "🏪 Торговая лавка",
+        "Торговый квартал",
+        "Торговая лавка",
+    ),
+)
 dp.message.register(city_bags_handler, text_is("🎒 Лавка сумок", "Лавка сумок"))
 dp.message.register(city_monsters_handler, text_is("🐲 Рынок монстров", "Рынок монстров"))
 dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов"))
 dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов"))
+dp.message.register(take_herbalist_order_handler, text_is("✅ Взять: Заказ травника"))
+dp.message.register(take_ore_order_handler, text_is("✅ Взять: Нужна руда для печей"))
+dp.message.register(back_to_city_from_board_handler, text_is("⬅️ Назад в город"))
 dp.message.register(city_alchemy_handler, text_is("⚗ Алхимическая лаборатория", "Алхимическая лаборатория"))
 dp.message.register(city_traps_handler, text_is("🪤 Мастер ловушек", "Мастер ловушек"))
 dp.message.register(guild_hunters_handler, text_is("🎯 Гильдия ловцов", "Гильдия ловцов"))
