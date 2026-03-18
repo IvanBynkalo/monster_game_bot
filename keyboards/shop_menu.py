@@ -1,24 +1,27 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+
 def shop_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🧪 Магазин предметов"), KeyboardButton(text="🐲 Магазин монстров")],
             [KeyboardButton(text="🎒 Сумки"), KeyboardButton(text="💰 Продать ресурсы")],
-            [KeyboardButton(text="⬅️ Назад")],
+            [KeyboardButton(text="⬅️ Назад в район")],
         ],
         resize_keyboard=True,
     )
+
 
 def item_shop_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 Купить: Малое зелье"), KeyboardButton(text="🛒 Купить: Капсула энергии")],
             [KeyboardButton(text="🛒 Купить: Простая ловушка")],
-            [KeyboardButton(text="⬅️ Назад в магазин")],
+            [KeyboardButton(text="⬅️ Назад в район")],
         ],
         resize_keyboard=True,
     )
+
 
 def monster_shop_menu():
     return ReplyKeyboardMarkup(
@@ -26,10 +29,11 @@ def monster_shop_menu():
             [KeyboardButton(text="🛒 Купить монстра: Лесной спрайт")],
             [KeyboardButton(text="🛒 Купить монстра: Болотный охотник")],
             [KeyboardButton(text="🛒 Купить монстра: Угольный клык")],
-            [KeyboardButton(text="⬅️ Назад в магазин")],
+            [KeyboardButton(text="⬅️ Назад в район")],
         ],
         resize_keyboard=True,
     )
+
 
 def bag_shop_menu():
     return ReplyKeyboardMarkup(
@@ -37,10 +41,11 @@ def bag_shop_menu():
             [KeyboardButton(text="🛒 Купить сумку: Поясная сумка")],
             [KeyboardButton(text="🛒 Купить сумку: Полевой ранец")],
             [KeyboardButton(text="🛒 Купить сумку: Экспедиционный рюкзак")],
-            [KeyboardButton(text="⬅️ Назад в магазин")],
+            [KeyboardButton(text="⬅️ Назад в район")],
         ],
         resize_keyboard=True,
     )
+
 
 def sell_menu(resources: dict):
     keyboard = []
@@ -67,5 +72,5 @@ def sell_menu(resources: dict):
     for slug, qty in resources.items():
         if qty > 0:
             keyboard.append([KeyboardButton(text=f"💰 Продать: {labels.get(slug, slug)}")])
-    keyboard.append([KeyboardButton(text="⬅️ Назад в магазин")])
+    keyboard.append([KeyboardButton(text="⬅️ Назад в район")])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
