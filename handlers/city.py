@@ -7,6 +7,7 @@ from database.repositories import (
     get_player,
     get_resources,
     update_player_location,
+    update_player_district,
     get_active_city_orders,
     count_active_city_orders,
     has_active_city_order,
@@ -16,7 +17,7 @@ from database.repositories import (
 from game.city_service import render_city_board, render_city_menu, render_guild_text, GUILD_QUESTS
 from game.location_rules import is_city
 from keyboards.board_menu import board_menu
-from keyboards.city_menu import city_menu
+from keyboards.city_menu import city_menu, district_actions_menu
 from keyboards.main_menu import main_menu
 from keyboards.shop_menu import shop_menu, bag_shop_menu, monster_shop_menu, sell_menu
 from keyboards.craft_menu import craft_menu
@@ -301,16 +302,21 @@ async def city_market_handler(message: Message):
         await message.answer("Торговый квартал доступен только в городе.")
         return
 
+    update_player_district(message.from_user.id, "market_square")
+    set_ui_screen(message.from_user.id, "district")
+
     text = (
         "🏬 Торговый квартал\n\n"
-        "Выбери раздел:\n"
-        "— предметы\n"
-        "— монстры\n"
-        "— сумки\n"
-        "— продажа ресурсов"
+        "Ты входишь в торговый квартал.\n"
+        "Здесь можно купить сумки, найти рынок монстров и продать ресурсы."
     )
-    set_ui_screen(message.from_user.id, "shop")
-    await _answer_with_city_image(message, "city_square.png", text, shop_menu())
+
+    await _answer_with_city_image(
+        message,
+        "city_square.png",
+        text,
+        district_actions_menu("market_square"),
+    )
 
 
 async def city_bags_handler(message: Message):
