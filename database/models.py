@@ -16,11 +16,20 @@ class Player:
     agility: int = 1
     intellect: int = 1
     stat_points: int = 0
-    gatherer_level: int = 1
+        gatherer_level: int = 1
+    gatherer_exp: int = 0
+
     hunter_level: int = 1
+    hunter_exp: int = 0
+
     geologist_level: int = 1
+    geologist_exp: int = 0
+
     alchemist_level: int = 1
+    alchemist_exp: int = 0
+
     merchant_level: int = 1
+    merchant_exp: int = 0
     bag_capacity: int = 12
     hp: int = 30
     max_hp: int = 30
