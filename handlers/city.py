@@ -6,21 +6,38 @@ from database.repositories import (
     add_player_gold,
     get_player,
     get_resources,
-    progress_board_quests,
-    progress_extra_quests,
-    progress_guild_quests,
     update_player_location,
+    get_active_city_orders,
+    count_active_city_orders,
+    has_active_city_order,
+    add_city_order,
 )
 from game.city_service import render_city_board, render_city_menu, render_guild_text, GUILD_QUESTS
 from game.location_rules import is_city
 from keyboards.board_menu import board_menu
 from keyboards.city_menu import city_menu
 from keyboards.main_menu import main_menu
-from keyboards.shop_menu import shop_menu, item_shop_menu, monster_shop_menu, bag_shop_menu, sell_menu
+from keyboards.shop_menu import shop_menu, bag_shop_menu, monster_shop_menu, sell_menu
 from keyboards.craft_menu import craft_menu
-from utils.board_orders import get_active_board_order, set_active_board_order
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "city"
+
+CITY_ORDER_LIMIT = 2
+
+CITY_BOARD_ORDER_DEFS = {
+    "herbalist_order": {
+        "title": "Заказ травника",
+        "goal_text": "Продай 3 🌿 Лесная трава скупщику ресурсов.",
+        "reward_gold": 35,
+        "reward_exp": 12,
+    },
+    "ore_order": {
+        "title": "Нужна руда для печей",
+        "goal_text": "Продай 2 🔥 Угольный камень.",
+        "reward_gold": 40,
+        "reward_exp": 14,
+    },
+}
 
 
 def _reward_text(player_id: int, quests: list[dict]) -> str:
@@ -76,100 +93,75 @@ async def city_board_handler(message: Message):
         await message.answer("Доска заказов доступна только в городе.")
         return
 
-    active_order = get_active_board_order(message.from_user.id)
+    active_orders = get_active_city_orders(message.from_user.id)
 
     text = (
         "📜 Доска заказов\n\n"
-        "Заказ травника\n"
+        "1) Заказ травника\n"
         "Продай 3 🌿 Лесная трава скупщику ресурсов.\n"
         "Награда: 35 золота, 12 опыта\n\n"
-        "Нужна руда для печей\n"
+        "2) Нужна руда для печей\n"
         "Продай 2 🔥 Угольный камень.\n"
-        "Награда: 40 золота, 14 опыта"
+        "Награда: 40 золота, 14 опыта\n\n"
+        f"Активных заказов: {len(active_orders)}/{CITY_ORDER_LIMIT}"
     )
-
-    if active_order:
-        text += (
-            "\n\n"
-            "⚠️ У тебя уже есть активный городской заказ.\n"
-            "Новые заказы можно брать только после завершения текущего."
-        )
-    else:
-        text += "\n\nВыбери заказ ниже."
 
     await _answer_with_city_image(
         message,
         "bag_market.png",
         text,
-        board_menu(has_active_order=bool(active_order)),
+        board_menu(),
     )
 
 
 async def take_herbalist_order_handler(message: Message):
-    player = get_player(message.from_user.id)
-    if not player or not is_city(player.location_slug):
-        await message.answer("Доска заказов доступна только в городе.")
-        return
-
-    existing = get_active_board_order(message.from_user.id)
-    if existing:
-        await message.answer(
-            "⚠️ У тебя уже есть активный городской заказ.\n\n"
-            f"Текущий заказ: {existing['title']}\n"
-            f"Награда: {existing['reward_gold']} золота, {existing['reward_exp']} опыта",
-            reply_markup=board_menu(has_active_order=True),
-        )
-        return
-
-    order = {
-        "slug": "herbalist_order",
-        "title": "Заказ травника",
-        "goal": "Продать 3 🌿 Лесная трава скупщику ресурсов.",
-        "reward_gold": 35,
-        "reward_exp": 12,
-    }
-    set_active_board_order(message.from_user.id, order)
-
-    await message.answer(
-        "✅ Ты взял заказ: Заказ травника.\n\n"
-        "Цель: продать 3 🌿 Лесная трава скупщику ресурсов.\n"
-        "Награда: 35 золота, 12 опыта\n\n"
-        "Пока этот заказ не завершён, новый взять нельзя.",
-        reply_markup=board_menu(has_active_order=True),
-    )
+    await _take_city_order(message, "herbalist_order")
 
 
 async def take_ore_order_handler(message: Message):
+    await _take_city_order(message, "ore_order")
+
+
+async def _take_city_order(message: Message, order_slug: str):
     player = get_player(message.from_user.id)
     if not player or not is_city(player.location_slug):
         await message.answer("Доска заказов доступна только в городе.")
         return
 
-    existing = get_active_board_order(message.from_user.id)
-    if existing:
+    order_def = CITY_BOARD_ORDER_DEFS[order_slug]
+
+    if has_active_city_order(message.from_user.id, order_slug):
         await message.answer(
-            "⚠️ У тебя уже есть активный городской заказ.\n\n"
-            f"Текущий заказ: {existing['title']}\n"
-            f"Награда: {existing['reward_gold']} золота, {existing['reward_exp']} опыта",
-            reply_markup=board_menu(has_active_order=True),
+            f"⚠️ Этот заказ уже активен:\n\n"
+            f"{order_def['title']}\n"
+            f"Награда: {order_def['reward_gold']} золота, {order_def['reward_exp']} опыта",
+            reply_markup=board_menu(),
         )
         return
 
-    order = {
-        "slug": "ore_order",
-        "title": "Нужна руда для печей",
-        "goal": "Продать 2 🔥 Угольный камень.",
-        "reward_gold": 40,
-        "reward_exp": 14,
-    }
-    set_active_board_order(message.from_user.id, order)
+    active_count = count_active_city_orders(message.from_user.id)
+    if active_count >= CITY_ORDER_LIMIT:
+        await message.answer(
+            f"⚠️ У тебя уже максимум активных городских заказов: {CITY_ORDER_LIMIT}.\n\n"
+            f"Открой «📒 Мои заказы», чтобы посмотреть текущие.",
+            reply_markup=board_menu(),
+        )
+        return
+
+    add_city_order(
+        telegram_id=message.from_user.id,
+        order_slug=order_slug,
+        title=order_def["title"],
+        goal_text=order_def["goal_text"],
+        reward_gold=order_def["reward_gold"],
+        reward_exp=order_def["reward_exp"],
+    )
 
     await message.answer(
-        "✅ Ты взял заказ: Нужна руда для печей.\n\n"
-        "Цель: продать 2 🔥 Угольный камень.\n"
-        "Награда: 40 золота, 14 опыта\n\n"
-        "Пока этот заказ не завершён, новый взять нельзя.",
-        reply_markup=board_menu(has_active_order=True),
+        f"✅ Заказ взят: {order_def['title']}\n\n"
+        f"Цель: {order_def['goal_text']}\n"
+        f"Награда: {order_def['reward_gold']} золота, {order_def['reward_exp']} опыта",
+        reply_markup=board_menu(),
     )
 
 
@@ -179,22 +171,24 @@ async def my_board_orders_handler(message: Message):
         await message.answer("Просмотр заказов доступен только в городе.")
         return
 
-    active_order = get_active_board_order(message.from_user.id)
-    if not active_order:
+    active_orders = get_active_city_orders(message.from_user.id)
+    if not active_orders:
         await message.answer(
             "📒 У тебя нет активных городских заказов.\n\n"
-            "Открой доску заказов и возьми один заказ.",
-            reply_markup=board_menu(has_active_order=False),
+            "Открой доску заказов и возьми один или два заказа.",
+            reply_markup=board_menu(),
         )
         return
 
-    text = (
-        "📒 Мои заказы\n\n"
-        f"Активный заказ: {active_order['title']}\n"
-        f"Цель: {active_order['goal']}\n"
-        f"Награда: {active_order['reward_gold']} золота, {active_order['reward_exp']} опыта"
-    )
-    await message.answer(text, reply_markup=board_menu(has_active_order=True))
+    parts = ["📒 Мои заказы\n"]
+    for idx, order in enumerate(active_orders, start=1):
+        parts.append(
+            f"{idx}. {order['title']}\n"
+            f"Цель: {order['goal_text']}\n"
+            f"Награда: {order['reward_gold']} золота, {order['reward_exp']} опыта"
+        )
+
+    await message.answer("\n\n".join(parts), reply_markup=board_menu())
 
 
 async def back_to_city_from_board_handler(message: Message):
