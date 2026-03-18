@@ -22,7 +22,7 @@ def city_menu(district_slug: str | None = None):
     elif district_slug == "main_gate":
         keyboard.append([KeyboardButton(text="🛡 Городская стража"), KeyboardButton(text="🚶 Покинуть город")])
 
-    keyboard.append([KeyboardButton(text="🧭 Район"), KeyboardButton(text="⬅️ Назад")])
+    keyboard.append([KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")])
 
     return ReplyKeyboardMarkup(
         keyboard=keyboard,

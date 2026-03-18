@@ -1,21 +1,32 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-from game.map_service import get_move_commands
 from game.district_service import get_district_move_commands
+from game.location_rules import is_city
+from game.map_service import get_move_commands
 
 
-def navigation_menu(location_slug: str):
-    buttons = []
+EXIT_CITY_BUTTON = "🚶 Покинуть город"
 
-    for cmd in get_move_commands(location_slug):
-        buttons.append([KeyboardButton(text=cmd)])
 
-    for cmd in get_district_move_commands(location_slug):
-        buttons.append([KeyboardButton(text=cmd)])
+def navigation_menu(location_slug: str, district_slug: str | None = None):
+    rows: list[list[KeyboardButton]] = []
 
-    if not buttons:
-        buttons.append([KeyboardButton(text="🗺 Карта")])
+    if is_city(location_slug):
+        for cmd in get_district_move_commands(location_slug):
+            rows.append([KeyboardButton(text=cmd)])
 
-    buttons.append([KeyboardButton(text="⬅️ Назад")])
+        if district_slug == "main_gate":
+            rows.append([KeyboardButton(text=EXIT_CITY_BUTTON)])
+    else:
+        for cmd in get_move_commands(location_slug):
+            rows.append([KeyboardButton(text=cmd)])
 
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+        for cmd in get_district_move_commands(location_slug):
+            rows.append([KeyboardButton(text=cmd)])
+
+    if not rows:
+        rows.append([KeyboardButton(text="🗺 Карта")])
+
+    rows.append([KeyboardButton(text="⬅️ Назад")])
+
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
