@@ -17,8 +17,8 @@ PLAYER_BOARD_QUESTS = {}
 PLAYER_GUILD_QUESTS = {}
 MARKET_ITEMS = {}
 MARKET_MONSTERS = {}
+CITY_RESOURCE_MARKETS = {}
 NEXT_MONSTER_ID = 1
-PLAYER_UI = {}
 PLAYER_UI = {}
 
 DEFAULT_EMOTIONS = {"rage": 0, "fear": 0, "instinct": 0, "inspiration": 0}
@@ -358,6 +358,158 @@ def purchase_market_monster(telegram_id: int, monster_slug: str):
     return price
 
 
+def _default_city_resource_market():
+    return {
+        "forest_herb": {"base_price": 6, "stock": 8, "target_stock": 8, "updated_at": 0.0},
+        "mushroom_cap": {"base_price": 7, "stock": 8, "target_stock": 8, "updated_at": 0.0},
+        "silver_moss": {"base_price": 24, "stock": 2, "target_stock": 2, "updated_at": 0.0},
+        "swamp_moss": {"base_price": 8, "stock": 6, "target_stock": 6, "updated_at": 0.0},
+        "toxic_spore": {"base_price": 11, "stock": 5, "target_stock": 5, "updated_at": 0.0},
+        "black_pearl": {"base_price": 28, "stock": 1, "target_stock": 1, "updated_at": 0.0},
+        "ember_stone": {"base_price": 10, "stock": 5, "target_stock": 5, "updated_at": 0.0},
+        "ash_leaf": {"base_price": 9, "stock": 5, "target_stock": 5, "updated_at": 0.0},
+        "magma_core": {"base_price": 35, "stock": 1, "target_stock": 1, "updated_at": 0.0},
+        "field_grass": {"base_price": 6, "stock": 9, "target_stock": 9, "updated_at": 0.0},
+        "sun_blossom": {"base_price": 9, "stock": 4, "target_stock": 4, "updated_at": 0.0},
+        "dew_crystal": {"base_price": 26, "stock": 2, "target_stock": 2, "updated_at": 0.0},
+        "raw_ore": {"base_price": 10, "stock": 6, "target_stock": 6, "updated_at": 0.0},
+        "granite_shard": {"base_price": 8, "stock": 6, "target_stock": 6, "updated_at": 0.0},
+        "sky_crystal": {"base_price": 30, "stock": 1, "target_stock": 1, "updated_at": 0.0},
+        "bog_flower": {"base_price": 9, "stock": 4, "target_stock": 4, "updated_at": 0.0},
+        "dark_resin": {"base_price": 11, "stock": 4, "target_stock": 4, "updated_at": 0.0},
+        "ghost_reed": {"base_price": 32, "stock": 1, "target_stock": 1, "updated_at": 0.0},
+    }
+
+
+def _ensure_city_resource_market(city_slug: str):
+    if city_slug not in CITY_RESOURCE_MARKETS:
+        CITY_RESOURCE_MARKETS[city_slug] = _default_city_resource_market()
+
+
+def _apply_resource_market_decay(entry: dict, drift_per_hour: float = 0.75):
+    import time
+
+    now = time.time()
+    updated_at = entry.get("updated_at", 0.0)
+
+    if not updated_at:
+        entry["updated_at"] = now
+        return entry
+
+    hours = max(0.0, (now - updated_at) / 3600.0)
+    if hours <= 0:
+        return entry
+
+    stock = float(entry.get("stock", 0))
+    target = float(entry.get("target_stock", max(1, stock)))
+
+    if stock > target:
+        stock = max(target, stock - hours * drift_per_hour)
+    elif stock < target:
+        stock = min(target, stock + hours * drift_per_hour * 0.5)
+
+    entry["stock"] = round(stock, 2)
+    entry["updated_at"] = now
+    return entry
+
+
+def get_city_resource_market(city_slug: str):
+    _ensure_city_resource_market(city_slug)
+    market = CITY_RESOURCE_MARKETS[city_slug]
+    for entry in market.values():
+        _apply_resource_market_decay(entry)
+    return market
+
+
+def get_city_resource_market_entry(city_slug: str, slug: str):
+    market = get_city_resource_market(city_slug)
+    return market.get(slug)
+
+
+def get_city_resource_sell_price(city_slug: str, slug: str, merchant_level: int = 1, amount: int = 1):
+    entry = get_city_resource_market_entry(city_slug, slug)
+    if not entry:
+        return 1
+
+    base_price = entry["base_price"]
+    stock = float(entry.get("stock", 0))
+    target = max(1.0, float(entry.get("target_stock", 1)))
+
+    scarcity_ratio = max(0.0, (target - stock) / target)
+    surplus_ratio = max(0.0, (stock - target) / target)
+
+    market_multiplier = 1.0 + scarcity_ratio * 0.35 - min(0.45, surplus_ratio * 0.18)
+    merchant_multiplier = 1.0 + max(0, merchant_level - 1) * 0.05
+
+    unit_price = max(1, int(round(base_price * market_multiplier * merchant_multiplier)))
+    return unit_price * max(1, amount)
+
+
+def get_city_resource_buy_price(city_slug: str, slug: str, amount: int = 1):
+    entry = get_city_resource_market_entry(city_slug, slug)
+    if not entry:
+        return 1
+
+    sell_unit = get_city_resource_sell_price(city_slug, slug, merchant_level=1, amount=1)
+    stock = float(entry.get("stock", 0))
+    target = max(1.0, float(entry.get("target_stock", 1)))
+
+    scarcity_ratio = max(0.0, (target - stock) / target)
+    markup_multiplier = 1.25 + scarcity_ratio * 0.25
+
+    unit_price = max(sell_unit + 1, int(round(entry["base_price"] * markup_multiplier)))
+    return unit_price * max(1, amount)
+
+
+def sell_resource_to_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1):
+    player = get_player(telegram_id)
+    if not player:
+        return None
+
+    resources = get_resources(telegram_id)
+    if resources.get(slug, 0) < amount:
+        return None
+
+    gold = get_city_resource_sell_price(
+        city_slug,
+        slug,
+        merchant_level=getattr(player, "merchant_level", 1),
+        amount=amount,
+    )
+
+    if not spend_resource(telegram_id, slug, amount):
+        return None
+
+    player.gold += gold
+    entry = get_city_resource_market_entry(city_slug, slug)
+    entry["stock"] = round(float(entry.get("stock", 0)) + amount, 2)
+
+    return gold
+
+
+def buy_resource_from_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1):
+    player = get_player(telegram_id)
+    if not player:
+        return None
+
+    entry = get_city_resource_market_entry(city_slug, slug)
+    if not entry:
+        return None
+
+    if float(entry.get("stock", 0)) < amount:
+        return None
+
+    price = get_city_resource_buy_price(city_slug, slug, amount=amount)
+    if player.gold < price:
+        return None
+
+    player.gold -= price
+    add_resource(telegram_id, slug, amount)
+    entry["stock"] = round(float(entry.get("stock", 0)) - amount, 2)
+
+    return price
+
+
 def _default_ui_state():
     return {
         "screen": "main",
@@ -424,7 +576,7 @@ def _ensure_player_collections(telegram_id: int):
     PLAYER_ITEMS.setdefault(telegram_id, {"small_potion": 2, "energy_capsule": 1, "basic_trap": 3})
     PLAYER_RESOURCES.setdefault(telegram_id, {})
     PLAYER_CRAFT_QUESTS.setdefault(telegram_id, _default_craft_quests())
-    PLAYER_BOARD_QUESTS.setdefault(telegram_id, _default_board_quests())
+    PLAYER_BOARD_QUESTS.setdefault(telegram_id, _default_board_QUESTS() if False else _default_board_quests())
     PLAYER_GUILD_QUESTS.setdefault(telegram_id, _default_guild_quests())
     PLAYER_EXTRA_QUESTS.setdefault(telegram_id, _default_extra_quests())
     PLAYER_CODEX.setdefault(telegram_id, set())
@@ -594,7 +746,6 @@ def get_player_quests(telegram_id: int):
                 **value,
             }
 
-    # Активируем только первый незавершённый стартовый квест
     active_found = False
     for quest_id in STARTER_QUEST_CHAIN:
         quest = quests[quest_id]
@@ -610,6 +761,7 @@ def get_player_quests(telegram_id: int):
             quest["active"] = False
 
     return quests
+
 
 def get_active_player_quests(telegram_id: int):
     quests = get_player_quests(telegram_id)
@@ -643,14 +795,12 @@ def progress_quests(telegram_id: int, action_type: str):
             quest["active"] = False
             completed_now.append((quest_id, quest))
 
-            # сразу открываем следующий квест в цепочке
             current_index = STARTER_QUEST_CHAIN.index(quest_id)
             if current_index + 1 < len(STARTER_QUEST_CHAIN):
                 next_quest_id = STARTER_QUEST_CHAIN[current_index + 1]
                 if not quests[next_quest_id].get("completed"):
                     quests[next_quest_id]["active"] = True
 
-        # только один активный стартовый квест обрабатываем за раз
         break
 
     return completed_now
@@ -723,7 +873,7 @@ def add_player_gold(telegram_id: int, amount: int):
 
 
 def add_player_experience(telegram_id: int, amount: int):
-    player = PLAYERS.get(telegram_id)
+    player = get_player(telegram_id)
     if not player:
         return None
 
@@ -777,6 +927,7 @@ def spend_item(telegram_id: int, item_slug: str, amount: int = 1):
 def add_resource(telegram_id: int, slug: str, count: int):
     inv = PLAYER_RESOURCES.setdefault(telegram_id, {})
     inv[slug] = inv.get(slug, 0) + count
+    return inv[slug]
 
 
 def spend_resource(telegram_id: int, slug: str, count: int):
@@ -1134,8 +1285,6 @@ PROFESSION_FIELD_MAP = {
 
 
 def get_profession_exp_required(level: int) -> int:
-    # Сколько XP нужно, чтобы перейти с текущего уровня на следующий
-    # 1->2: 10, 2->3: 14, 3->4: 18 ...
     return 6 + level * 4
 
 
@@ -1300,6 +1449,8 @@ def clear_player_injuries(telegram_id: int):
     player.is_defeated = False
     player.hp = player.max_hp
     return player
+
+
 # =========================
 # 🧱 SQLITE: ГОРОДСКИЕ ЗАКАЗЫ
 # =========================
@@ -1337,13 +1488,8 @@ def _init_city_orders_db():
         conn.commit()
 
 
-# авто-инициализация при старте
 _init_city_orders_db()
 
-
-# =========================
-# 📦 CRUD ЗАКАЗОВ
-# =========================
 
 def get_active_city_orders(telegram_id: int):
     with _get_connection() as conn:
