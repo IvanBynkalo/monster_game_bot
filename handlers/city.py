@@ -388,11 +388,14 @@ async def city_alchemy_handler(message: Message):
 
     update_player_district(message.from_user.id, "craft_quarter")
     set_ui_screen(message.from_user.id, "craft")
+
+    resources = get_resources(message.from_user.id)
+
     await _answer_with_city_image(
         message,
         "alchemy_lab.png",
         "⚗ Алхимическая лаборатория готова к работе.",
-        craft_menu(),
+        craft_menu(player, resources),
     )
 
 
