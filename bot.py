@@ -147,7 +147,10 @@ dp.message.register(codex_handler, text_is("📖 Кодекс", "Кодекс"))
 dp.message.register(relics_handler, text_is("🔮 Реликвии", "Реликвии"))
 dp.message.register(profile_handler, text_is("Профиль", "🧭 Профиль", "🧭 Профіль", "🧭 профиль"))
 dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
+
+# ВАЖНО: оставляем ниже кнопок доски заказов с префиксом 📌, чтобы не конфликтовать с "✅ ID"
 dp.message.register(set_active_monster_handler, text_startswith("✅ "))
+
 dp.message.register(inventory_handler, text_is("🎒 Инвентарь", "Инвентарь"))
 dp.message.register(craft_handler, text_is("🛠 Мастерская", "Мастерская"))
 dp.message.register(resources_handler, text_is("📦 Ресурсы", "Ресурсы"))
@@ -200,8 +203,8 @@ dp.message.register(city_bags_handler, text_is("🎒 Лавка сумок", "Л
 dp.message.register(city_monsters_handler, text_is("🐲 Рынок монстров", "Рынок монстров"))
 dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов"))
 dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов"))
-dp.message.register(take_herbalist_order_handler, text_is("✅ Взять: Заказ травника"))
-dp.message.register(take_ore_order_handler, text_is("✅ Взять: Нужна руда для печей"))
+dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
+dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
 dp.message.register(back_to_city_from_board_handler, text_is("⬅️ Назад в город"))
 dp.message.register(city_alchemy_handler, text_is("⚗ Алхимическая лаборатория", "Алхимическая лаборатория"))
 dp.message.register(city_traps_handler, text_is("🪤 Мастер ловушек", "Мастер ловушек"))
