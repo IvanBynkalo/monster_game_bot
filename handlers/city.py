@@ -1,5 +1,4 @@
 from pathlib import Path
-
 from aiogram.types import Message, FSInputFile
 
 from database.repositories import (
@@ -16,12 +15,11 @@ from database.repositories import (
     set_ui_screen,
 )
 from game.city_service import render_city_board, render_city_menu, render_guild_text, GUILD_QUESTS
-from game.district_service import render_district_card
 from game.location_rules import is_city
 from keyboards.board_menu import board_menu
 from keyboards.city_menu import city_menu, district_actions_menu
 from keyboards.main_menu import main_menu
-from keyboards.shop_menu import bag_shop_menu, monster_shop_menu, sell_menu
+from keyboards.shop_menu import shop_menu, bag_shop_menu, monster_shop_menu, sell_menu
 from keyboards.craft_menu import craft_menu
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "city"
@@ -65,48 +63,6 @@ async def _answer_with_city_image(message: Message, image_name: str, text: str, 
         await message.answer(text, reply_markup=reply_markup)
 
 
-async def _open_district(message: Message, district_slug: str, image_name: str | None = None):
-    player = get_player(message.from_user.id)
-    if not player or not is_city(player.location_slug):
-        await message.answer("Ты сейчас не в городе.")
-        return
-
-    update_player_district(message.from_user.id, district_slug)
-    set_ui_screen(message.from_user.id, "district")
-
-    await _answer_with_city_image(
-        message,
-        image_name or "city_square.png",
-        render_district_card(player.location_slug, district_slug),
-        district_actions_menu(district_slug),
-    )
-
-
-async def back_to_current_district_handler(message: Message):
-    player = get_player(message.from_user.id)
-    if not player:
-        await message.answer("Сначала напиши /start")
-        return
-
-    if not is_city(player.location_slug):
-        await message.answer(
-            "Сейчас район недоступен.",
-            reply_markup=main_menu(player.location_slug, None),
-        )
-        return
-
-    if not player.current_district_slug:
-        set_ui_screen(message.from_user.id, "city")
-        await message.answer("🏙 Городское меню", reply_markup=city_menu())
-        return
-
-    set_ui_screen(message.from_user.id, "district")
-    await message.answer(
-        render_district_card(player.location_slug, player.current_district_slug),
-        reply_markup=district_actions_menu(player.current_district_slug),
-    )
-
-
 async def city_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -120,11 +76,18 @@ async def city_handler(message: Message):
         return
 
     set_ui_screen(message.from_user.id, "city")
+
+    district_to_image = {
+        "market_square": "city_square.png",
+        "craft_quarter": "alchemy_lab.png",
+        "guild_quarter": "guild_hall.png",
+        "main_gate": "city_square.png",
+    }
     await _answer_with_city_image(
         message,
-        "city_square.png",
+        district_to_image.get(player.current_district_slug, "city_square.png"),
         render_city_menu(player),
-        city_menu(),
+        city_menu(player.current_district_slug),
     )
 
 
@@ -242,7 +205,7 @@ async def back_to_city_from_board_handler(message: Message):
     set_ui_screen(message.from_user.id, "city")
     await message.answer(
         "🏙 Возвращаемся в городское меню.",
-        reply_markup=city_menu(),
+        reply_markup=city_menu(player.current_district_slug),
     )
 
 
@@ -291,16 +254,12 @@ async def _guild_handler(message: Message, title: str, description: str, profess
     if not player or not is_city(player.location_slug):
         await message.answer("Гильдии доступны только в городе.")
         return
-
-    update_player_district(message.from_user.id, "guild_quarter")
-    set_ui_screen(message.from_user.id, "district")
-
     quests = [q for q in GUILD_QUESTS if q["profession"] == profession]
     await _answer_with_city_image(
         message,
         image_name,
         render_guild_text(title, description, quests),
-        district_actions_menu("guild_quarter"),
+        city_menu(player.current_district_slug),
     )
 
 
@@ -309,16 +268,13 @@ async def city_guard_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Стража доступна только в городе.")
         return
-
-    update_player_district(message.from_user.id, "main_gate")
-    set_ui_screen(message.from_user.id, "district")
-
     text = (
         "🛡 Городская стража\n\n"
         "Стражник напоминает: за воротами опасно.\n"
         "Подготовь сумку, купи расходники и выходи только через главные ворота."
     )
-    await _answer_with_city_image(message, "city_square.png", text, district_actions_menu("main_gate"))
+    set_ui_screen(message.from_user.id, "city")
+    await _answer_with_city_image(message, "city_square.png", text, city_menu(player.current_district_slug))
 
 
 async def leave_city_handler(message: Message):
@@ -329,10 +285,9 @@ async def leave_city_handler(message: Message):
     if player.current_district_slug != "main_gate":
         await message.answer(
             "Покинуть город можно только через 🚪 Главные ворота.",
-            reply_markup=district_actions_menu(player.current_district_slug or "main_gate"),
+            reply_markup=city_menu(player.current_district_slug),
         )
         return
-
     update_player_location(message.from_user.id, "dark_forest")
     set_ui_screen(message.from_user.id, "main")
     await message.answer(
@@ -350,10 +305,16 @@ async def city_market_handler(message: Message):
     update_player_district(message.from_user.id, "market_square")
     set_ui_screen(message.from_user.id, "district")
 
+    text = (
+        "🏬 Торговый квартал\n\n"
+        "Ты входишь в торговый квартал.\n"
+        "Здесь можно купить сумки, найти рынок монстров и продать ресурсы."
+    )
+
     await _answer_with_city_image(
         message,
-        "bag_market.png",
-        render_district_card(player.location_slug, "market_square"),
+        "city_square.png",
+        text,
         district_actions_menu("market_square"),
     )
 
@@ -363,8 +324,6 @@ async def city_bags_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Лавка сумок доступна только в городе.")
         return
-
-    update_player_district(message.from_user.id, "market_square")
     set_ui_screen(message.from_user.id, "bag_shop")
     await _answer_with_city_image(message, "bag_market.png", "🎒 Лавка сумок открыта.", bag_shop_menu())
 
@@ -374,8 +333,6 @@ async def city_monsters_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Рынок монстров доступен только в городе.")
         return
-
-    update_player_district(message.from_user.id, "market_square")
     set_ui_screen(message.from_user.id, "monster_shop")
     await _answer_with_city_image(message, "bag_market.png", "🐲 Рынок монстров открыт.", monster_shop_menu())
 
@@ -385,8 +342,6 @@ async def city_buyer_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Скупщик доступен только в городе.")
         return
-
-    update_player_district(message.from_user.id, "market_square")
     set_ui_screen(message.from_user.id, "sell_shop")
     await _answer_with_city_image(
         message,
@@ -401,17 +356,12 @@ async def city_alchemy_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Лаборатория доступна только в городе.")
         return
-
-    update_player_district(message.from_user.id, "craft_quarter")
     set_ui_screen(message.from_user.id, "craft")
-
-    resources = get_resources(message.from_user.id)
-
     await _answer_with_city_image(
         message,
         "alchemy_lab.png",
         "⚗ Алхимическая лаборатория готова к работе.",
-        craft_menu(player, resources),
+        craft_menu(),
     )
 
 
@@ -420,17 +370,9 @@ async def city_traps_handler(message: Message):
     if not player or not is_city(player.location_slug):
         await message.answer("Мастер ловушек доступен только в городе.")
         return
-
-    update_player_district(message.from_user.id, "craft_quarter")
-    set_ui_screen(message.from_user.id, "district")
-
     text = (
         "🪤 Мастер ловушек\n\n"
         "Он советует всегда держать в запасе хотя бы одну ловушку и приносить редкие материалы для будущих улучшений."
     )
-    await _answer_with_city_image(
-        message,
-        "trap_workshop.png",
-        text,
-        district_actions_menu("craft_quarter"),
-    )
+    set_ui_screen(message.from_user.id, "city")
+    await _answer_with_city_image(message, "trap_workshop.png", text, city_menu(player.current_district_slug))
