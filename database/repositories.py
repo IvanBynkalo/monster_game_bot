@@ -1126,3 +1126,142 @@ def clear_player_injuries(telegram_id: int):
     player.is_defeated = False
     player.hp = player.max_hp
     return player
+# =========================
+# 🧱 SQLITE: ГОРОДСКИЕ ЗАКАЗЫ
+# =========================
+
+import sqlite3
+from pathlib import Path
+
+DB_PATH = Path(__file__).resolve().parent.parent / "data" / "game.db"
+
+
+def _get_connection():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_city_orders_db():
+    with _get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS player_city_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_id INTEGER NOT NULL,
+                order_slug TEXT NOT NULL,
+                title TEXT NOT NULL,
+                goal_text TEXT NOT NULL,
+                reward_gold INTEGER NOT NULL,
+                reward_exp INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.commit()
+
+
+# авто-инициализация при старте
+_init_city_orders_db()
+
+
+# =========================
+# 📦 CRUD ЗАКАЗОВ
+# =========================
+
+def get_active_city_orders(telegram_id: int):
+    with _get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM player_city_orders
+            WHERE telegram_id = ? AND status = 'active'
+            ORDER BY created_at ASC
+            """,
+            (telegram_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def count_active_city_orders(telegram_id: int) -> int:
+    with _get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) as cnt
+            FROM player_city_orders
+            WHERE telegram_id = ? AND status = 'active'
+            """,
+            (telegram_id,),
+        ).fetchone()
+
+    return int(row["cnt"] if row else 0)
+
+
+def has_active_city_order(telegram_id: int, order_slug: str) -> bool:
+    with _get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM player_city_orders
+            WHERE telegram_id = ? AND order_slug = ? AND status = 'active'
+            LIMIT 1
+            """,
+            (telegram_id, order_slug),
+        ).fetchone()
+
+    return row is not None
+
+
+def add_city_order(
+    telegram_id: int,
+    order_slug: str,
+    title: str,
+    goal_text: str,
+    reward_gold: int,
+    reward_exp: int,
+):
+    with _get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO player_city_orders (
+                telegram_id,
+                order_slug,
+                title,
+                goal_text,
+                reward_gold,
+                reward_exp,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'active')
+            """,
+            (telegram_id, order_slug, title, goal_text, reward_gold, reward_exp),
+        )
+        conn.commit()
+
+
+def complete_city_order(order_id: int):
+    with _get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE player_city_orders
+            SET status = 'completed'
+            WHERE id = ?
+            """,
+            (order_id,),
+        )
+        conn.commit()
+
+
+def clear_active_city_orders(telegram_id: int):
+    with _get_connection() as conn:
+        conn.execute(
+            """
+            DELETE FROM player_city_orders
+            WHERE telegram_id = ? AND status = 'active'
+            """,
+            (telegram_id,),
+        )
+        conn.commit()
