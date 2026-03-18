@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class Player:
     telegram_id: int
@@ -16,7 +17,8 @@ class Player:
     agility: int = 1
     intellect: int = 1
     stat_points: int = 0
-        gatherer_level: int = 1
+
+    gatherer_level: int = 1
     gatherer_exp: int = 0
 
     hunter_level: int = 1
@@ -30,11 +32,13 @@ class Player:
 
     merchant_level: int = 1
     merchant_exp: int = 0
+
     bag_capacity: int = 12
     hp: int = 30
     max_hp: int = 30
     is_defeated: bool = False
     injury_turns: int = 0
+
 
 @dataclass
 class Location:
