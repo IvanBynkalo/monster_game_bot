@@ -18,7 +18,7 @@ async def craft_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     if not is_city(player.location_slug):
-        await message.answer("Мастерская и здания работают только в городе.", reply_markup=main_menu(player.location_slug))
+        await message.answer("Мастерская и здания работают только в городе.", reply_markup=main_menu(player.location_slug, player.current_district_slug))
         return
     await message.answer(render_craft_text(get_resources(message.from_user.id)), reply_markup=craft_menu())
 
@@ -35,7 +35,7 @@ async def craft_item_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     if not is_city(player.location_slug):
-        await message.answer("Создавать предметы можно только в городской мастерской.", reply_markup=main_menu(player.location_slug))
+        await message.answer("Создавать предметы можно только в городской мастерской.", reply_markup=main_menu(player.location_slug, player.current_district_slug))
         return
     recipe_id = BUTTON_TO_RECIPE.get((message.text or "").strip())
     if not recipe_id:
@@ -81,4 +81,4 @@ async def back_from_craft_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
-    await message.answer("Главное меню", reply_markup=main_menu(player.location_slug))
+    await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))

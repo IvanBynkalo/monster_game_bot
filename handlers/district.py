@@ -1,4 +1,5 @@
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+
 from database.repositories import get_player, update_player_district
 from game.district_service import (
     get_district_move_commands,
@@ -20,15 +21,12 @@ def _district_transition_text(from_slug: str | None, to_slug: str) -> str:
         ("market_square", "craft_quarter"): "🧭 Ты проходишь мимо торговых рядов и сворачиваешь в ремесленный квартал.",
         ("market_square", "guild_quarter"): "🧭 Ты уходишь с шумной площади к залам городских гильдий.",
         ("market_square", "main_gate"): "🧭 Ты покидаешь центр города и направляешься к главным воротам.",
-
         ("craft_quarter", "market_square"): "🧭 Ты выходишь из ремесленного квартала обратно на рыночную площадь.",
         ("craft_quarter", "guild_quarter"): "🧭 Оставив запах зелий и металла позади, ты идёшь к кварталу гильдий.",
         ("craft_quarter", "main_gate"): "🧭 Ты проходишь через городские улицы к главным воротам.",
-
         ("guild_quarter", "market_square"): "🧭 Ты покидаешь квартал гильдий и возвращаешься на рыночную площадь.",
         ("guild_quarter", "craft_quarter"): "🧭 От залов гильдий ты переходишь к мастерским и алхимическим лавкам.",
         ("guild_quarter", "main_gate"): "🧭 Ты идёшь от квартала гильдий в сторону главных ворот.",
-
         ("main_gate", "market_square"): "🧭 От городских ворот ты возвращаешься в оживлённый центр Сереброграда.",
         ("main_gate", "craft_quarter"): "🧭 От ворот ты сворачиваешь к мастерским ремесленного квартала.",
         ("main_gate", "guild_quarter"): "🧭 Оставив стражу позади, ты направляешься к кварталу гильдий.",
@@ -90,7 +88,7 @@ async def district_move_handler(message: Message):
 
     if (message.text or "").strip() == "⬅️ Назад":
         await message.answer(
-            "Главное меню",
+            "Возвращаемся в меню города.",
             reply_markup=main_menu(player.location_slug, player.current_district_slug),
         )
         return
@@ -131,5 +129,5 @@ async def district_move_handler(message: Message):
 
     await message.answer(
         f"{transition_text}\n\n{district_card}",
-        reply_markup=district_menu(player.location_slug),
+        reply_markup=main_menu(player.location_slug, new_slug),
     )

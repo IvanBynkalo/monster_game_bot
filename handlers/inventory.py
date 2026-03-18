@@ -153,4 +153,4 @@ async def back_to_menu_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
-    await message.answer("Главное меню", reply_markup=main_menu(player.location_slug))
+    await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))
