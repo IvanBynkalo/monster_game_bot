@@ -1,32 +1,93 @@
-ATTRIBUTE_LABELS = {
-    "strength": "💪 Сила",
-    "agility": "🤸 Ловкость",
-    "intellect": "🧠 Интеллект",
+PROFESSION_LEVEL_CAP = 10
+
+PROFESSION_FIELD_MAP = {
+    "gatherer": ("gatherer_level", "gatherer_exp"),
+    "hunter": ("hunter_level", "hunter_exp"),
+    "geologist": ("geologist_level", "geologist_exp"),
+    "alchemist": ("alchemist_level", "alchemist_exp"),
+    "merchant": ("merchant_level", "merchant_exp"),
 }
 
-PROFESSION_LABELS = {
-    "gatherer_level": "🧺 Собиратель",
-    "hunter_level": "🎯 Ловец",
-    "geologist_level": "⛏ Геолог",
-    "alchemist_level": "⚗ Алхимик",
-    "merchant_level": "💼 Торговец",
-}
 
-def render_attributes(player):
-    return "\n".join([
-        "Характеристики героя:",
-        f"{ATTRIBUTE_LABELS['strength']}: {player.strength} — повышает шансы геолога и качество тяжёлой добычи.",
-        f"{ATTRIBUTE_LABELS['agility']}: {player.agility} — повышает шанс поимки и успех ловца.",
-        f"{ATTRIBUTE_LABELS['intellect']}: {player.intellect} — усиливает сбор редких трав и успех алхимии.",
-        f"Свободные очки: {player.stat_points}",
-    ])
+def get_profession_exp_required(level: int) -> int:
+    # Сколько XP нужно, чтобы перейти с текущего уровня на следующий
+    # 1->2: 10, 2->3: 14, 3->4: 18 ...
+    return 6 + level * 4
 
-def render_professions(player):
-    return "\n".join([
-        "Профессии:",
-        f"{PROFESSION_LABELS['gatherer_level']}: {player.gatherer_level} — влияет на обычный сбор и травы.",
-        f"{PROFESSION_LABELS['hunter_level']}: {player.hunter_level} — повышает шанс поимки монстров.",
-        f"{PROFESSION_LABELS['geologist_level']}: {player.geologist_level} — улучшает добычу камней и редких жил.",
-        f"{PROFESSION_LABELS['alchemist_level']}: {player.alchemist_level} — даёт шанс создать дополнительный предмет.",
-        f"{PROFESSION_LABELS['merchant_level']}: {player.merchant_level} — повышает цену продажи ресурсов.",
-    ])
+
+def get_profession_state(player, kind: str):
+    fields = PROFESSION_FIELD_MAP.get(kind)
+    if not fields:
+        return None
+
+    level_field, exp_field = fields
+    level = getattr(player, level_field, 1)
+    exp = getattr(player, exp_field, 0)
+
+    return {
+        "kind": kind,
+        "level_field": level_field,
+        "exp_field": exp_field,
+        "level": level,
+        "exp": exp,
+        "exp_to_next": 0 if level >= PROFESSION_LEVEL_CAP else get_profession_exp_required(level),
+    }
+
+
+def improve_profession_from_action(telegram_id: int, kind: str, amount: int = 1):
+    player = get_player(telegram_id)
+    if not player:
+        return None
+
+    fields = PROFESSION_FIELD_MAP.get(kind)
+    if not fields:
+        return None
+
+    level_field, exp_field = fields
+
+    old_level = getattr(player, level_field, 1)
+    old_exp = getattr(player, exp_field, 0)
+
+    if old_level >= PROFESSION_LEVEL_CAP:
+        return {
+            "kind": kind,
+            "leveled_up": False,
+            "level_before": old_level,
+            "level_after": old_level,
+            "exp_before": old_exp,
+            "exp_after": old_exp,
+            "exp_to_next": 0,
+            "is_max_level": True,
+            "gained_exp": 0,
+        }
+
+    new_exp = old_exp + max(0, amount)
+    new_level = old_level
+    leveled_up = False
+
+    while new_level < PROFESSION_LEVEL_CAP:
+        need = get_profession_exp_required(new_level)
+        if new_exp < need:
+            break
+        new_exp -= need
+        new_level += 1
+        leveled_up = True
+
+    if new_level >= PROFESSION_LEVEL_CAP:
+        new_level = PROFESSION_LEVEL_CAP
+        new_exp = 0
+
+    setattr(player, level_field, new_level)
+    setattr(player, exp_field, new_exp)
+
+    return {
+        "kind": kind,
+        "leveled_up": leveled_up,
+        "level_before": old_level,
+        "level_after": new_level,
+        "exp_before": old_exp,
+        "exp_after": new_exp,
+        "exp_to_next": 0 if new_level >= PROFESSION_LEVEL_CAP else get_profession_exp_required(new_level),
+        "is_max_level": new_level >= PROFESSION_LEVEL_CAP,
+        "gained_exp": max(0, amount),
+    }
