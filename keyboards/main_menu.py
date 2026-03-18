@@ -10,10 +10,10 @@ def main_menu(location_slug: str, district_slug: str | None = None):
 
     buttons = [
         [KeyboardButton(text="🧭 Профиль"), KeyboardButton(text="🐲 Мои монстры")],
-        [KeyboardButton(text="🌲 Исследовать"), KeyboardButton(text="🧺 Собирать ресурсы")],
-        [KeyboardButton(text="🕳 Подземелье"), KeyboardButton(text="📜 Квесты")],
-        [KeyboardButton(text="🧾 Сюжет"), KeyboardButton(text="🎒 Инвентарь")],
-        [KeyboardButton(text="📂 Ещё"), KeyboardButton(text="🩹 Лечить героя")],
-        [KeyboardButton(text="😴 Отдых героя"), KeyboardButton(text="🧭 Перемещение")],
+        [KeyboardButton(text="🌲 Исследовать"), KeyboardButton(text="🕳 Подземелье")],
+        [KeyboardButton(text="📜 Квесты"), KeyboardButton(text="🧾 Сюжет")],
+        [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="📂 Ещё")],
+        [KeyboardButton(text="🩹 Лечить героя"), KeyboardButton(text="😴 Отдых героя")],
+        [KeyboardButton(text="🧭 Перемещение")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
