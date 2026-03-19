@@ -64,6 +64,7 @@ from handlers.city import (
     guild_geologists_handler,
     guild_alchemists_handler,
     city_guard_handler,
+city_guilds_handler,
     leave_city_handler,
     city_market_handler,
     city_bags_handler,
@@ -211,6 +212,7 @@ dp.message.register(city_bags_handler, text_is("🎒 Лавка сумок", "Л
 dp.message.register(city_monsters_handler, text_is("🐲 Рынок монстров", "Рынок монстров"))
 dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов"))
 dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов"))
+dp.message.register(city_guilds_handler, text_is("🏛 Гильдии", "Гильдии"))
 dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
 dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
 dp.message.register(my_board_orders_handler, text_is("📒 Мои заказы"))
