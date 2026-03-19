@@ -184,7 +184,10 @@ dp.message.register(dungeon_leave_handler, text_is("🏃 Покинуть под
 dp.message.register(gather_handler, text_is("🧺 Собирать ресурсы", "Собирать ресурсы"))
 dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
 dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
-dp.message.register(navigation_handler, text_is("🧭 Перемещение", "Перемещение"))
+dp.message.register(
+    navigation_handler,
+    text_is("🧭 Перемещение", "Перемещение", "🧭 Навигация", "Навигация"),
+)
 dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
 
 dp.message.register(city_handler, text_is("🏙 Город", "Город"))
