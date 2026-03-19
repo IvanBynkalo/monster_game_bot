@@ -4,9 +4,10 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 def city_menu(district_slug: str | None = None):
     keyboard = [
         [KeyboardButton(text="🏬 Торговый квартал"), KeyboardButton(text="📜 Доска заказов")],
-        [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="🧭 Профиль")],
-        [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="📈 Развитие")],
-        [KeyboardButton(text="🧭 Навигация")],
+        [KeyboardButton(text="🏛 Гильдии"), KeyboardButton(text="🎒 Инвентарь")],
+        [KeyboardButton(text="🧭 Профиль"), KeyboardButton(text="🐲 Мои монстры")],
+        [KeyboardButton(text="📈 Развитие"), KeyboardButton(text="🧭 Район")],
+        [KeyboardButton(text="🧭 Перемещение")],
     ]
 
     return ReplyKeyboardMarkup(
