@@ -7,17 +7,24 @@ from game.location_rules import is_city
 
 def navigation_menu(location_slug: str, district_slug: str | None = None):
     buttons = []
+
     if is_city(location_slug):
         for cmd in get_district_move_commands(location_slug):
             buttons.append([KeyboardButton(text=cmd)])
+
         if district_slug == "main_gate":
             buttons.append([KeyboardButton(text="🚶 Покинуть город")])
+
+        buttons.append([KeyboardButton(text="🗺 Карта")])
     else:
         for cmd in get_move_commands(location_slug):
             buttons.append([KeyboardButton(text=cmd)])
+
         for cmd in get_district_move_commands(location_slug):
             buttons.append([KeyboardButton(text=cmd)])
-    if not buttons:
+
         buttons.append([KeyboardButton(text="🗺 Карта")])
+
     buttons.append([KeyboardButton(text="⬅️ Назад")])
+
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
