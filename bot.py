@@ -55,8 +55,6 @@ from handlers.shop import (
     back_to_shop_handler,
     sell_resources_handler,
     sell_resource_item_handler,
-    buy_resources_handler,
-    buy_resource_item_handler,
 )
 from handlers.city import (
     city_handler,
@@ -231,8 +229,6 @@ dp.message.register(bag_shop_handler, text_is("🎒 Сумки", "Сумки"))
 dp.message.register(buy_bag_handler, text_startswith("🛒 Купить сумку:", "Купить сумку:"))
 dp.message.register(sell_resources_handler, text_is("💰 Продать ресурсы", "Продать ресурсы"))
 dp.message.register(sell_resource_item_handler, text_startswith("💰 Продать:", "Продать:"))
-dp.message.register(buy_resources_handler, text_is("🛒 Купить ресурсы", "Купить ресурсы"))
-dp.message.register(buy_resource_item_handler, text_startswith("🛒 Купить ресурс:", "Купить ресурс:"))
 dp.message.register(item_shop_handler, text_is("🧪 Магазин предметов", "Магазин предметов"))
 dp.message.register(monster_shop_handler, text_is("🐲 Магазин монстров", "Магазин монстров"))
 dp.message.register(back_to_shop_handler, text_is("⬅️ Назад в магазин", "Назад в магазин"))
