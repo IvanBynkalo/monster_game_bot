@@ -339,15 +339,19 @@ async def city_monsters_handler(message: Message):
 
 async def city_buyer_handler(message: Message):
     player = get_player(message.from_user.id)
-    if not player or not is_city(player.location_slug):
-        await message.answer("Скупщик доступен только в городе.")
+    if not player:
+        await message.answer("Сначала напиши /start")
         return
-    set_ui_screen(message.from_user.id, "sell_shop")
-    await _answer_with_city_image(
-        message,
-        "bag_market.png",
+
+    resources = get_resources(message.from_user.id)
+
+    await message.answer(
         "💰 Скупщик ресурсов готов принять твой товар.",
-        sell_menu(get_resources(message.from_user.id)),
+        reply_markup=sell_menu(
+            city_slug=player.location_slug,
+            resources=resources,
+            merchant_level=player.merchant_level,
+        ),
     )
 
 
