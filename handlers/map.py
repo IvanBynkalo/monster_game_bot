@@ -27,7 +27,10 @@ async def navigation_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     set_ui_screen(message.from_user.id, "navigation")
-    await message.answer("Выбери переход по области или району.", reply_markup=navigation_menu(player.location_slug, player.current_district_slug))
+    await message.answer(
+        "🧭 Навигация\n\nЗдесь собраны все доступные переходы: районы, соседние области и карта.",
+        reply_markup=navigation_menu(player.location_slug, player.current_district_slug),
+    )
 
 
 async def map_handler(message: Message):
