@@ -13,8 +13,6 @@ from database.repositories import (
     add_player_gold,
     get_player,
     get_resources,
-    get_inventory,
-    spend_item,
     update_player_location,
     update_player_district,
     get_active_city_orders,
@@ -23,24 +21,54 @@ from database.repositories import (
     add_city_order,
     set_ui_screen,
     get_city_resource_market,
-    get_player_monsters,
 )
+
+# Опциональные функции. Если в проекте они уже есть — механики включатся.
+# Если каких-то нет, файл всё равно соберётся, а интерфейс останется рабочим.
+try:
+    from database.repositories import get_inventory, spend_item
+except ImportError:
+    def get_inventory(_telegram_id: int):
+        return {}
+
+    def spend_item(_telegram_id: int, _item_slug: str, _amount: int) -> bool:
+        return False
+
+try:
+    from database.repositories import get_player_monsters, remove_player_monster
+except ImportError:
+    def get_player_monsters(_telegram_id: int):
+        return []
+
+    def remove_player_monster(_telegram_id: int, _monster_id: int) -> bool:
+        return False
+
 from game.city_service import render_city_menu, render_guild_text, GUILD_QUESTS
 from game.craft_service import render_craft_text
 from game.item_service import ITEMS
 from game.location_rules import is_city
-from game.market_service import (
-    BAG_OFFERS,
-    get_resource_label,
-    render_resource_buy_text,
-    render_resource_sell_text,
-)
+from game.market_service import BAG_OFFERS, get_resource_label
 from game.shop_service import MONSTER_SHOP_OFFERS
+
 from keyboards.board_menu import board_menu
 from keyboards.city_menu import city_menu, district_actions_menu
 from keyboards.main_menu import main_menu
-from keyboards.shop_menu import bag_shop_menu, monster_shop_menu, sell_menu, buy_resources_menu
+from keyboards.shop_menu import bag_shop_menu, monster_shop_menu, sell_menu
 from keyboards.craft_menu import craft_menu
+
+# Используем существующие shop-handler'ы как backend,
+# но в inline-режиме скрываем reply keyboard.
+from handlers.shop import (
+    buy_bag_handler,
+    buy_monster_handler,
+    sell_resource_item_handler,
+)
+
+try:
+    from handlers.shop import buy_resource_item_handler
+except ImportError:
+    buy_resource_item_handler = None
+
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "city"
 
@@ -61,6 +89,7 @@ CITY_BOARD_ORDER_DEFS = {
     },
 }
 
+# Какие товары Мирна готова выкупать
 MIRNA_BUY_PRICES = {
     "small_potion": 6,
     "big_potion": 11,
@@ -107,38 +136,52 @@ async def _answer_with_city_image(message: Message, image_name: str, text: str, 
         await message.answer(text, reply_markup=reply_markup)
 
 
+class InlineProxyMessage:
+    """
+    Проксируем callback в message-like объект, чтобы использовать существующие handlers.shop,
+    но не менять нижнюю клавиатуру Telegram.
+    """
+
+    def __init__(self, callback: CallbackQuery, text: str):
+        self._callback = callback
+        self.text = text
+        self.from_user = callback.from_user
+
+    async def answer(self, text: str, reply_markup=None, **kwargs):
+        # reply_markup специально игнорируем, чтобы не прыгало нижнее меню
+        return await self._callback.message.answer(text, **kwargs)
+
+    async def answer_photo(self, photo, caption=None, reply_markup=None, **kwargs):
+        return await self._callback.message.answer_photo(photo=photo, caption=caption, **kwargs)
+
+
+async def _run_existing_handler(callback: CallbackQuery, handler, text: str):
+    proxy = InlineProxyMessage(callback, text)
+    await handler(proxy)
+
+
 # =========================================================
-# INLINE UI: ТОРГОВЦЫ ТОРГОВОГО КВАРТАЛА
+# INLINE UI: МИРНА / ВАРГ / БОРТ
 # =========================================================
 
-def mirna_inline() -> InlineKeyboardMarkup:
+def mirna_main_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Купить у Мирны", callback_data="marketnpc:mirna_open")],
+            [InlineKeyboardButton(text="🛒 Купить у Мирны", callback_data="marketnpc:mirna_buy_menu")],
             [InlineKeyboardButton(text="💰 Продать товары Мирне", callback_data="marketnpc:mirna_sell_menu")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
         ]
     )
 
 
-def varg_inline() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Купить у Варга", callback_data="marketnpc:varg_open_buy")],
-            [InlineKeyboardButton(text="💰 Продать Варгу монстра", callback_data="marketnpc:varg_sell_menu")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
-        ]
-    )
+def mirna_buy_inline() -> InlineKeyboardMarkup:
+    rows = []
+    for slug, offer in BAG_OFFERS.items():
+        title = f"🛒 {offer['name']} • {offer['price']}з"
+        rows.append([InlineKeyboardButton(text=title, callback_data=f"marketnpc:mirna_buy:{slug}")])
 
-
-def bort_inline() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💰 Продать ресурсы Борту", callback_data="marketnpc:bort_open_sell")],
-            [InlineKeyboardButton(text="🛒 Купить ресурсы у Борта", callback_data="marketnpc:bort_open_buy")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
-        ]
-    )
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Мирне", callback_data="marketnpc:mirna_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def mirna_sell_inline(player_id: int) -> InlineKeyboardMarkup:
@@ -154,29 +197,37 @@ def mirna_sell_inline(player_id: int) -> InlineKeyboardMarkup:
         if not item:
             continue
 
-        title = f"💰 Продать: {item['emoji']} {item['name']} • {price}з • x{qty}"
-        rows.append([InlineKeyboardButton(text=title, callback_data=f"marketnpc:mirna_sell:{slug}")])
+        rows.append([
+            InlineKeyboardButton(
+                text=f"💰 {item['emoji']} {item['name']} • {price}з • x{qty}",
+                callback_data=f"marketnpc:mirna_sell:{slug}",
+            )
+        ])
 
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Мирне", callback_data="marketnpc:mirna_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def varg_sell_inline(player_id: int) -> InlineKeyboardMarkup:
-    monsters = get_player_monsters(player_id)
+def varg_main_inline() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 Купить у Варга", callback_data="marketnpc:varg_buy_menu")],
+            [InlineKeyboardButton(text="💰 Продать Варгу монстра", callback_data="marketnpc:varg_sell_menu")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
+        ]
+    )
+
+
+def varg_buy_inline() -> InlineKeyboardMarkup:
     rows = []
-
-    for monster in monsters:
-        if monster.get("is_active"):
-            continue
-
-        price = _get_monster_sell_price(monster)
-        title = (
-            f"💰 Продать: {monster['name']} "
-            f"(ур. {monster.get('level', 1)}) • {price}з"
-        )
-        rows.append(
-            [InlineKeyboardButton(text=title, callback_data=f"marketnpc:varg_sell:{monster['id']}")]
-        )
+    for slug, offer in MONSTER_SHOP_OFFERS.items():
+        price = offer.get("price", offer.get("base_price", 0))
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🛒 {offer['name']} • {price}з",
+                callback_data=f"marketnpc:varg_buy:{slug}",
+            )
+        ])
 
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Варгу", callback_data="marketnpc:varg_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -190,6 +241,88 @@ def _get_monster_sell_price(monster: dict) -> int:
     max_hp = int(monster.get("max_hp", monster.get("hp", 1)))
     return max(10, base + level * 8 + attack * 2 + max_hp // 3)
 
+
+def varg_sell_inline(player_id: int) -> InlineKeyboardMarkup:
+    monsters = get_player_monsters(player_id)
+    rows = []
+
+    for monster in monsters:
+        if monster.get("is_active"):
+            continue
+
+        price = _get_monster_sell_price(monster)
+        rows.append([
+            InlineKeyboardButton(
+                text=f"💰 {monster['name']} • {price}з",
+                callback_data=f"marketnpc:varg_sell:{monster['id']}",
+            )
+        ])
+
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Варгу", callback_data="marketnpc:varg_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bort_main_inline() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 Купить у Борта", callback_data="marketnpc:bort_buy_menu")],
+            [InlineKeyboardButton(text="💰 Продать ресурсы Борту", callback_data="marketnpc:bort_sell_menu")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
+        ]
+    )
+
+
+def bort_buy_inline(city_slug: str) -> InlineKeyboardMarkup:
+    market = get_city_resource_market(city_slug)
+    rows = []
+
+    for slug, entry in market.items():
+        stock = int(entry.get("stock", 0))
+        sell_price = int(entry.get("sell_price", 0))
+        if stock <= 0 or sell_price <= 0:
+            continue
+
+        label = get_resource_label(slug)
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🛒 {label} • {sell_price}з",
+                callback_data=f"marketnpc:bort_buy:{slug}",
+            )
+        ])
+
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bort_sell_inline(player_id: int, city_slug: str) -> InlineKeyboardMarkup:
+    resources = get_resources(player_id)
+    market = get_city_resource_market(city_slug)
+    rows = []
+
+    for slug, qty in resources.items():
+        if qty <= 0:
+            continue
+
+        entry = market.get(slug, {})
+        buy_price = int(entry.get("buy_price", 0))
+        if buy_price <= 0:
+            continue
+
+        label = get_resource_label(slug)
+        rows.append([
+            InlineKeyboardButton(
+                text=f"💰 {label} • {buy_price}з • x{qty}",
+                callback_data=f"marketnpc:bort_sell:{slug}",
+            )
+        ])
+
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# =========================================================
+# РЕНДЕРЫ ТЕКСТА
+# =========================================================
 
 def render_mirna_text(player_id: int) -> str:
     player = get_player(player_id)
@@ -210,24 +343,46 @@ def render_mirna_text(player_id: int) -> str:
         lines.append("• Товары пока не настроены.")
     else:
         for offer in BAG_OFFERS.values():
-            name = offer.get("name", "Неизвестный товар")
-            price = offer.get("price", 0)
-            capacity = offer.get("capacity", 0)
-            lines.append(f"• {name} — {price} золота (вместимость: {capacity})")
+            lines.append(
+                f"• {offer['name']} — {offer['price']} золота "
+                f"(вместимость: {offer['capacity']})"
+            )
 
     lines.append("")
     lines.append("Мирна также может выкупить у тебя некоторые походные товары.")
     return "\n".join(lines)
 
 
+def render_mirna_buy_text(player_id: int) -> str:
+    player = get_player(player_id)
+    gold = getattr(player, "gold", 0) if player else 0
+
+    lines = [
+        "🛒 Мирна — покупка",
+        "",
+        f"💰 Твоё золото: {gold}",
+        "",
+        "Выбери сумку:",
+    ]
+
+    for offer in BAG_OFFERS.values():
+        lines.append(
+            f"• {offer['name']} — {offer['price']} золота "
+            f"(вместимость: {offer['capacity']})"
+        )
+
+    return "\n".join(lines)
+
+
 def render_mirna_sell_text(player_id: int) -> str:
     inventory = get_inventory(player_id)
+
     lines = [
         "💰 Мирна — выкуп товаров",
         "",
-        "Мирна принимает полезные походные товары и снаряжение.",
+        "Мирна принимает полезные походные товары.",
         "",
-        "Ты можешь продать по 1 предмету за нажатие:",
+        "Доступно для продажи:",
     ]
 
     shown = False
@@ -267,12 +422,28 @@ def render_varg_text(player_id: int) -> str:
         lines.append("• Монстры пока не настроены.")
     else:
         for offer in MONSTER_SHOP_OFFERS.values():
-            name = offer.get("name", "Неизвестный монстр")
             price = offer.get("price", offer.get("base_price", 0))
-            lines.append(f"• {name} — {price} золота")
+            lines.append(f"• {offer['name']} — {price} золота")
 
-    lines.append("")
-    lines.append("Продажа монстров Варгу уже доступна для неактивных существ.")
+    return "\n".join(lines)
+
+
+def render_varg_buy_text(player_id: int) -> str:
+    player = get_player(player_id)
+    gold = getattr(player, "gold", 0) if player else 0
+
+    lines = [
+        "🛒 Варг — покупка монстров",
+        "",
+        f"💰 Твоё золото: {gold}",
+        "",
+        "Выбери монстра:",
+    ]
+
+    for offer in MONSTER_SHOP_OFFERS.values():
+        price = offer.get("price", offer.get("base_price", 0))
+        lines.append(f"• {offer['name']} — {price} золота")
+
     return "\n".join(lines)
 
 
@@ -282,7 +453,6 @@ def render_varg_sell_text(player_id: int) -> str:
         "💰 Варг — выкуп монстров",
         "",
         "Варг покупает только неактивных монстров.",
-        "Активного монстра продать нельзя.",
         "",
         "Доступно для продажи:",
     ]
@@ -328,18 +498,70 @@ def render_bort_text(city_slug: str, player_id: int) -> str:
             buy_price = int(entry.get("buy_price", 0))
             sell_price = int(entry.get("sell_price", 0))
             stock = int(entry.get("stock", 0))
-
-            if buy_price <= 0:
-                # если в market entry нет готовых полей, используем вычисляемые цены из render_resource_* экранов
-                pass
-
             lines.append(
-                f"• {label} — покупает по {buy_price or 'рынку'}, "
-                f"продаёт по {sell_price or 'рынку'}, запас: {stock}"
+                f"• {label} — покупает по {buy_price}з, продаёт по {sell_price}з, запас: {stock}"
             )
 
-    lines.append("")
-    lines.append("Через кнопки ниже можно открыть реальные экраны покупки и продажи ресурсов.")
+    return "\n".join(lines)
+
+
+def render_bort_buy_text(city_slug: str, player_id: int) -> str:
+    player = get_player(player_id)
+    gold = getattr(player, "gold", 0) if player else 0
+    market = get_city_resource_market(city_slug)
+
+    lines = [
+        "🛒 Борт — покупка ресурсов",
+        "",
+        f"💰 Твоё золото: {gold}",
+        "",
+        "Выбери ресурс:",
+    ]
+
+    shown = False
+    for slug, entry in market.items():
+        stock = int(entry.get("stock", 0))
+        sell_price = int(entry.get("sell_price", 0))
+        if stock <= 0 or sell_price <= 0:
+            continue
+
+        shown = True
+        lines.append(f"• {get_resource_label(slug)} — {sell_price} золота")
+
+    if not shown:
+        lines.append("Сейчас у Борта нечего купить.")
+
+    return "\n".join(lines)
+
+
+def render_bort_sell_text(city_slug: str, player_id: int) -> str:
+    resources = get_resources(player_id)
+    market = get_city_resource_market(city_slug)
+
+    lines = [
+        "💰 Борт — выкуп ресурсов",
+        "",
+        "Борт принимает городские ресурсы.",
+        "",
+        "Доступно для продажи:",
+    ]
+
+    shown = False
+    for slug, qty in resources.items():
+        if qty <= 0:
+            continue
+
+        entry = market.get(slug, {})
+        buy_price = int(entry.get("buy_price", 0))
+        if buy_price <= 0:
+            continue
+
+        shown = True
+        lines.append(f"• {get_resource_label(slug)} — {buy_price} золота • у тебя x{qty}")
+
+    if not shown:
+        lines.append("У тебя нет подходящих ресурсов для продажи Борту.")
+
     return "\n".join(lines)
 
 
@@ -661,12 +883,11 @@ async def city_bags_handler(message: Message):
         return
 
     set_ui_screen(message.from_user.id, "district")
-
     await _answer_with_city_image(
         message,
         "bag_market.png",
         render_mirna_text(message.from_user.id),
-        mirna_inline(),
+        mirna_main_inline(),
     )
 
 
@@ -677,12 +898,11 @@ async def city_monsters_handler(message: Message):
         return
 
     set_ui_screen(message.from_user.id, "district")
-
     await _answer_with_city_image(
         message,
         "bag_market.png",
         render_varg_text(message.from_user.id),
-        varg_inline(),
+        varg_main_inline(),
     )
 
 
@@ -695,7 +915,7 @@ async def city_buyer_handler(message: Message):
     set_ui_screen(message.from_user.id, "district")
     await message.answer(
         render_bort_text(player.location_slug, message.from_user.id),
-        reply_markup=bort_inline(),
+        reply_markup=bort_main_inline(),
     )
 
 
@@ -747,21 +967,34 @@ async def market_inline_callback(callback: CallbackQuery):
 
     data = callback.data or ""
 
-    if data == "marketnpc:mirna_open":
-        await callback.answer("Открываю лавку Мирны...")
-        set_ui_screen(callback.from_user.id, "bag_shop")
-        await callback.message.answer(
-            "🧵 Мирна открывает торговое окно.",
-            reply_markup=bag_shop_menu(),
+    # ---------------- MIRNA ----------------
+
+    if data == "marketnpc:mirna_buy_menu":
+        await callback.message.edit_text(
+            render_mirna_buy_text(callback.from_user.id),
+            reply_markup=mirna_buy_inline(),
         )
+        await callback.answer()
+        return
+
+    if data.startswith("marketnpc:mirna_buy:"):
+        slug = data.split(":")[-1]
+        offer = BAG_OFFERS.get(slug)
+        if not offer:
+            await callback.answer("Товар не найден.", show_alert=True)
+            return
+
+        buy_text = f"🛒 Купить сумку: {offer['name']} • {offer['price']}з"
+        await callback.answer("Покупаю у Мирны...")
+        await _run_existing_handler(callback, buy_bag_handler, buy_text)
         return
 
     if data == "marketnpc:mirna_sell_menu":
-        await callback.answer()
-        await callback.message.answer(
+        await callback.message.edit_text(
             render_mirna_sell_text(callback.from_user.id),
             reply_markup=mirna_sell_inline(callback.from_user.id),
         )
+        await callback.answer()
         return
 
     if data.startswith("marketnpc:mirna_sell:"):
@@ -789,33 +1022,50 @@ async def market_inline_callback(callback: CallbackQuery):
             f"{item['emoji']} {item['name']}\n"
             f"Получено: {gold} золота\n"
             f"Теперь золота: {get_player(callback.from_user.id).gold}",
+        )
+        await callback.message.answer(
+            render_mirna_sell_text(callback.from_user.id),
             reply_markup=mirna_sell_inline(callback.from_user.id),
         )
         return
 
     if data == "marketnpc:mirna_back":
-        await callback.answer()
-        await callback.message.answer(
+        await callback.message.edit_text(
             render_mirna_text(callback.from_user.id),
-            reply_markup=mirna_inline(),
+            reply_markup=mirna_main_inline(),
         )
+        await callback.answer()
         return
 
-    if data == "marketnpc:varg_open_buy":
-        await callback.answer("Открываю магазин Варга...")
-        set_ui_screen(callback.from_user.id, "monster_shop")
-        await callback.message.answer(
-            "🐲 Варг открывает торговое окно.",
-            reply_markup=monster_shop_menu(),
+    # ---------------- VARG ----------------
+
+    if data == "marketnpc:varg_buy_menu":
+        await callback.message.edit_text(
+            render_varg_buy_text(callback.from_user.id),
+            reply_markup=varg_buy_inline(),
         )
+        await callback.answer()
+        return
+
+    if data.startswith("marketnpc:varg_buy:"):
+        slug = data.split(":")[-1]
+        offer = MONSTER_SHOP_OFFERS.get(slug)
+        if not offer:
+            await callback.answer("Монстр не найден.", show_alert=True)
+            return
+
+        price = offer.get("price", offer.get("base_price", 0))
+        buy_text = f"🛒 Купить монстра: {offer['name']} • {price}з"
+        await callback.answer("Покупаю у Варга...")
+        await _run_existing_handler(callback, buy_monster_handler, buy_text)
         return
 
     if data == "marketnpc:varg_sell_menu":
-        await callback.answer()
-        await callback.message.answer(
+        await callback.message.edit_text(
             render_varg_sell_text(callback.from_user.id),
             reply_markup=varg_sell_inline(callback.from_user.id),
         )
+        await callback.answer()
         return
 
     if data.startswith("marketnpc:varg_sell:"):
@@ -828,7 +1078,7 @@ async def market_inline_callback(callback: CallbackQuery):
         monsters = get_player_monsters(callback.from_user.id)
         target = None
         for monster in monsters:
-            if monster["id"] == monster_id:
+            if int(monster["id"]) == monster_id:
                 target = monster
                 break
 
@@ -844,8 +1094,14 @@ async def market_inline_callback(callback: CallbackQuery):
             await callback.answer("Нельзя продать последнего монстра.", show_alert=True)
             return
 
+        if not remove_player_monster(callback.from_user.id, monster_id):
+            await callback.answer(
+                "Продажа монстра не сработала. Если у тебя в репозитории другая функция удаления, подстрою под неё.",
+                show_alert=True,
+            )
+            return
+
         price = _get_monster_sell_price(target)
-        monsters.remove(target)
         add_player_gold(callback.from_user.id, price)
 
         await callback.answer(f"Продан монстр: {target['name']} (+{price} золота)")
@@ -854,49 +1110,89 @@ async def market_inline_callback(callback: CallbackQuery):
             f"{target['name']}\n"
             f"Получено: {price} золота\n"
             f"Теперь золота: {get_player(callback.from_user.id).gold}",
+        )
+        await callback.message.answer(
+            render_varg_sell_text(callback.from_user.id),
             reply_markup=varg_sell_inline(callback.from_user.id),
         )
         return
 
     if data == "marketnpc:varg_back":
-        await callback.answer()
-        await callback.message.answer(
+        await callback.message.edit_text(
             render_varg_text(callback.from_user.id),
-            reply_markup=varg_inline(),
+            reply_markup=varg_main_inline(),
         )
+        await callback.answer()
         return
 
-    if data == "marketnpc:bort_open_sell":
-        resources = get_resources(callback.from_user.id)
-        set_ui_screen(callback.from_user.id, "sell_shop")
-        await callback.answer("Открываю продажу ресурсов...")
-        await callback.message.answer(
-            render_resource_sell_text(
-                city_slug=player.location_slug,
-                resources=resources,
-                merchant_level=player.merchant_level,
-            ),
-            reply_markup=sell_menu(
-                city_slug=player.location_slug,
-                resources=resources,
-                merchant_level=player.merchant_level,
-            ),
+    # ---------------- BORT ----------------
+
+    if data == "marketnpc:bort_buy_menu":
+        await callback.message.edit_text(
+            render_bort_buy_text(player.location_slug, callback.from_user.id),
+            reply_markup=bort_buy_inline(player.location_slug),
         )
+        await callback.answer()
         return
 
-    if data == "marketnpc:bort_open_buy":
+    if data.startswith("marketnpc:bort_buy:"):
+        slug = data.split(":")[-1]
         market = get_city_resource_market(player.location_slug)
-        set_ui_screen(callback.from_user.id, "buy_resources")
-        await callback.answer("Открываю покупку ресурсов...")
-        await callback.message.answer(
-            render_resource_buy_text(player.location_slug),
-            reply_markup=buy_resources_menu(player.location_slug, market),
-        )
+        entry = market.get(slug)
+        if not entry:
+            await callback.answer("Ресурс не найден.", show_alert=True)
+            return
+
+        if buy_resource_item_handler is None:
+            await callback.answer(
+                "В проекте не найден обработчик покупки ресурсов. UI готов, backend подключим следующим шагом.",
+                show_alert=True,
+            )
+            return
+
+        label = get_resource_label(slug)
+        sell_price = int(entry.get("sell_price", 0))
+        buy_text = f"🛒 Купить ресурс: {label} • {sell_price}з"
+        await callback.answer("Покупаю у Борта...")
+        await _run_existing_handler(callback, buy_resource_item_handler, buy_text)
         return
+
+    if data == "marketnpc:bort_sell_menu":
+        await callback.message.edit_text(
+            render_bort_sell_text(player.location_slug, callback.from_user.id),
+            reply_markup=bort_sell_inline(callback.from_user.id, player.location_slug),
+        )
+        await callback.answer()
+        return
+
+    if data.startswith("marketnpc:bort_sell:"):
+        slug = data.split(":")[-1]
+        market = get_city_resource_market(player.location_slug)
+        entry = market.get(slug)
+        if not entry:
+            await callback.answer("Ресурс не найден.", show_alert=True)
+            return
+
+        label = get_resource_label(slug)
+        buy_price = int(entry.get("buy_price", 0))
+        sell_text = f"💰 Продать: {label} • {buy_price}з"
+        await callback.answer("Продаю Борту...")
+        await _run_existing_handler(callback, sell_resource_item_handler, sell_text)
+        return
+
+    if data == "marketnpc:bort_back":
+        await callback.message.edit_text(
+            render_bort_text(player.location_slug, callback.from_user.id),
+            reply_markup=bort_main_inline(),
+        )
+        await callback.answer()
+        return
+
+    # ---------------- CLOSE ----------------
 
     if data == "marketnpc:close":
+        await callback.message.edit_text("Выбери действие внизу клавиатуры квартала.")
         await callback.answer()
-        await callback.message.answer("Выбери действие внизу клавиатуры квартала.")
         return
 
     await callback.answer()
