@@ -18,6 +18,7 @@ from game.city_service import render_city_board, render_city_menu, render_guild_
 from game.location_rules import is_city
 from keyboards.board_menu import board_menu
 from keyboards.city_menu import city_menu, district_actions_menu
+from keyboards.guilds_menu import guilds_menu
 from keyboards.main_menu import main_menu
 from keyboards.shop_menu import shop_menu, bag_shop_menu, monster_shop_menu, sell_menu
 from keyboards.craft_menu import craft_menu
@@ -208,6 +209,27 @@ async def back_to_city_from_board_handler(message: Message):
         reply_markup=city_menu(player.current_district_slug),
     )
 
+async def city_guilds_handler(message: Message):
+    player = get_player(message.from_user.id)
+    if not player or not is_city(player.location_slug):
+        await message.answer("Гильдии доступны только в городе.")
+        return
+
+    update_player_district(message.from_user.id, "guild_quarter")
+    set_ui_screen(message.from_user.id, "guilds")
+
+    text = (
+        "🏛 Квартал гильдий\n\n"
+        "Здесь собраны главные профессиональные союзы Сереброграда.\n"
+        "Выбери, чьи задания и обучение тебя интересуют."
+    )
+
+    await _answer_with_city_image(
+        message,
+        "guild_hall.png",
+        text,
+        guilds_menu(),
+    )
 
 async def guild_hunters_handler(message: Message):
     await _guild_handler(
@@ -255,11 +277,11 @@ async def _guild_handler(message: Message, title: str, description: str, profess
         await message.answer("Гильдии доступны только в городе.")
         return
     quests = [q for q in GUILD_QUESTS if q["profession"] == profession]
-    await _answer_with_city_image(
+        await _answer_with_city_image(
         message,
         image_name,
         render_guild_text(title, description, quests),
-        city_menu(player.current_district_slug),
+        guilds_menu(),
     )
 
 
