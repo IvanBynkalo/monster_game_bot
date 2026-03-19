@@ -55,6 +55,8 @@ from handlers.shop import (
     back_to_shop_handler,
     sell_resources_handler,
     sell_resource_item_handler,
+    buy_resources_handler,
+    buy_resource_item_handler,
 )
 from handlers.city import (
     city_handler,
@@ -64,7 +66,7 @@ from handlers.city import (
     guild_geologists_handler,
     guild_alchemists_handler,
     city_guard_handler,
-city_guilds_handler,
+    city_guilds_handler,
     leave_city_handler,
     city_market_handler,
     city_bags_handler,
@@ -76,6 +78,7 @@ city_guilds_handler,
     take_ore_order_handler,
     my_board_orders_handler,
     back_to_city_from_board_handler,
+    market_inline_callback,
 )
 from handlers.admin import (
     admin_panel_handler,
@@ -150,7 +153,6 @@ dp.message.register(relics_handler, text_is("🔮 Реликвии", "Релик
 dp.message.register(profile_handler, text_is("Профиль", "🧭 Профиль", "🧭 Профіль", "🧭 профиль"))
 dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
 
-# ВАЖНО: оставляем ниже кнопок доски заказов с префиксом 📌, чтобы не конфликтовать с "✅ ID"
 dp.message.register(set_active_monster_handler, text_startswith("✅ "))
 
 dp.message.register(inventory_handler, text_is("🎒 Инвентарь", "Инвентарь"))
@@ -229,6 +231,8 @@ dp.message.register(bag_shop_handler, text_is("🎒 Сумки", "Сумки"))
 dp.message.register(buy_bag_handler, text_startswith("🛒 Купить сумку:", "Купить сумку:"))
 dp.message.register(sell_resources_handler, text_is("💰 Продать ресурсы", "Продать ресурсы"))
 dp.message.register(sell_resource_item_handler, text_startswith("💰 Продать:", "Продать:"))
+dp.message.register(buy_resources_handler, text_is("🛒 Купить ресурсы", "Купить ресурсы"))
+dp.message.register(buy_resource_item_handler, text_startswith("🛒 Купить ресурс:", "Купить ресурс:"))
 dp.message.register(item_shop_handler, text_is("🧪 Магазин предметов", "Магазин предметов"))
 dp.message.register(monster_shop_handler, text_is("🐲 Магазин монстров", "Магазин монстров"))
 dp.message.register(back_to_shop_handler, text_is("⬅️ Назад в магазин", "Назад в магазин"))
@@ -249,17 +253,13 @@ dp.message.register(back_handler, text_is("⬅️ Назад", "Назад"))
 dp.message.register(move_handler, text_startswith("Перейти:", "🚶 "))
 dp.message.register(district_move_handler, text_startswith("Район:", "🧭→ "))
 
-# Обычный бой с монстром
-dp.message.register(attack_handler, text_is("Атаковать", "⚔️ Атаковать"))
-dp.message.register(skill_handler, text_is("Навык", "✨ Навык"))
-dp.message.register(capture_handler, text_is("Поймать", "🎯 Поймать"))
-dp.message.register(trap_handler, text_is("🪤 Простая ловушка", "🪤 Ловушка", "Ловушка"))
-dp.message.register(poison_trap_handler, text_is("🪤 Ядовитая ловушка", "Ядовитая ловушка"))
-dp.message.register(flee_handler, text_is("Убежать", "🏃 Убежать"))
-
-# Бой с мировым боссом — отдельные кнопки, чтобы не было конфликта
 dp.message.register(boss_attack_handler, text_is("Атаковать босса", "⚔️ Атаковать босса"))
 dp.message.register(boss_flee_handler, text_is("Убежать от босса", "🏃 Убежать от босса"))
+
+dp.callback_query.register(
+    market_inline_callback,
+    lambda c: c.data and c.data.startswith("marketnpc:"),
+)
 
 dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
 dp.message.register(
