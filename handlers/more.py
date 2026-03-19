@@ -35,7 +35,7 @@ async def back_handler(message: Message):
         await message.answer("Возврат в магазин.", reply_markup=shop_menu())
         return
 
-    if screen in {"board", "district", "shop", "craft", "progression", "inventory", "more", "navigation", "city"}:
+    if screen in {"board", "district", "shop", "craft", "progression", "inventory", "more", "navigation", "city", "guilds"}:
         set_ui_screen(message.from_user.id, "main")
         if is_city(player.location_slug):
             await message.answer("Главное меню города", reply_markup=city_menu(player.current_district_slug))
