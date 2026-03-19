@@ -357,15 +357,17 @@ async def city_buyer_handler(message: Message):
 
 async def city_alchemy_handler(message: Message):
     player = get_player(message.from_user.id)
-    if not player or not is_city(player.location_slug):
-        await message.answer("Лаборатория доступна только в городе.")
+    if not player:
+        await message.answer("Сначала напиши /start")
         return
+
+    resources = get_resources(message.from_user.id)
+
     set_ui_screen(message.from_user.id, "craft")
-    await _answer_with_city_image(
-        message,
-        "alchemy_lab.png",
-        "⚗ Алхимическая лаборатория готова к работе.",
-        craft_menu(),
+
+    await message.answer(
+        render_craft_text(player, resources),
+        reply_markup=craft_menu(player, resources),
     )
 
 
