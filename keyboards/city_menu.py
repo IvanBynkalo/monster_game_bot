@@ -6,7 +6,7 @@ def city_menu(district_slug: str | None = None):
         [KeyboardButton(text="🏬 Торговый квартал"), KeyboardButton(text="📜 Доска заказов")],
         [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="🧭 Профиль")],
         [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="📈 Развитие")],
-        [KeyboardButton(text="🧭 Район"), KeyboardButton(text="🧭 Перемещение")],
+        [KeyboardButton(text="🧭 Навигация")],
     ]
 
     return ReplyKeyboardMarkup(
@@ -16,7 +16,6 @@ def city_menu(district_slug: str | None = None):
 
 
 def district_actions_menu(district_slug: str):
-    # дефолт
     keyboard = [
         [KeyboardButton(text="⬅️ Назад")],
     ]
