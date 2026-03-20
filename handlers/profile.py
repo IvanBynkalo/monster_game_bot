@@ -1,12 +1,13 @@
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from database.repositories import (
     get_active_monster,
     get_player,
     get_player_monsters,
     get_temp_effects,
     restore_player_energy,
+    get_player_emotions,
 )
-from game.emotion_service import render_emotions_panel
+from game.emotion_service import EMOTION_LABELS
 from game.infection_service import render_monster_infection
 from game.type_service import get_type_label
 from game.progression_service import render_attributes, render_professions
@@ -16,10 +17,94 @@ from game.expedition_service import render_effects_text
 from game.district_service import get_district_name
 from game.player_survival_service import render_player_status
 from keyboards.main_menu import main_menu
+from keyboards.profile_menu import profile_tabs, stat_spend_inline
 from utils.logger import log_event
-from game.pvp_service import render_pvp_stats
-from game.daily_service import get_daily_panel
 
+
+# ── Компактные тексты для каждой вкладки ──────────────────────────────────────
+
+def _tab_main(player, monsters) -> str:
+    return (
+        f"📊 *Основное*\n\n"
+        f"👤 {player.name} | Ур. {player.level}\n"
+        f"✨ Опыт: {player.experience}/{player.level * 10}\n"
+        f"⚡ Энергия: {player.energy}/12\n"
+        f"💰 Золото: {player.gold}\n"
+        f"{render_player_status(player)}\n\n"
+        f"🐲 Монстров: {len(monsters)}\n"
+        f"📍 {get_location_name(player.location_slug)}"
+    )
+
+
+def _tab_monster(active) -> str:
+    if not active:
+        return "🐲 *Монстр*\n\nНет активного монстра."
+    RARITY = {"common":"Обычный","rare":"Редкий","epic":"Эпический",
+               "legendary":"Легендарный","mythic":"Мифический"}
+    hp = f"{active.get('current_hp', active['hp'])}/{active.get('max_hp', active['hp'])}"
+    xp = f"{active.get('experience',0)}/{active.get('level',1)*5}"
+    return (
+        f"🐲 *Монстр*\n\n"
+        f"Имя: {active['name']}\n"
+        f"Редкость: {RARITY.get(active.get('rarity','common'), '?')}\n"
+        f"Тип: {get_type_label(active.get('monster_type'))}\n"
+        f"Уровень: {active.get('level',1)} | Опыт: {xp}\n"
+        f"HP: {hp} | ATK: {active.get('attack',0)}\n"
+        f"Эволюция: стадия {active.get('evolution_stage',0)}\n"
+        f"{render_abilities(active)}\n"
+        f"{render_monster_infection(active)}"
+    )
+
+
+def _tab_stats(player) -> str:
+    return (
+        f"💪 *Характеристики*\n\n"
+        f"{render_attributes(player)}\n\n"
+        f"🎒 Сумка: {player.bag_capacity} слотов"
+    )
+
+
+def _tab_progress(player) -> str:
+    pts = player.stat_points
+    pts_text = f"🟡 Свободных очков: {pts}" if pts > 0 else "Нет свободных очков"
+    return (
+        f"📈 *Развитие*\n\n"
+        f"{render_attributes(player)}\n\n"
+        f"{pts_text}\n"
+        f"_(Нажми кнопку ниже чтобы потратить очко)_\n\n"
+        f"🎒 Сумка: {player.bag_capacity} слотов\n"
+        f"_Новые сумки — в Торговом квартале_"
+    )
+
+
+def _tab_professions(player) -> str:
+    return f"🎓 *Профессии*\n\n{render_professions(player)}"
+
+
+def _tab_emotions(uid, monsters) -> str:
+    emotions = get_player_emotions(uid)
+    emo_monsters   = sum(1 for m in monsters if m.get("source_type") == "emotion")
+    evo_monsters   = sum(1 for m in monsters if m.get("evolution_stage", 0) > 0)
+    combo_monsters = sum(1 for m in monsters if m.get("combo_mutation"))
+    lines = ["✨ *Эмоции*\n"]
+    for key, label in EMOTION_LABELS.items():
+        val = emotions.get(key, 0)
+        if val > 0:
+            lines.append(f"{label}: {val}")
+    if len(lines) == 1:
+        lines.append("Пусто")
+    lines.append(f"\n🐲 Эмоц. монстров: {emo_monsters}")
+    lines.append(f"🦋 Эволюционировавших: {evo_monsters}")
+    lines.append(f"⚡ С комбо-мутацией: {combo_monsters}")
+    return "\n".join(lines)
+
+
+def _tab_effects(uid) -> str:
+    effects = render_effects_text(get_temp_effects(uid))
+    return f"🎒 *Эффекты*\n\n{effects}"
+
+
+# ── Handlers ──────────────────────────────────────────────────────────────────
 
 async def profile_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -28,46 +113,63 @@ async def profile_handler(message: Message):
         return
 
     monsters = get_player_monsters(message.from_user.id)
-    emotion_monsters = sum(1 for m in monsters if m.get("source_type") == "emotion")
-    evolved_monsters = sum(1 for m in monsters if m.get("evolution_stage", 0) > 0)
-
-    active = get_active_monster(message.from_user.id)
-    active_text = active["name"] if active else "нет"
-    infection_text = render_monster_infection(active) if active else "Искажение: нет"
-    hp_text = f"{active.get('current_hp', active['hp'])}/{active.get('max_hp', active['hp'])}" if active else "-"
-    monster_xp = f"{active.get('experience', 0)}/{active['level'] * 5}" if active else "-"
-    evolution_text = f"Стадия эволюции: {active.get('evolution_stage', 0)}" if active else "Стадия эволюции: -"
-    monster_type = get_type_label(active.get("monster_type")) if active else "-"
+    text = _tab_main(player, monsters)
 
     await message.answer(
-        f"Профиль\n\n"
-        f"Имя: {player.name}\n"
-        f"Уровень игрока: {player.level}\n"
-        f"Опыт игрока: {player.experience}/{player.level * 10}\n"
-        f"Энергия: {player.energy}/12\n"
-        f"Золото: {player.gold}\n"
-        f"{render_player_status(player)}\n"
-        f"Монстров всего: {len(monsters)}\n"
-        f"Эмоциональных монстров: {emotion_monsters}\n"
-        f"Эволюционировавших монстров: {evolved_monsters}\n"
-        f"Активный монстр: {active_text}\n"
-        f"Тип монстра: {monster_type}\n"
-        f"Уровень монстра: {active['level'] if active else '-'}\n"
-        f"Опыт монстра: {monster_xp}\n"
-        f"HP активного монстра: {hp_text}\n"
-        f"{evolution_text}\n"
-        f"{render_abilities(active) if active else 'Способности: -'}\n"
-        f"{infection_text}\n\n"
-        f"{render_emotions_panel(message.from_user.id)}\n\n"
-        f"{render_attributes(player)}\n\n"
-        f"{render_professions(player)}\n"
-        f"🎒 Вместимость сумки: {player.bag_capacity}\n"
-        f"{render_effects_text(get_temp_effects(message.from_user.id))}\n\n"
-        f"Текущий регион: Долина эмоций\n"
-        f"Текущая локация: {get_location_name(player.location_slug)}\n"
-        f"Текущий район: {get_district_name(player.location_slug, player.current_district_slug)}",
+        text,
         reply_markup=main_menu(player.location_slug, player.current_district_slug),
+        parse_mode="Markdown",
     )
+    await message.answer(
+        "Выбери вкладку:",
+        reply_markup=profile_tabs("main"),
+    )
+
+
+async def profile_tab_callback(callback: CallbackQuery):
+    """Обработчик переключения вкладок профиля."""
+    tab = callback.data.split(":")[2]
+    uid = callback.from_user.id
+
+    player   = get_player(uid)
+    monsters = get_player_monsters(uid)
+    active   = get_active_monster(uid)
+
+    if not player:
+        await callback.answer("Сначала напиши /start")
+        return
+
+    if tab == "main":
+        text = _tab_main(player, monsters)
+    elif tab == "monster":
+        text = _tab_monster(active)
+    elif tab == "stats":
+        text = _tab_stats(player)
+    elif tab == "progress":
+        text = _tab_progress(player)
+    elif tab == "prof":
+        text = _tab_professions(player)
+    elif tab == "emo":
+        text = _tab_emotions(uid, monsters)
+    elif tab == "effects":
+        text = _tab_effects(uid)
+    else:
+        text = _tab_main(player, monsters)
+
+    await callback.answer()
+    # Для вкладки Развитие добавляем кнопки трат очков
+    extra_markup = None
+    if tab == "progress":
+        extra_markup = stat_spend_inline(player.stat_points)
+
+    try:
+        await callback.message.edit_text(text, reply_markup=profile_tabs(tab),
+                                          parse_mode="Markdown")
+    except Exception:
+        await callback.message.answer(text, reply_markup=profile_tabs(tab),
+                                       parse_mode="Markdown")
+    if extra_markup:
+        await callback.message.answer("Потратить очко:", reply_markup=extra_markup)
 
 
 async def restore_energy_handler(message: Message):
@@ -84,12 +186,32 @@ async def restore_energy_handler(message: Message):
         return
 
     restore_player_energy(message.from_user.id, amount=5, max_energy=12)
-    player.gold -= 3
     player = get_player(message.from_user.id)
-
     log_event("energy_restored", message.from_user.id, "gold_spent=3")
-
     await message.answer(
-        f"Энергия восстановлена. Текущее значение: {player.energy}/12\nПотрачено: 3 золота",
+        f"⚡ Энергия восстановлена: {player.energy}/12\n💰 Потрачено: 3 золота",
         reply_markup=main_menu(player.location_slug, player.current_district_slug),
     )
+
+
+async def profile_stat_callback(callback: CallbackQuery):
+    """Трата очков характеристик прямо из профиля."""
+    parts = callback.data.split(":")
+    stat = parts[2] if len(parts) > 2 else ""
+    uid = callback.from_user.id
+
+    from database.repositories import spend_stat_point, get_player
+    if not spend_stat_point(uid, stat):
+        await callback.answer("Нет свободных очков!", show_alert=True)
+        return
+
+    await callback.answer("✅ Характеристика повышена!")
+    player = get_player(uid)
+    text = _tab_progress(player)
+    try:
+        await callback.message.edit_text(text, reply_markup=profile_tabs("progress"),
+                                          parse_mode="Markdown")
+    except Exception:
+        await callback.message.answer(text, reply_markup=profile_tabs("progress"),
+                                       parse_mode="Markdown")
+    await callback.message.answer("Потратить ещё:", reply_markup=stat_spend_inline(player.stat_points))

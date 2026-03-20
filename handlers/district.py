@@ -5,6 +5,8 @@ from game.district_service import (
     get_districts_for_location,
     render_district_card,
 )
+from game.location_rules import is_city
+from game.gather_service import has_gathering_in_location
 from keyboards.city_menu import district_actions_menu
 from keyboards.main_menu import main_menu
 
@@ -130,7 +132,14 @@ async def district_move_handler(message: Message):
     transition_text = _district_transition_text(old_slug, new_slug)
     district_card = render_district_card(player.location_slug, new_slug)
 
+    # В городе — показать меню действий района
+    # В полевых локациях — показать основное меню с Исследовать/Собирать
+    if is_city(player.location_slug):
+        kb = district_actions_menu(new_slug)
+    else:
+        kb = main_menu(player.location_slug, new_slug)
+
     await message.answer(
         f"{transition_text}\n\n{district_card}",
-        reply_markup=district_actions_menu(new_slug),
+        reply_markup=kb,
     )

@@ -21,6 +21,10 @@ from database.repositories import (
     add_city_order,
     set_ui_screen,
     get_city_resource_market,
+    get_city_resource_sell_price,
+    get_city_resource_buy_price,
+    sell_resource_to_city_market,
+    buy_resource_from_city_market,
 )
 
 # Опциональные функции. Если в проекте они уже есть — механики включатся.
@@ -455,20 +459,22 @@ def bort_buy_inline(city_slug: str) -> InlineKeyboardMarkup:
     market = get_city_resource_market(city_slug)
     rows = []
 
-    for slug, entry in market.items():
-        stock = int(entry.get("stock", 0))
-        sell_price = int(entry.get("sell_price", 0))
-        if stock <= 0 or sell_price <= 0:
+    for slug in market:
+        entry = market[slug]
+        stock = int(float(entry.get("stock", 0)))
+        if stock <= 0:
             continue
-
+        price = get_city_resource_buy_price(city_slug, slug)
         label = get_resource_label(slug)
         rows.append([
             InlineKeyboardButton(
-                text=f"🛒 {label} • {sell_price}з",
+                text=f"🛒 {label} • 💰{price}з",
                 callback_data=f"marketnpc:bort_buy:{slug}",
             )
         ])
 
+    if not rows:
+        rows.append([InlineKeyboardButton(text="Нет товаров", callback_data="marketnpc:bort_back")])
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -476,25 +482,26 @@ def bort_buy_inline(city_slug: str) -> InlineKeyboardMarkup:
 def bort_sell_inline(player_id: int, city_slug: str) -> InlineKeyboardMarkup:
     resources = get_resources(player_id)
     market = get_city_resource_market(city_slug)
+    player = get_player(player_id)
+    merchant_level = getattr(player, "merchant_level", 1) if player else 1
     rows = []
 
     for slug, qty in resources.items():
         if qty <= 0:
             continue
-
-        entry = market.get(slug, {})
-        buy_price = int(entry.get("buy_price", 0))
-        if buy_price <= 0:
+        if slug not in market:
             continue
-
+        price = get_city_resource_sell_price(city_slug, slug, merchant_level=merchant_level)
         label = get_resource_label(slug)
         rows.append([
             InlineKeyboardButton(
-                text=f"💰 {label} • {buy_price}з • x{qty}",
+                text=f"🪙 {label} • {price}з/шт • x{qty}",
                 callback_data=f"marketnpc:bort_sell:{slug}",
             )
         ])
 
+    if not rows:
+        rows.append([InlineKeyboardButton(text="Нет ресурсов для продажи", callback_data="marketnpc:bort_back")])
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -719,12 +726,13 @@ def render_varg_quest_text(player_id: int) -> str:
 def render_bort_text(city_slug: str, player_id: int) -> str:
     player = get_player(player_id)
     gold = getattr(player, "gold", 0) if player else 0
+    merchant_level = getattr(player, "merchant_level", 1) if player else 1
     market = get_city_resource_market(city_slug)
 
     lines = [
         "📦 Борт — лавка ресурсов",
         "",
-        f"💰 Твоё золото: {gold}",
+        f"💰 Твоё золото: {gold} золота",
         "",
         "Борт покупает и продаёт ресурсы города.",
         "",
@@ -734,13 +742,14 @@ def render_bort_text(city_slug: str, player_id: int) -> str:
     if not market:
         lines.append("• Рынок пока не настроен.")
     else:
-        for slug, entry in market.items():
+        for slug in market:
             label = get_resource_label(slug)
-            buy_price = int(entry.get("buy_price", 0))
-            sell_price = int(entry.get("sell_price", 0))
-            stock = int(entry.get("stock", 0))
+            entry = market[slug]
+            stock = int(float(entry.get("stock", 0)))
+            sell_p = get_city_resource_sell_price(city_slug, slug, merchant_level=merchant_level)
+            buy_p  = get_city_resource_buy_price(city_slug, slug)
             lines.append(
-                f"• {label} — покупает по {buy_price}з, продаёт по {sell_price}з, запас: {stock}"
+                f"• {label}\n  🪙 Продашь: {sell_p}з | 🛒 Купишь: {buy_p}з | 📦 Запас: {stock}"
             )
 
     return "\n".join(lines)
@@ -754,20 +763,20 @@ def render_bort_buy_text(city_slug: str, player_id: int) -> str:
     lines = [
         "🛒 Борт — покупка ресурсов",
         "",
-        f"💰 Твоё золото: {gold}",
+        f"💰 Твоё золото: {gold} золота",
         "",
-        "Выбери ресурс:",
+        "Нажми на ресурс чтобы купить 1 единицу:",
     ]
 
     shown = False
-    for slug, entry in market.items():
-        stock = int(entry.get("stock", 0))
-        sell_price = int(entry.get("sell_price", 0))
-        if stock <= 0 or sell_price <= 0:
+    for slug in market:
+        entry = market[slug]
+        stock = int(float(entry.get("stock", 0)))
+        if stock <= 0:
             continue
-
+        price = get_city_resource_buy_price(city_slug, slug)
         shown = True
-        lines.append(f"• {get_resource_label(slug)} — {sell_price} золота")
+        lines.append(f"• {get_resource_label(slug)} — 🛒 {price} золота (запас: {stock})")
 
     if not shown:
         lines.append("Сейчас у Борта нечего купить.")
@@ -791,12 +800,11 @@ def render_bort_sell_text(city_slug: str, player_id: int) -> str:
     for slug, qty in resources.items():
         if qty <= 0:
             continue
-
-        entry = market.get(slug, {})
-        buy_price = int(entry.get("buy_price", 0))
+        if slug not in market:
+            continue
+        buy_price = get_city_resource_sell_price(city_slug, slug, merchant_level=getattr(get_player(player_id), "merchant_level", 1))
         if buy_price <= 0:
             continue
-
         shown = True
         lines.append(f"• {get_resource_label(slug)} — {buy_price} золота • у тебя x{qty}")
 
@@ -1181,6 +1189,27 @@ async def city_buyer_handler(message: Message):
     await message.answer(
         render_bort_text(player.location_slug, message.from_user.id),
         reply_markup=bort_main_inline(message.from_user.id),
+    )
+
+
+async def city_craft_quarter_handler(message: Message):
+    """Вход в Ремесленный квартал — показывает меню квартала."""
+    player = get_player(message.from_user.id)
+    if not player or not is_city(player.location_slug):
+        await message.answer("Ремесленный квартал доступен только в городе.")
+        return
+    set_ui_screen(message.from_user.id, "district")
+    update_player_district(message.from_user.id, "craft_quarter")
+    text = (
+        "⚒ Ремесленный квартал\n\n"
+        "Улицы мастерских и алхимических лавок. "
+        "Здесь можно сварить зелья, создать ловушки и улучшить снаряжение."
+    )
+    await _answer_with_city_image(
+        message,
+        "alchemy_lab.png",
+        text,
+        district_actions_menu("craft_quarter"),
     )
 
 
