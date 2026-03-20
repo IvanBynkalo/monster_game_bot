@@ -850,6 +850,7 @@ async def fight_inline_callback(callback: CallbackQuery):
     await callback.message.answer("\n".join(l for l in lines if l), reply_markup=kb)
 
 
+@dp.callback_query(lambda c: c.data and c.data.startswith("loc:"))
 async def location_inline_callback(callback: CallbackQuery):
     """Inline-действия в локации.
     Вызываем игровую логику напрямую по uid — НЕ мутируем frozen pydantic объект.
@@ -1267,7 +1268,7 @@ async def explore_stop_callback(callback: CallbackQuery):
     """Остановиться и вернуться к меню локации."""
     await callback.answer()
     from database.repositories import get_player
-    from game.grid_exploration_service import render_exploration_panel, is_dungeon_available
+    from game.grid_exploration_service import render_exploration_panel, is_dungeon_available, get_grid
     from keyboards.location_menu import location_actions_inline
     from game.dungeon_service import DUNGEONS
     from keyboards.main_menu import main_menu
