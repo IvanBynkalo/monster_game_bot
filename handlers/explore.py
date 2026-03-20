@@ -1,3 +1,5 @@
+import random
+
 from aiogram.types import Message
 from database.repositories import (
     add_item,
