@@ -4,9 +4,13 @@ import re
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import ErrorEvent, Message
+from aiogram.types import (
+    ErrorEvent, Message, PreCheckoutQuery, SuccessfulPayment,
+)
 
 from config import BOT_TOKEN, ADMIN_IDS
+from database.init_db import init_db
+from utils.notifier import set_bot
 from handlers.start import start_handler
 from handlers.map import map_handler, location_handler, move_handler, navigation_handler
 from handlers.world import world_handler
@@ -325,6 +329,264 @@ dp.message.register(
 )
 
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# НОВЫЕ СИСТЕМЫ v3.0
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Stars оплата (рек. #14) ───────────────────────────────────────────
+
+@dp.pre_checkout_query()
+async def pre_checkout_handler(query: PreCheckoutQuery):
+    await query.answer(ok=True)
+
+@dp.message(lambda m: m.successful_payment is not None)
+async def successful_payment_handler(message: Message):
+    from game.stars_shop import process_stars_purchase
+    result = await process_stars_purchase(message.from_user.id,
+                                          message.successful_payment.invoice_payload)
+    if result:
+        await message.answer(result)
+
+@dp.message(Command("stars_shop"))
+async def stars_shop_cmd(message: Message):
+    from game.stars_shop import render_stars_shop
+    await message.answer(render_stars_shop())
+
+@dp.message(Command("buy_stars"))
+async def buy_stars_cmd(message: Message):
+    from game.stars_shop import send_stars_invoice, STARS_CATALOG
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Использование: /buy_stars <slug>\n/stars_shop — список товаров")
+        return
+    slug = parts[1].strip()
+    if slug not in STARS_CATALOG:
+        await message.answer(f"Товар не найден. /stars_shop — список")
+        return
+    await send_stars_invoice(bot, message.chat.id, slug)
+
+@dp.message(Command("buy_season_pass"))
+async def buy_season_pass_cmd(message: Message):
+    from game.stars_shop import send_stars_invoice
+    await send_stars_invoice(bot, message.chat.id, "season_pass")
+
+
+# ── PvP (рек. #8) ─────────────────────────────────────────────────────
+
+@dp.message(Command("pvp"))
+async def pvp_cmd(message: Message):
+    from game.pvp_service import render_pvp_stats
+    await message.answer(render_pvp_stats(message.from_user.id))
+
+@dp.message(Command("challenge"))
+async def challenge_cmd(message: Message):
+    from database.repositories import get_player, get_active_monster
+    from game.pvp_service import calculate_pvp_battle, render_pvp_result
+    from utils.notifier import notify_pvp_result
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Использование: /challenge <telegram_id>")
+        return
+    try:
+        target_id = int(parts[1].strip())
+    except ValueError:
+        await message.answer("Укажи числовой Telegram ID.")
+        return
+    if target_id == message.from_user.id:
+        await message.answer("Нельзя вызвать самого себя.")
+        return
+    target = get_player(target_id)
+    if not target:
+        await message.answer("Игрок не найден.")
+        return
+    if not get_active_monster(target_id):
+        await message.answer(f"У {target.name} нет активного монстра.")
+        return
+    if not get_active_monster(message.from_user.id):
+        await message.answer("У тебя нет активного монстра.")
+        return
+    result = calculate_pvp_battle(message.from_user.id, target_id)
+    if "error" in result:
+        await message.answer(f"❌ {result['error']}")
+        return
+    await message.answer(render_pvp_result(result, message.from_user.id))
+    import asyncio
+    asyncio.create_task(notify_pvp_result(target_id, result, target_id == result["winner_id"]))
+
+@dp.message(Command("pvp_top"))
+async def pvp_top_cmd(message: Message):
+    from game.daily_service import render_pvp_leaderboard_text
+    await message.answer(render_pvp_leaderboard_text())
+
+
+# ── Таблица лидеров (рек. #13) ────────────────────────────────────────
+
+@dp.message(Command("top"))
+async def top_cmd(message: Message):
+    from game.daily_service import render_leaderboard
+    await message.answer(render_leaderboard())
+
+
+# ── Ежедневные задания (рек. #12) ─────────────────────────────────────
+
+@dp.message(Command("daily"))
+async def daily_cmd(message: Message):
+    from game.daily_service import get_daily_panel
+    await message.answer(get_daily_panel(message.from_user.id))
+
+
+# ── Сезонный пасс (рек. #15) ─────────────────────────────────────────
+
+@dp.message(Command("season"))
+async def season_cmd(message: Message):
+    from game.season_pass_service import get_season_panel
+    await message.answer(get_season_panel(message.from_user.id))
+
+
+# ── Гильдии (рек. #10) ────────────────────────────────────────────────
+
+@dp.message(Command("guild"))
+async def guild_cmd(message: Message):
+    from database.repositories import get_player_guild, get_guild_members
+    from game.guild_service import render_guild_info, render_guild_list, list_guilds
+    guild = get_player_guild(message.from_user.id)
+    if guild:
+        members = get_guild_members(guild["id"])
+        await message.answer(render_guild_info(guild, members))
+    else:
+        guilds = list_guilds()
+        text = render_guild_list(guilds)
+        text += "\n\n/create_guild <название> — создать (200з, ур.5+)"
+        text += "\n/join_guild <id> — вступить"
+        await message.answer(text)
+
+@dp.message(Command("create_guild"))
+async def create_guild_cmd(message: Message):
+    from game.guild_service import try_create_guild
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Использование: /create_guild <название>")
+        return
+    guild, err = try_create_guild(message.from_user.id, parts[1].strip())
+    if err:
+        await message.answer(f"❌ {err}")
+    else:
+        await message.answer(f"🏰 Гильдия «{guild['name']}» создана! ID: {guild['id']}")
+
+@dp.message(Command("join_guild"))
+async def join_guild_cmd(message: Message):
+    from game.guild_service import try_join_guild
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Использование: /join_guild <id>")
+        return
+    try:
+        ok, err = try_join_guild(message.from_user.id, int(parts[1].strip()))
+        await message.answer("✅ Ты в гильдии!" if ok else f"❌ {err}")
+    except ValueError:
+        await message.answer("Укажи числовой ID гильдии.")
+
+@dp.message(Command("leave_guild"))
+async def leave_guild_cmd(message: Message):
+    from game.guild_service import try_leave_guild
+    ok, err = try_leave_guild(message.from_user.id)
+    await message.answer("✅ Ты покинул гильдию." if ok else f"❌ {err}")
+
+@dp.message(Command("guild_raid"))
+async def guild_raid_cmd(message: Message):
+    from database.repositories import get_player_guild
+    from game.guild_service import simulate_guild_raid, GUILD_BOSSES
+    guild = get_player_guild(message.from_user.id)
+    if not guild:
+        await message.answer("Ты не в гильдии. /guild")
+        return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        boss_list = "\n".join(f"  {b['slug']} — {b['name']} (HP {b['hp']})" for b in GUILD_BOSSES)
+        await message.answer(f"Выбери босса:\n{boss_list}\n\n/guild_raid <slug>")
+        return
+    result = simulate_guild_raid(guild["id"], parts[1].strip())
+    if "error" in result:
+        await message.answer(f"❌ {result['error']}")
+        return
+    lines = [f"🏰 Рейд на {result['boss_name']}", f"Участников: {result['participants']}", ""]
+    lines.extend(result["log"][:8])
+    lines.append("")
+    if result["victory"]:
+        lines.append(f"🏆 ПОБЕДА! +{result['split_gold']}з, +{result['split_exp']} опыта каждому")
+    else:
+        lines.append(f"💀 Провал. HP босса: {result['boss_hp_left']} | Частичная: +{result['split_gold']}з")
+    await message.answer("\n".join(lines))
+
+
+# ── P2P рынок монстров (рек. #16) ─────────────────────────────────────
+
+@dp.message(Command("market"))
+async def market_p2p_cmd(message: Message):
+    from game.p2p_market_service import render_p2p_market
+    from database.repositories import get_p2p_market_listings
+    await message.answer(render_p2p_market(get_p2p_market_listings()))
+
+@dp.message(Command("sell_monster"))
+async def sell_monster_cmd(message: Message):
+    from game.p2p_market_service import try_list_monster
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer("Использование: /sell_monster <id> <цена>")
+        return
+    try:
+        ok, err = try_list_monster(message.from_user.id, int(parts[1]), int(parts[2]))
+        await message.answer(f"✅ Выставлен за {parts[2]}з!" if ok else f"❌ {err}")
+    except ValueError:
+        await message.answer("Неверный формат. Пример: /sell_monster 5 200")
+
+@dp.message(Command("buy_monster"))
+async def buy_monster_p2p_cmd(message: Message):
+    from game.p2p_market_service import try_buy_monster
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Использование: /buy_monster <id>")
+        return
+    try:
+        monster, info = try_buy_monster(message.from_user.id, int(parts[1]))
+        if not monster:
+            await message.answer(f"❌ {info}")
+        else:
+            seller_got = info.split(":")[1] if ":" in info else "?"
+            await message.answer(f"✅ {monster['name']} куплен! Продавец получил {seller_got}з")
+    except ValueError:
+        await message.answer("Укажи числовой ID монстра.")
+
+@dp.message(Command("delist"))
+async def delist_cmd(message: Message):
+    from game.p2p_market_service import try_delist_monster
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Использование: /delist <id>")
+        return
+    try:
+        ok, err = try_delist_monster(message.from_user.id, int(parts[1]))
+        await message.answer("✅ Снят с продажи." if ok else f"❌ {err}")
+    except ValueError:
+        await message.answer("Укажи числовой ID.")
+
+@dp.message(Command("my_listings"))
+async def my_listings_cmd(message: Message):
+    from game.p2p_market_service import render_my_listings
+    await message.answer(render_my_listings(message.from_user.id))
+
+
+# ── Аналитика — только для админа (рек. #20) ─────────────────────────
+
+@dp.message(Command("analytics"))
+async def analytics_cmd(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    from utils.analytics import render_analytics_report
+    await message.answer(render_analytics_report())
+
+
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
     logger.exception("Unhandled update error: %s", event.exception)
@@ -346,7 +608,14 @@ async def fallback_handler(message: Message):
 
 
 async def main():
-    logger.info("Bot started")
+    # Инициализируем SQLite базу данных (рек. #1)
+    init_db()
+    logger.info("Database initialized")
+
+    # Регистрируем бот в системе уведомлений (рек. #19)
+    set_bot(bot)
+    logger.info("Bot started — v3.0")
+
     await dp.start_polling(bot)
 
 

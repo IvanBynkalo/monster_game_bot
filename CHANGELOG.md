@@ -1,13 +1,81 @@
 # Changelog
 
-## v2.5
-- Fixed active monster switching for admins and regular players
-- Reworked handler order so admin flow no longer blocks monster switch buttons
-- Made main menu compact for 8-button mobile layout
-- Simplified movement screen to only show travel actions
-- Improved monster screen UX with clear switch buttons and back navigation
+## v3.0 — Полный апгрейд (18 рекомендаций)
 
-## v2.4.2
-- Fixed active monster switching with real buttons in monster screen
-- Added compact main menu to reduce scrolling
-- Added `📂 Ещё` submenu for secondary actions
+### #1 — SQLite вместо in-memory хранилища
+- Все данные сохраняются в `data/game.db` между перезапусками
+- WAL-режим для параллельного доступа
+- 25+ таблиц: игроки, монстры, эмоции, квесты, PvP, гильдии, аналитика
+
+### #2 — Антиспам и cooldown
+- `utils/cooldown.py` — раздельные кулдауны для explore (1.5с), combat (1с), gather (1.5с)
+- Встроен в `explore_handler`, `attack_handler`, `gather_handler`
+
+### #3 — Типы монстров реально влияют на бой
+- `resolve_attack()` теперь умножает урон на `get_damage_multiplier(attacker, defender)`
+- Подсказка типа отображается в тексте атаки
+
+### #4 — Инди-прогрессия монстров
+- Монстры накапливают XP и повышают уровень (HP+4, ATK+1 за уровень)
+- `add_active_monster_experience()` → `try_evolve_active_monster()`
+- Эволюция сохраняется в БД через `save_monster()`
+
+### #5 — 8 эмоций вместо 4
+- Добавлены: Грусть, Радость, Отвращение, Удивление
+- `emotion_service.py` расширен, таблица `player_emotions` обновлена
+
+### #6 — Комбо-мутации (12 пар эмоций)
+- `infection_service.py`: при стадии 3+ и 2 доминирующих эмоциях — комбо
+- 12 уникальных комбинаций с бонусами ATK/DEF и спецэффектами (lifesteal, poison, etc.)
+- Комбо-бонусы применяются в `resolve_attack()`
+
+### #7 — Процедурная генерация при рождении
+- `emotion_birth_service.py`: уникальные имена, статы и редкость для каждого рождённого монстра
+- Префиксы/суффиксы по 8 эмоциям, рандомные HP/ATK, редкость зависит от накопления
+
+### #8 — PvP-арена
+- `game/pvp_service.py`: авто-расчёт боя, рейтинг ELO, награды победителю
+- Команды: `/challenge <id>`, `/pvp`, `/pvp_top`
+- Push-уведомление проигравшему о результате
+
+### #9 — Замки прогрессии по локациям
+- `location_rules.py`: реальные проверки уровня, количества монстров, сюжетных квестов
+- `move_handler` теперь блокирует доступ с понятным сообщением
+
+### #10 — Гильдии игроков
+- `game/guild_service.py`: создание, вступление, выход, совместные рейды
+- Рейды на 3 босса с разными наградами, 20% добычи в казну гильдии
+- Команды: `/guild`, `/create_guild`, `/join_guild`, `/guild_raid`
+
+### #12 — Ежедневные задания и streak
+- `game/daily_service.py`: 3 случайных задания в день из пула 6
+- Streak до 7 дней с нарастающими наградами (30→200 золота)
+- Команда: `/daily`
+
+### #13 — Таблица лидеров
+- `game/daily_service.py`: топ-10 по уровню и по PvP-рейтингу
+- Команды: `/top`, `/pvp_top`
+
+### #14 — Telegram Stars (IAP)
+- `game/stars_shop.py`: 8 товаров (флаконы эмоций, энергия, слоты, сезонный пасс)
+- Обработчики `pre_checkout_query` и `successful_payment`
+- Команды: `/stars_shop`, `/buy_stars <slug>`
+
+### #15 — Сезонный пасс
+- `game/season_pass_service.py`: 5 сезонных заданий, бесплатный + премиум треки
+- Автоматический прогресс через explore/combat/gather/craft
+- Команды: `/season`, `/buy_season_pass`
+
+### #16 — P2P-рынок монстров
+- `game/p2p_market_service.py`: игроки продают монстров друг другу
+- Комиссия 8% разработчику, автоматический расчёт
+- Команды: `/market`, `/sell_monster`, `/buy_monster`, `/delist`, `/my_listings`
+
+### #19 — Push-уведомления
+- `utils/notifier.py`: async уведомления о мутациях, эволюции, PvP, рейдах
+- fire-and-forget через `asyncio.create_task()`
+
+### #20 — Аналитика
+- `utils/analytics.py` + таблица `analytics_events` в БД
+- Трекинг: регистрация, победы, поимки, крафт, сбор, PvP, локации
+- Команда для админа: `/analytics`
