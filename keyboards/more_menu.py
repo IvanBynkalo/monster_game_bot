@@ -7,9 +7,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 def more_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     keyboard = [
-        [KeyboardButton(text="👤 Персонаж"),   KeyboardButton(text="📜 Квесты")],
-        [KeyboardButton(text="🧾 Сюжет"),      KeyboardButton(text="🧭 Навигация")],
-        [KeyboardButton(text="❤️ Лечение"),    KeyboardButton(text="🛠 Мастерская")],
+        [KeyboardButton(text="📜 Квесты"),     KeyboardButton(text="🧾 Сюжет")],
+        [KeyboardButton(text="❤️ Лечение"),    KeyboardButton(text="👤 Персонаж")],
         [KeyboardButton(text="🔮 Реликвии"),   KeyboardButton(text="📖 Кодекс")],
     ]
     if is_admin:
