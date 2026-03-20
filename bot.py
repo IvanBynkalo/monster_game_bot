@@ -5,7 +5,7 @@ import re
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import (
-    ErrorEvent, Message, PreCheckoutQuery, SuccessfulPayment,
+    CallbackQuery, ErrorEvent, Message, PreCheckoutQuery, SuccessfulPayment,
 )
 
 from config import BOT_TOKEN, ADMIN_IDS
