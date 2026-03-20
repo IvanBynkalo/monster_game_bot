@@ -825,41 +825,49 @@ async def fight_inline_callback(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data and c.data.startswith("loc:"))
 async def location_inline_callback(callback: CallbackQuery):
     """Inline-действия в локации.
-    ВАЖНО: используем callback.from_user.id, НЕ callback.message (там from_user = бот).
-    Создаём псевдо-message с правильным from_user через специальный вызов.
+    Вызываем игровую логику напрямую по uid — НЕ мутируем frozen pydantic объект.
     """
     action = callback.data.split(":")[1]
     uid = callback.from_user.id
     await callback.answer()
 
-    from database.repositories import get_player
+    from database.repositories import get_player, spend_player_energy, get_active_monster
     player = get_player(uid)
     if not player:
         await callback.message.answer("Сначала напиши /start")
         return
 
     if action == "explore":
-        # Вызываем логику напрямую, не через handler(callback.message)
-        # callback.message.from_user — это бот, поэтому используем специальный прокси
-        from handlers.explore import explore_handler
-        # Подменяем from_user в сообщении
-        callback.message.from_user = callback.from_user
-        await explore_handler(callback.message)
+        # Запускаем explore напрямую через message (оно от бота, но нам нужен только chat_id)
+        # Хак: создаём объект с нужным from_user через model_copy
+        fake_msg = callback.message.model_copy(
+            update={"from_user": callback.from_user}
+        )
+        await explore_handler(fake_msg)
+
     elif action == "gather":
-        from handlers.gather import gather_handler
-        callback.message.from_user = callback.from_user
-        await gather_handler(callback.message)
+        fake_msg = callback.message.model_copy(
+            update={"from_user": callback.from_user}
+        )
+        await gather_handler(fake_msg)
+
     elif action == "dungeon":
-        from handlers.dungeon import dungeon_handler
-        callback.message.from_user = callback.from_user
-        await dungeon_handler(callback.message)
+        fake_msg = callback.message.model_copy(
+            update={"from_user": callback.from_user}
+        )
+        await dungeon_handler(fake_msg)
+
     elif action == "navigate":
-        from handlers.map import navigation_handler
-        callback.message.from_user = callback.from_user
-        await navigation_handler(callback.message)
+        fake_msg = callback.message.model_copy(
+            update={"from_user": callback.from_user}
+        )
+        await navigation_handler(fake_msg)
+
     elif action == "birth":
-        callback.message.from_user = callback.from_user
-        await birth_cmd(callback.message)
+        fake_msg = callback.message.model_copy(
+            update={"from_user": callback.from_user}
+        )
+        await birth_cmd(fake_msg)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("monster:"))
