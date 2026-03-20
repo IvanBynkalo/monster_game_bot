@@ -2,7 +2,19 @@ import json
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "game.db"
+import os
+
+# DB_PATH читается из переменной окружения DATABASE_URL или DATABASE_PATH
+# Это позволяет хранить БД на постоянном томе (Railway Volume, VPS и т.д.)
+# Если переменная не задана — используем локальный путь (для разработки)
+_db_env = os.environ.get("DATABASE_PATH") or os.environ.get("DATABASE_URL")
+
+if _db_env and not _db_env.startswith("postgresql"):
+    # Абсолютный путь из переменной окружения
+    DB_PATH = Path(_db_env)
+else:
+    # Дефолтный путь внутри проекта (только для локальной разработки!)
+    DB_PATH = Path(__file__).resolve().parent.parent / "data" / "game.db"
 
 
 def get_connection() -> sqlite3.Connection:
