@@ -419,6 +419,69 @@ def get_active_monster(telegram_id: int) -> dict | None:
         row = conn.execute("SELECT * FROM player_monsters WHERE telegram_id=? AND is_active=1 LIMIT 1", (telegram_id,)).fetchone()
     return _monster_row_to_dict(row) if row else None
 
+
+def _ensure_monster_dead_column():
+    """Lazy migration: adds is_dead column if missing."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(player_monsters)").fetchall()]
+        if "is_dead" not in cols:
+            conn.execute("ALTER TABLE player_monsters ADD COLUMN is_dead INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+
+_monster_dead_col_ok = False
+def _lazy_monster_dead():
+    global _monster_dead_col_ok
+    if not _monster_dead_col_ok:
+        _ensure_monster_dead_column()
+        _monster_dead_col_ok = True
+
+
+def kill_active_monster(telegram_id: int) -> dict | None:
+    """Marks active monster as dead. Monster stays in roster but cannot fight."""
+    _lazy_monster_dead()
+    m = get_active_monster(telegram_id)
+    if not m:
+        return None
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE player_monsters SET is_dead=1, current_hp=0 WHERE id=?",
+            (m["id"],)
+        )
+        conn.commit()
+    return m
+
+
+def get_living_active_monster(telegram_id: int) -> dict | None:
+    """Returns active monster only if alive (current_hp > 0 and is_dead = 0)."""
+    _lazy_monster_dead()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM player_monsters WHERE telegram_id=? AND is_active=1 AND is_dead=0 AND current_hp>0 LIMIT 1",
+            (telegram_id,)
+        ).fetchone()
+    if not row:
+        return None
+    from database.db import json_get
+    return {**dict(row), "abilities": json_get(row["abilities"])}
+
+
+def has_living_monster(telegram_id: int) -> bool:
+    """Checks if player has any living active monster."""
+    return get_living_active_monster(telegram_id) is not None
+
+
+def revive_monster(telegram_id: int, monster_id: int, hp: int) -> bool:
+    """Revives a dead monster with given HP (used in city healing)."""
+    _lazy_monster_dead()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE player_monsters SET is_dead=0, current_hp=? WHERE id=? AND telegram_id=?",
+            (hp, monster_id, telegram_id)
+        )
+        conn.commit()
+    return True
+
+
 def get_monster_by_id(telegram_id: int, monster_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM player_monsters WHERE telegram_id=? AND id=?", (telegram_id,monster_id)).fetchone()
