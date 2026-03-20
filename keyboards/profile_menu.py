@@ -15,17 +15,15 @@ TABS = [
 
 
 def profile_tabs(active: str = "main") -> InlineKeyboardMarkup:
-    rows = []
+    # Две вкладки в ряд для компактности на мобильных
+    buttons = []
     for icon, key, label in TABS:
-        # Полная строка с иконкой и текстом для каждой вкладки
-        if key == active:
-            text = f"› {icon} {label}"
-        else:
-            text = f"{icon} {label}"
-        rows.append([InlineKeyboardButton(
-            text=text,
-            callback_data=f"profile:tab:{key}"
-        )])
+        text = f"› {icon} {label}" if key == active else f"{icon} {label}"
+        buttons.append(InlineKeyboardButton(text=text, callback_data=f"profile:tab:{key}"))
+
+    rows = []
+    for i in range(0, len(buttons), 2):
+        rows.append(buttons[i:i+2])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

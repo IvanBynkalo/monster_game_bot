@@ -12,27 +12,30 @@ BIRTH_LOCATION_SLUGS = {"silver_city", "emotion_rift"}
 def location_actions_inline(location_slug: str, has_dungeon: bool = False) -> InlineKeyboardMarkup:
     """
     Компактное inline-меню действий в текущей локации.
-    Отображается прямо в сообщении с описанием локации.
+    Только для полевых локаций — в городе не показывается.
     """
+    from game.location_rules import is_city
+    if is_city(location_slug):
+        # В городе это меню не нужно
+        return InlineKeyboardMarkup(inline_keyboard=[])
+
     rows = []
 
-    # Главное действие — всегда
+    # Исследовать + Собирать в одном ряду
     explore_row = [InlineKeyboardButton(text="🌲 Исследовать", callback_data="loc:explore")]
-
-    # Сбор ресурсов — только там где есть
     if has_gathering_in_location(location_slug):
         explore_row.append(InlineKeyboardButton(text="🧺 Собирать", callback_data="loc:gather"))
     rows.append(explore_row)
 
-    # Подземелье — только там где есть
+    # Подземелье
     if has_dungeon:
         rows.append([InlineKeyboardButton(text="🕳 Подземелье", callback_data="loc:dungeon")])
 
-    # Навигация
+    # Карта / Перемещение
     rows.append([InlineKeyboardButton(text="🗺 Карта / Перемещение", callback_data="loc:navigate")])
 
-    # Ритуал рождения — только в специальных локациях
-    if location_slug in BIRTH_LOCATION_SLUGS:
+    # Ритуал рождения — только в Разломе эмоций (не в городе)
+    if location_slug == "emotion_rift":
         rows.append([InlineKeyboardButton(text="🌌 Ритуал рождения", callback_data="loc:birth")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
