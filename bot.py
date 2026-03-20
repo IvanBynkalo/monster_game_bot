@@ -809,6 +809,15 @@ async def fight_inline_callback(callback: CallbackQuery):
         player = get_player(uid)
         await callback.message.answer("\n".join(lines),
             reply_markup=main_menu(player.location_slug if player else "silver_city"))
+        # После боя — показываем inline-меню локации снова
+        if player:
+            from game.dungeon_service import DUNGEONS
+            from keyboards.location_menu import location_actions_inline
+            has_dungeon = player.location_slug in DUNGEONS
+            await callback.message.answer(
+                "Что делать:",
+                reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+            )
     else:
         # Battle continues - update encounter and show inline buttons again
         save_pending_encounter(uid, enc)
