@@ -37,6 +37,10 @@ from game.player_survival_service import render_injury_warning
 from keyboards.encounter_menu import encounter_menu
 from keyboards.main_menu import main_menu
 from utils.logger import log_event
+from utils.cooldown import cooldown_guard
+from utils.analytics import track_explore
+from game.daily_service import progress_daily_tasks, render_daily_completions
+from game.season_pass_service import progress_season, render_season_completions
 
 def _render_completed_quests(player_id: int, completed_now):
     parts = []
@@ -106,6 +110,13 @@ async def explore_handler(message: Message):
         await message.answer("☠️ Герой повержен. Сначала вылечи его в Сереброграде.", reply_markup=main_menu(player.location_slug))
         return
 
+    # Антиспам (рек. #2)
+    if not await cooldown_guard(message, kind="explore", seconds=1.5):
+        return
+
+    # Аналитика (рек. #20)
+    track_explore(message.from_user.id, player.location_slug)
+
     begin_action_scope(message.from_user.id, "explore")
     tick_birth_cooldown(message.from_user.id)
 
@@ -116,6 +127,9 @@ async def explore_handler(message: Message):
 
     tick_player_injuries(message.from_user.id, 1)
     completed_now = progress_quests(message.from_user.id, "explore")
+    # Ежедневные задания + сезон (рек. #12, #15)
+    _daily_done = progress_daily_tasks(message.from_user.id, "explore")
+    _season_done = progress_season(message.from_user.id, "explore")
     story_done = update_story_progress(message.from_user.id, "explore", player.location_slug)
 
     district = get_district(player.location_slug, player.current_district_slug) if player.current_district_slug else None

@@ -1,6 +1,7 @@
 from aiogram.types import Message, FSInputFile
 
 from database.repositories import get_player, set_ui_screen, update_player_location, update_story_progress
+from game.location_rules import check_location_access
 from game.map_service import (
     WORLD_MAP_PATH,
     build_map_caption,

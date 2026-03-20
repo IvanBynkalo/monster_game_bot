@@ -16,6 +16,10 @@ from game.story_service import apply_story_reward
 from keyboards.encounter_menu import encounter_menu
 from keyboards.main_menu import main_menu
 from utils.logger import log_event
+from utils.cooldown import cooldown_guard
+from utils.analytics import track_battle_win, track_capture
+from game.daily_service import progress_daily_tasks
+from game.season_pass_service import progress_season
 
 def _district_mood_from_player(player):
     district = get_district(player.location_slug, player.current_district_slug)
@@ -82,6 +86,12 @@ def _append_progression(player_id, base_text, reward_result, district_mood, emot
         parts.append(inf)
     evolved2 = try_evolve_active_monster(player_id)
     et2 = render_evolution_text(evolved2)
+    # Daily/season progress for capture (рек. #12, #15)
+    from game.daily_service import progress_daily_tasks as _pdt2
+    from game.season_pass_service import progress_season as _ps2
+    from utils.analytics import track_capture as _tc
+    _pdt2(player_id, "capture")
+    _ps2(player_id, "capture")
     if et2:
         log_event("monster_evolved", player_id, evolved2["name"])
         parts.append(et2)
@@ -138,6 +148,7 @@ async def poison_trap_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     encounter = get_pending_encounter(message.from_user.id)
+    active_monster = get_active_monster(message.from_user.id)
     if not encounter or encounter.get("type") != "monster":
         await message.answer("🪤 Ловушку можно использовать только во время встречи с монстром.", reply_markup=main_menu(player.location_slug))
         return
@@ -171,6 +182,9 @@ async def attack_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start")
+        return
+    # Антиспам (рек. #2)
+    if not await cooldown_guard(message, kind="combat", seconds=1.0):
         return
     begin_action_scope(message.from_user.id, "battle_attack")
     tick_birth_cooldown(message.from_user.id)

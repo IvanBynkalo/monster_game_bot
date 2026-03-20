@@ -17,6 +17,8 @@ from game.district_service import get_district_name
 from game.player_survival_service import render_player_status
 from keyboards.main_menu import main_menu
 from utils.logger import log_event
+from game.pvp_service import render_pvp_stats
+from game.daily_service import get_daily_panel
 
 
 async def profile_handler(message: Message):
