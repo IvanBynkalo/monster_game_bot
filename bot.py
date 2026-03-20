@@ -835,6 +835,8 @@ async def location_inline_callback(callback: CallbackQuery):
         await dungeon_handler(callback.message)
     elif action == "navigate":
         await navigation_handler(callback.message)
+    elif action == "birth":
+        await birth_cmd(callback.message)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("monster:"))
@@ -934,6 +936,67 @@ async def wildlife_raid_cmd(message: Message):
     else:
         lines.append(f"💀 Провал. Осталось HP: {result['boss_hp_left']} | Частичная: +{result['split_gold']}з")
     await message.answer("\n".join(lines))
+
+
+@dp.message(Command("birth"))
+async def birth_cmd(message: Message):
+    """Ручной ритуал рождения монстра из накопленных эмоций."""
+    from database.repositories import get_player
+    from game.emotion_birth_service import try_manual_birth, render_birth_text, get_birth_panel, BIRTH_LOCATIONS
+    from keyboards.main_menu import main_menu
+
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
+    loc = player.location_slug
+    district = player.current_district_slug
+
+    # Проверяем нахождение в месте рождения
+    birth_loc = loc
+    # В городе — только в ремесленном квартале (алтарь)
+    if loc == "silver_city" and district != "craft_quarter":
+        await message.answer(
+            "🏛 Алтарь для ритуала находится в Ремесленном квартале Сереброграда.\n"
+            "Перейди туда через меню города."
+        )
+        return
+
+    monster, err = try_manual_birth(message.from_user.id, birth_loc)
+
+    if not monster:
+        panel = get_birth_panel(message.from_user.id, birth_loc)
+        await message.answer(f"{err}\n\n{panel}" if panel else err)
+        return
+
+    text = render_birth_text(monster)
+    await message.answer(text, reply_markup=main_menu(player.location_slug, district))
+
+    # Push-уведомление (бот уже в той же сессии - просто показываем текст)
+    from utils.analytics import track_emotion_birth
+    track_emotion_birth(message.from_user.id, monster["name"], monster["mood"], monster["rarity"])
+
+
+@dp.message(Command("birth_panel"))
+async def birth_panel_cmd(message: Message):
+    """Показывает панель накопленных эмоций и готовности к рождению."""
+    from database.repositories import get_player
+    from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    loc = player.location_slug
+    if loc in BIRTH_LOCATIONS:
+        panel = get_birth_panel(message.from_user.id, loc)
+        await message.answer(panel or "Панель недоступна в этом месте.")
+    else:
+        lines = ["🌌 Места для ритуала рождения:\n"]
+        for slug, cfg in BIRTH_LOCATIONS.items():
+            lines.append(f"• {cfg['name']} — {cfg['desc']}")
+        lines.append("\nТекущее место не подходит для ритуала.")
+        await message.answer("\n".join(lines))
 
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
