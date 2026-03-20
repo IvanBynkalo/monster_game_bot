@@ -15,9 +15,9 @@ def main_menu(location_slug: str, district_slug: str | None = None) -> ReplyKeyb
 
     # Чистое меню — Собирать и Подземелье теперь в inline под сообщением локации
     keyboard = [
-        [KeyboardButton(text="🌲 Исследовать"),  KeyboardButton(text="🧭 Переместиться")],
-        [KeyboardButton(text="🐲 Мои монстры"),  KeyboardButton(text="🎒 Инвентарь")],
-        [KeyboardButton(text="👤 Персонаж"),     KeyboardButton(text="📂 Ещё")],
+        [KeyboardButton(text="🧭 Переместиться"), KeyboardButton(text="🐲 Мои монстры")],
+        [KeyboardButton(text="🎒 Инвентарь"),     KeyboardButton(text="👤 Персонаж")],
+        [KeyboardButton(text="📂 Ещё")],
     ]
 
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
