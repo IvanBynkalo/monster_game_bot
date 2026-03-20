@@ -55,7 +55,31 @@ async def start_handler(message: Message):
     track_session_start(message.from_user.id)
 
     set_ui_screen(message.from_user.id, "main")
-    await message.answer(
-        render_location_card(player.location_slug),
-        reply_markup=main_menu(player.location_slug, player.current_district_slug),
-    )
+    from database.repositories import get_player as _get_fresh
+    _player = _get_fresh(message.from_user.id)
+
+    from utils.images import send_location_image
+    from keyboards.location_menu import location_actions_inline
+    from game.dungeon_service import DUNGEONS
+    from game.location_rules import is_city
+
+    loc_text = render_location_card(_player.location_slug, player=_player)
+
+    if is_city(_player.location_slug):
+        # В городе — показываем городское меню
+        await message.answer(loc_text, reply_markup=main_menu(_player.location_slug, _player.current_district_slug))
+    else:
+        # Вне города — показываем локацию с картинкой + inline-меню
+        await send_location_image(
+            message, _player.location_slug, loc_text,
+            reply_markup=main_menu(_player.location_slug, _player.current_district_slug)
+        )
+        try:
+            from game.grid_exploration_service import is_dungeon_available
+            has_dungeon = _player.location_slug in DUNGEONS and is_dungeon_available(message.from_user.id, _player.location_slug)
+        except Exception:
+            has_dungeon = False
+        await message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(_player.location_slug, has_dungeon=has_dungeon)
+        )
