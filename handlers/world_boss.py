@@ -16,6 +16,8 @@ from keyboards.encounter_menu import encounter_menu, encounter_inline_menu
 from game.monster_abilities import get_attack_bonus, mitigate_incoming_damage, try_regeneration
 from game.evolution_service import render_evolution_text, try_evolve_active_monster
 from keyboards.main_menu import main_menu
+from keyboards.location_menu import location_actions_inline
+from game.dungeon_service import DUNGEONS
 
 async def boss_attack_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -61,6 +63,13 @@ async def boss_attack_handler(message: Message):
             + (f"\n\n{evo_text}" if evo_text else ""),
             reply_markup=main_menu(player.location_slug),
         )
+        await message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(
+                player.location_slug,
+                has_dungeon=player.location_slug in DUNGEONS
+            )
+        )
         return
 
     save_pending_encounter(message.from_user.id, encounter)
@@ -98,4 +107,14 @@ async def boss_flee_handler(message: Message):
         await message.answer("Сейчас нет активного мирового босса.")
         return
     clear_pending_encounter(message.from_user.id)
-    await message.answer("🏃 Ты отступаешь от мирового босса и спасаешься.", reply_markup=main_menu(player.location_slug))
+    await message.answer(
+        "🏃 Ты отступаешь от мирового босса и спасаешься.",
+        reply_markup=main_menu(player.location_slug)
+    )
+    await message.answer(
+        "Что делать:",
+        reply_markup=location_actions_inline(
+            player.location_slug,
+            has_dungeon=player.location_slug in DUNGEONS
+        )
+    )

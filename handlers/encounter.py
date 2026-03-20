@@ -435,10 +435,24 @@ async def flee_handler(message: Message):
         if damage_text:
             text += "\n\n" + damage_text
         await message.answer(text, reply_markup=main_menu(player.location_slug))
+        await message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(
+                player.location_slug,
+                has_dungeon=player.location_slug in DUNGEONS
+            )
+        )
         return
     if damaged and damaged["current_hp"] <= 0:
         clear_pending_encounter(message.from_user.id)
         await message.answer(result["text"] + "\n\n" + damage_text + "\n\nТебе удалось вырваться, но активный монстр повержен.", reply_markup=main_menu(player.location_slug))
+        await message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(
+                player.location_slug,
+                has_dungeon=player.location_slug in DUNGEONS
+            )
+        )
         return
     save_pending_encounter(message.from_user.id, encounter)
     await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_inline_menu(
