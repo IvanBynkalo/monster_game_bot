@@ -1686,6 +1686,14 @@ async def market_inline_callback(callback: CallbackQuery):
         sell_text = f"💰 Продать: {label} • {buy_price}з"
         await callback.answer("Продаю Борту...")
         await _run_existing_handler(callback, sell_resource_item_handler, sell_text)
+        # Обновляем inline-меню Борта после продажи
+        try:
+            await callback.message.answer(
+                render_bort_sell_text(player.location_slug, callback.from_user.id),
+                reply_markup=bort_sell_inline(callback.from_user.id, player.location_slug),
+            )
+        except Exception:
+            pass
         return
 
     if data == "marketnpc:bort_quest_menu":

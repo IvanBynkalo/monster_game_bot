@@ -115,11 +115,22 @@ async def move_handler(message: Message):
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
     set_ui_screen(message.from_user.id, "main")
 
-    from game.grid_exploration_service import render_exploration_panel as _grid_panel
-    _expl_panel = _grid_panel(message.from_user.id, target.slug)
+    try:
+        from game.grid_exploration_service import render_exploration_panel as _grid_panel
+        _expl_panel = _grid_panel(message.from_user.id, target.slug)
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning(f"grid panel failed: {_e}")
+        _expl_panel = ""
     # Проверяем недельный квест при входе в регион
-    _new_wq = check_and_assign_weekly_quest(message.from_user.id, target.slug)
-    _active_wq = get_active_weekly_quest(message.from_user.id, target.slug)
+    try:
+        _new_wq = check_and_assign_weekly_quest(message.from_user.id, target.slug)
+        _active_wq = get_active_weekly_quest(message.from_user.id, target.slug)
+    except Exception as _we:
+        import logging
+        logging.getLogger(__name__).warning(f"weekly quest failed: {_we}")
+        _new_wq = None
+        _active_wq = None
     _wq_text = ""
     if _new_wq:
         _wq_text = f"\n\n🎉 Новый недельный квест!\n{render_weekly_quest(_new_wq)}"
@@ -135,7 +146,10 @@ async def move_handler(message: Message):
     from game.dungeon_service import DUNGEONS
     from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
     from game.grid_exploration_service import is_dungeon_available
-    has_dungeon = target.slug in DUNGEONS and is_dungeon_available(message.from_user.id, target.slug)
+    try:
+        has_dungeon = target.slug in DUNGEONS and is_dungeon_available(message.from_user.id, target.slug)
+    except Exception:
+        has_dungeon = False
     inline_kb = location_actions_inline(target.slug, has_dungeon=has_dungeon)
     await message.answer("Что делать:", reply_markup=inline_kb)
     # Панель рождения если это место ритуала

@@ -129,6 +129,7 @@ async def monster_shop_handler(message: Message):
 
 
 async def bag_shop_handler(message: Message):
+    """Перенаправляем в inline-лавку сумок (Мирна в city.py)."""
     player = get_player(message.from_user.id)
     if not _check_city_shop(player):
         await message.answer(
@@ -136,12 +137,9 @@ async def bag_shop_handler(message: Message):
             reply_markup=main_menu(player.location_slug, player.current_district_slug),
         )
         return
-
-    set_ui_screen(message.from_user.id, "bag_shop")
-    await message.answer(
-        render_bag_shop_text(player),
-        reply_markup=bag_shop_menu(),
-    )
+    # Используем inline-версию через city_bags_handler
+    from handlers.city import city_bags_handler
+    await city_bags_handler(message)
 
 
 async def buy_bag_handler(message: Message):
