@@ -284,7 +284,7 @@ async def explore_handler(message: Message):
         if encounter.get("type") == "monster":
             encounter = {"type": "event", "text": encounter.get("text", "Что-то промелькнуло в тени и скрылось.")}
     if encounter["type"] == "monster":
-        capture_bonus = 0.0
+        capture_bonus = _expl_bonuses.get("capture_bonus", 0.0)
         if has_temp_effect(message.from_user.id, "field_capture"):
             capture_bonus += 0.12
         if weather and weather.get("capture_bonus"):
@@ -293,9 +293,13 @@ async def explore_handler(message: Message):
             encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + capture_bonus
         save_pending_encounter(message.from_user.id, encounter)
         text = f"{intro}\n\n---\n\n{render_encounter_text(encounter, attacker_type=attacker_type)}"
-        # Показываем изображение типа монстра
         _encounter_monster_type = encounter.get("monster_type", "void")
+    elif encounter["type"] == "wildlife":
+        # Зверь — сохраняем встречу, показываем описание
+        save_pending_encounter(message.from_user.id, encounter)
+        text = f"{intro}\n\n---\n\n{render_wildlife_encounter(encounter)}"
     else:
+        # Событие — НЕ сохраняем pending_encounter
         event = world_event or encounter
         event_text = event.get("text") or event.get("title") or "Тишина окутывает местность."
         text = f"{intro}\n\n---\n\n{event_text}"
