@@ -146,8 +146,8 @@ def render_location_card(location_slug: str) -> str:
     for item in neighbors:
         req = LOCATION_REQUIREMENTS.get(item.slug, {})
         min_lvl = req.get("min_level", 1)
-        if player and player.level < min_lvl:
-            lines.append(f"— 🔒 {item.name} (ур.{min_lvl}+)")
+        if min_lvl > 1:
+            lines.append(f"— {item.name} (ур.{min_lvl}+)")
         else:
             lines.append(f"— {item.name}")
     return "\n".join(lines)
