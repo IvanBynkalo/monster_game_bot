@@ -43,7 +43,7 @@ from handlers.inventory import (
 )
 from handlers.craft import craft_handler, resources_handler, craft_item_handler
 from handlers.profile import profile_handler, restore_energy_handler, profile_tab_callback, profile_stat_callback
-from handlers.healing import heal_hero_handler, rest_hero_handler
+from handlers.healing import heal_hero_handler, rest_hero_handler, revive_monster_handler
 from handlers.codex import codex_handler, bestiary_callback
 from handlers.relics import relics_handler
 from handlers.progression import (
