@@ -39,8 +39,12 @@ from game.world_state_service import get_elite_expedition, roll_weather
 from game.player_survival_service import render_injury_warning
 from keyboards.encounter_menu import encounter_inline_menu, encounter_menu
 from keyboards.main_menu import main_menu
-from keyboards.location_menu import location_actions_inline
-from game.exploration_service import advance_exploration, render_exploration_text, apply_exploration_bonuses
+from game.exploration_service import apply_exploration_bonuses
+from game.grid_exploration_service import (
+    get_grid, explore_cell, render_exploration_result, render_exploration_panel,
+    get_available_directions, get_current_cell_bonuses,
+    is_dungeon_available, is_world_boss_available,
+)
 from game.bestiary_service import register_bestiary_seen, check_trophy_drop
 from game.weekly_quest_service import progress_weekly_quest, claim_weekly_reward, render_weekly_quest
 from game.wildlife_service import roll_wildlife, render_wildlife_encounter, has_wildlife
@@ -128,14 +132,31 @@ async def explore_handler(message: Message):
     begin_action_scope(message.from_user.id, "explore")
     tick_birth_cooldown(message.from_user.id)
 
-    # Сбрасываем старую встречу если есть (не должно быть pending при новом исследовании)
+    # Сбрасываем старую встречу
     from database.repositories import clear_pending_encounter as _clear_enc
     _clear_enc(message.from_user.id)
 
-    # Исследование региона (Картограф)
-    _expl_result = advance_exploration(message.from_user.id, player.location_slug)
-    _expl_text = render_exploration_text(_expl_result, player.location_slug)
-    _expl_bonuses = apply_exploration_bonuses(message.from_user.id, player.location_slug)
+    # Сетка 10x10: получаем доступные направления
+    _grid = get_grid(message.from_user.id, player.location_slug)
+    _directions = get_available_directions(_grid)
+
+    # Если есть выбор направления — показываем inline кнопки и ждём выбора
+    if len(_directions) > 1:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        _dir_rows = [
+            [InlineKeyboardButton(text=d['label'], callback_data='explore:dir:' + d['dir'])]
+            for d in _directions
+        ]
+        _dir_kb = InlineKeyboardMarkup(inline_keyboard=_dir_rows)
+        _panel = render_exploration_panel(message.from_user.id, player.location_slug)
+        await message.answer('Куда идти?\n\n' + _panel, reply_markup=_dir_kb)
+        return
+
+    # Одно направление или возврат — идём автоматически
+    _chosen_dir = _directions[0]['dir'] if _directions else 'forward'
+    _expl_result = explore_cell(message.from_user.id, player.location_slug, _chosen_dir)
+    _expl_text = render_exploration_result(_expl_result, player.location_slug)
+    _expl_bonuses = get_current_cell_bonuses(message.from_user.id, player.location_slug)
 
     if not spend_player_energy(message.from_user.id, 1):
         log_event("explore_failed_no_energy", message.from_user.id)
@@ -284,7 +305,7 @@ async def explore_handler(message: Message):
         if encounter.get("type") == "monster":
             encounter = {"type": "event", "text": encounter.get("text", "Что-то промелькнуло в тени и скрылось.")}
     if encounter["type"] == "monster":
-        capture_bonus = _expl_bonuses.get("capture_bonus", 0.0)
+        capture_bonus = 0.0
         if has_temp_effect(message.from_user.id, "field_capture"):
             capture_bonus += 0.12
         if weather and weather.get("capture_bonus"):
@@ -293,13 +314,9 @@ async def explore_handler(message: Message):
             encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + capture_bonus
         save_pending_encounter(message.from_user.id, encounter)
         text = f"{intro}\n\n---\n\n{render_encounter_text(encounter, attacker_type=attacker_type)}"
+        # Показываем изображение типа монстра
         _encounter_monster_type = encounter.get("monster_type", "void")
-    elif encounter["type"] == "wildlife":
-        # Зверь — сохраняем встречу, показываем описание
-        save_pending_encounter(message.from_user.id, encounter)
-        text = f"{intro}\n\n---\n\n{render_wildlife_encounter(encounter)}"
     else:
-        # Событие — НЕ сохраняем pending_encounter
         event = world_event or encounter
         event_text = event.get("text") or event.get("title") or "Тишина окутывает местность."
         text = f"{intro}\n\n---\n\n{event_text}"
@@ -392,16 +409,10 @@ async def explore_handler(message: Message):
             wildlife_kb.inline_keyboard = [r for r in wildlife_kb.inline_keyboard if r]
             await message.answer(full_text, reply_markup=wildlife_kb)
     else:
-        # ── СОБЫТИЕ: текст + reply-меню + inline-меню локации ──
+        # ── СОБЫТИЕ: текст + сбрасываем reply-меню на основное ──
+        # Боевых кнопок нет, reply-меню всегда в чистом состоянии после события
         player = get_player(message.from_user.id)
         await message.answer(
             full_text,
             reply_markup=main_menu(player.location_slug, player.current_district_slug)
-        )
-        # Всегда показываем inline-меню локации после события
-        from game.dungeon_service import DUNGEONS
-        has_dungeon = player.location_slug in DUNGEONS
-        await message.answer(
-            "Что делать:",
-            reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
         )

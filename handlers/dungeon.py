@@ -47,6 +47,16 @@ async def dungeon_handler(message: Message):
     if not dungeon:
         await message.answer("В этой локации подземелье пока недоступно.", reply_markup=main_menu(player.location_slug))
         return
+    # Подземелье доступно только после 45% исследования
+    from game.grid_exploration_service import is_dungeon_available
+    if not is_dungeon_available(message.from_user.id, player.location_slug):
+        from game.grid_exploration_service import THRESHOLDS
+        await message.answer(
+            f"🔒 Вход в подземелье ещё не найден.\n"
+            f"Исследуй локацию до {THRESHOLDS['dungeon_unlocks']}% — тогда найдёшь вход.",
+            reply_markup=main_menu(player.location_slug)
+        )
+        return
     if not spend_player_energy(message.from_user.id, 2):
         await message.answer("⚡ Для входа в подземелье нужно 2 энергии.", reply_markup=main_menu(player.location_slug))
         return

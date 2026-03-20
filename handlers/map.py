@@ -74,7 +74,8 @@ async def location_handler(message: Message):
     )
     # Inline-меню действий локации отдельным сообщением
     from game.dungeon_service import DUNGEONS
-    has_dungeon = player.location_slug in DUNGEONS
+    from game.grid_exploration_service import is_dungeon_available
+    has_dungeon = player.location_slug in DUNGEONS and is_dungeon_available(message.from_user.id, player.location_slug)
     inline_kb = location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
     await message.answer("Действия:", reply_markup=inline_kb)
 
@@ -114,7 +115,8 @@ async def move_handler(message: Message):
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
     set_ui_screen(message.from_user.id, "main")
 
-    _expl_panel = render_exploration_panel(message.from_user.id, target.slug)
+    from game.grid_exploration_service import render_exploration_panel as _grid_panel
+    _expl_panel = _grid_panel(message.from_user.id, target.slug)
     # Проверяем недельный квест при входе в регион
     _new_wq = check_and_assign_weekly_quest(message.from_user.id, target.slug)
     _active_wq = get_active_weekly_quest(message.from_user.id, target.slug)
@@ -132,7 +134,8 @@ async def move_handler(message: Message):
     # Inline-меню действий при прибытии
     from game.dungeon_service import DUNGEONS
     from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
-    has_dungeon = target.slug in DUNGEONS
+    from game.grid_exploration_service import is_dungeon_available
+    has_dungeon = target.slug in DUNGEONS and is_dungeon_available(message.from_user.id, target.slug)
     inline_kb = location_actions_inline(target.slug, has_dungeon=has_dungeon)
     await message.answer("Что делать:", reply_markup=inline_kb)
     # Панель рождения если это место ритуала
