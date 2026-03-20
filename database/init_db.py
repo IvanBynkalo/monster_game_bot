@@ -303,5 +303,38 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_monsters_user ON player_monsters(telegram_id);
         CREATE INDEX IF NOT EXISTS idx_monsters_listed ON player_monsters(is_listed);
         CREATE INDEX IF NOT EXISTS idx_quests_user ON player_quests(telegram_id);
+        CREATE TABLE IF NOT EXISTS player_exploration (
+            telegram_id   INTEGER NOT NULL,
+            location_slug TEXT    NOT NULL,
+            pct           INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (telegram_id, location_slug)
+        );
+
+        CREATE TABLE IF NOT EXISTS player_bestiary (
+            telegram_id     INTEGER NOT NULL,
+            creature_name   TEXT    NOT NULL,
+            creature_type   TEXT    NOT NULL DEFAULT 'wildlife',
+            encounter_count INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (telegram_id, creature_name)
+        );
+
+        CREATE TABLE IF NOT EXISTS player_weekly_quests (
+            telegram_id   INTEGER NOT NULL,
+            location_slug TEXT    NOT NULL,
+            week_key      TEXT    NOT NULL,
+            quest_slug    TEXT    NOT NULL,
+            progress      INTEGER NOT NULL DEFAULT 0,
+            completed     INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (telegram_id, location_slug, week_key)
+        );
         """)
         conn.commit()
+
+    # Добавляем новые колонки для картографа если БД уже существует
+    for _col, _def in [("cartographer_level", "1"), ("cartographer_exp", "0")]:
+        try:
+            with get_connection() as conn:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {_col} INTEGER DEFAULT {_def}")
+                conn.commit()
+        except Exception:
+            pass
