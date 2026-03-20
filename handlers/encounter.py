@@ -13,7 +13,7 @@ from game.monster_abilities import get_attack_bonus, get_capture_bonus, mitigate
 from game.infection_service import apply_dominant_emotion_infection, render_infection_update
 from game.skill_service import resolve_skill_use, get_active_skill_label
 from game.story_service import apply_story_reward
-from keyboards.encounter_menu import encounter_menu
+from keyboards.encounter_menu import encounter_menu, encounter_inline_menu
 from keyboards.main_menu import main_menu
 from utils.logger import log_event
 from utils.cooldown import cooldown_guard
@@ -153,13 +153,19 @@ async def poison_trap_handler(message: Message):
         await message.answer("🪤 Ловушку можно использовать только во время встречи с монстром.", reply_markup=main_menu(player.location_slug))
         return
     if get_item_count(message.from_user.id, "poison_trap") <= 0:
-        await message.answer("🪤 У тебя нет ядовитой ловушки.", reply_markup=encounter_menu())
+        await message.answer("🪤 У тебя нет ядовитой ловушки.", reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
         return
     spend_item(message.from_user.id, "poison_trap", 1)
     encounter["bonus_capture"] = min(0.60, encounter.get("bonus_capture", 0.0) + 0.25)
     encounter["counter_multiplier"] = 0.7
     save_pending_encounter(message.from_user.id, encounter)
-    await message.answer("🪤 Ты ставишь ядовитую ловушку.\nШанс поимки повышен на 25%.\nСила ответа врага немного снижена.", reply_markup=encounter_menu())
+    await message.answer("🪤 Ты ставишь ядовитую ловушку.\nШанс поимки повышен на 25%.\nСила ответа врага немного снижена.", reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
 
 async def trap_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -171,12 +177,18 @@ async def trap_handler(message: Message):
         await message.answer("🪤 Ловушку можно использовать только во время встречи с монстром.", reply_markup=main_menu(player.location_slug))
         return
     if get_item_count(message.from_user.id, "basic_trap") <= 0:
-        await message.answer("🪤 У тебя нет простой ловушки.", reply_markup=encounter_menu())
+        await message.answer("🪤 У тебя нет простой ловушки.", reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
         return
     spend_item(message.from_user.id, "basic_trap", 1)
     encounter["bonus_capture"] = min(0.45, encounter.get("bonus_capture", 0.0) + 0.15)
     save_pending_encounter(message.from_user.id, encounter)
-    await message.answer(f"🪤 Ты активируешь простую ловушку.\nШанс поимки повышен на 15%.\nТекущий бонус: +{int(encounter['bonus_capture'] * 100)}%", reply_markup=encounter_menu())
+    await message.answer(f"🪤 Ты активируешь простую ловушку.\nШанс поимки повышен на 15%.\nТекущий бонус: +{int(encounter['bonus_capture'] * 100)}%", reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
 
 async def attack_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -213,7 +225,10 @@ async def attack_handler(message: Message):
         await _handle_finished_result(message, player, result, "battle_win", damage_text)
         return
     save_pending_encounter(message.from_user.id, encounter)
-    await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_menu())
+    await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
 
 async def skill_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -240,7 +255,10 @@ async def skill_handler(message: Message):
     if skill_bonus > 0 and result.get("ok"):
         result["text"] += f"\n🔥 Способность усиливает эффект навыка на {skill_bonus} атаки."
     if not result.get("ok"):
-        await message.answer(result["text"], reply_markup=encounter_menu())
+        await message.answer(result["text"], reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
         return
     damaged, damage_text = _apply_enemy_damage(message.from_user.id, result)
     skill_name = get_active_skill_label(active)
@@ -253,7 +271,10 @@ async def skill_handler(message: Message):
         await _handle_finished_result(message, player, result, "battle_win", damage_text)
         return
     save_pending_encounter(message.from_user.id, encounter)
-    await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_menu())
+    await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
 
 async def capture_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -386,7 +407,10 @@ async def capture_handler(message: Message):
     save_pending_encounter(message.from_user.id, encounter)
     await message.answer(
         result["text"] + (("\n\n" + damage_text) if damage_text else ""),
-        reply_markup=encounter_menu(),
+        reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ),
     )
 async def flee_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -417,4 +441,7 @@ async def flee_handler(message: Message):
         await message.answer(result["text"] + "\n\n" + damage_text + "\n\nТебе удалось вырваться, но активный монстр повержен.", reply_markup=main_menu(player.location_slug))
         return
     save_pending_encounter(message.from_user.id, encounter)
-    await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_menu())
+    await message.answer(result["text"] + (("\n\n" + damage_text) if damage_text else ""), reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))

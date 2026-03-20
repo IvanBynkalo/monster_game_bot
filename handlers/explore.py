@@ -127,6 +127,10 @@ async def explore_handler(message: Message):
     begin_action_scope(message.from_user.id, "explore")
     tick_birth_cooldown(message.from_user.id)
 
+    # Сбрасываем старую встречу если есть (не должно быть pending при новом исследовании)
+    from database.repositories import clear_pending_encounter as _clear_enc
+    _clear_enc(message.from_user.id)
+
     # Исследование региона (Картограф)
     _expl_result = advance_exploration(message.from_user.id, player.location_slug)
     _expl_text = render_exploration_text(_expl_result, player.location_slug)
@@ -382,6 +386,10 @@ async def explore_handler(message: Message):
             wildlife_kb.inline_keyboard = [r for r in wildlife_kb.inline_keyboard if r]
             await message.answer(full_text, reply_markup=wildlife_kb)
     else:
-        # ── СОБЫТИЕ: просто текст, reply-меню внизу остаётся прежним ──
-        # Никаких кнопок на сообщении, никаких изменений reply-меню
-        await message.answer(full_text)
+        # ── СОБЫТИЕ: текст + сбрасываем reply-меню на основное ──
+        # Боевых кнопок нет, reply-меню всегда в чистом состоянии после события
+        player = get_player(message.from_user.id)
+        await message.answer(
+            full_text,
+            reply_markup=main_menu(player.location_slug, player.current_district_slug)
+        )

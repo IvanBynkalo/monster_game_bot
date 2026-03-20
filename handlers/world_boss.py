@@ -12,7 +12,7 @@ from database.repositories import (
     get_player,
     save_pending_encounter,
 )
-from keyboards.encounter_menu import encounter_menu
+from keyboards.encounter_menu import encounter_menu, encounter_inline_menu
 from game.monster_abilities import get_attack_bonus, mitigate_incoming_damage, try_regeneration
 from game.evolution_service import render_evolution_text, try_evolve_active_monster
 from keyboards.main_menu import main_menu
@@ -82,7 +82,7 @@ async def boss_attack_handler(message: Message):
         + (f"{ability_text}\n" if ability_text else "")
         + (f"💚 Регенерация: +{regen} HP\n" if regen else "")
         + f"HP твоего монстра: {active['current_hp']}/{active['max_hp']}",
-        reply_markup=encounter_menu(),
+        reply_markup=encounter_inline_menu(has_trap=False, has_poison_trap=False),
     )
 
 async def boss_flee_handler(message: Message):
