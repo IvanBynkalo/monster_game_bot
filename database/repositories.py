@@ -256,17 +256,140 @@ def add_player_experience(telegram_id: int, amount: int) -> Player | None:
     _update_player_field(telegram_id, experience=exp, level=level, stat_points=stat_pts)
     return get_player(telegram_id)
 
-def restore_player_energy(telegram_id: int, amount: int, max_energy: int = 10) -> Player | None:
+def restore_player_energy(telegram_id: int, amount: int, max_energy: int | None = None) -> Player | None:
+    if max_energy is None:
+        max_energy = get_max_energy(telegram_id)
     with get_connection() as conn:
-        conn.execute("UPDATE players SET energy=MIN(?,energy+?) WHERE telegram_id=?", (max_energy,amount,telegram_id))
+        conn.execute("UPDATE players SET energy=MIN(?,energy+?) WHERE telegram_id=?", (max_energy, amount, telegram_id))
         conn.commit()
     return get_player(telegram_id)
 
+
+
+def _ensure_energy_columns():
+    """Lazy migration: adds energy-related columns if missing."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(players)").fetchall()]
+        if "max_energy" not in cols:
+            conn.execute("ALTER TABLE players ADD COLUMN max_energy INTEGER NOT NULL DEFAULT 12")
+        if "last_energy_time" not in cols:
+            conn.execute("ALTER TABLE players ADD COLUMN last_energy_time INTEGER DEFAULT NULL")
+        if "energy_notified" not in cols:
+            conn.execute("ALTER TABLE players ADD COLUMN energy_notified INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+
+_energy_cols_ok = False
+def _lazy_energy():
+    global _energy_cols_ok
+    if not _energy_cols_ok:
+        _ensure_energy_columns()
+        _energy_cols_ok = True
+
+
+def get_max_energy(telegram_id: int) -> int:
+    """
+    Максимальная энергия = 12 + ловкость // 3.
+    С ловкостью 15 = 17 энергии.
+    """
+    _lazy_energy()
+    p = get_player(telegram_id)
+    if not p:
+        return 12
+    base = 12
+    agility_bonus = getattr(p, "agility", 0) // 3
+    return base + agility_bonus
+
+
+def tick_energy_regen(telegram_id: int) -> tuple[int, bool]:
+    """
+    Восполняет энергию на основе прошедшего времени.
+    1 энергия каждые 10 минут.
+    Возвращает (текущая_энергия, стала_полной).
+    """
+    import time as _time
+    _lazy_energy()
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT energy, max_energy, last_energy_time, energy_notified FROM players WHERE telegram_id=?",
+            (telegram_id,)
+        ).fetchone()
+
+    if not row:
+        return 0, False
+
+    max_e = get_max_energy(telegram_id)
+    current = row["energy"]
+    last_t  = row["last_energy_time"]
+    notified = row["energy_notified"]
+    now = int(_time.time())
+
+    if current >= max_e:
+        # Уже полная — обновим max_energy если изменилась
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE players SET max_energy=?, energy=? WHERE telegram_id=?",
+                (max_e, max_e, telegram_id)
+            )
+            conn.commit()
+        return max_e, False
+
+    if last_t is None:
+        # Первый раз — фиксируем время
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE players SET last_energy_time=?, max_energy=? WHERE telegram_id=?",
+                (now, max_e, telegram_id)
+            )
+            conn.commit()
+        return current, False
+
+    # Считаем сколько энергии восстановилось
+    elapsed = now - last_t
+    regen_ticks = elapsed // 600  # 1 энергия каждые 10 мин
+
+    if regen_ticks <= 0:
+        return current, False
+
+    new_energy = min(max_e, current + regen_ticks)
+    new_last_t = last_t + regen_ticks * 600
+    was_full = new_energy >= max_e
+
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET energy=?, last_energy_time=?, max_energy=?, energy_notified=? WHERE telegram_id=?",
+            (new_energy, new_last_t, max_e,
+             0 if not was_full else notified,  # сбрасываем notified если заполнилась
+             telegram_id)
+        )
+        conn.commit()
+
+    return new_energy, was_full
+
+
+def mark_energy_notification_sent(telegram_id: int):
+    _lazy_energy()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET energy_notified=1 WHERE telegram_id=?",
+            (telegram_id,)
+        )
+        conn.commit()
+
 def spend_player_energy(telegram_id: int, amount: int) -> bool:
+    # Сначала регенерируем накопленную энергию
+    tick_energy_regen(telegram_id)
+    import time as _t
     p = get_player(telegram_id)
     if not p or p.energy < amount:
         return False
-    _update_player_field(telegram_id, energy=p.energy - amount)
+    # Фиксируем время траты (для последующего регена)
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET energy=energy-?, last_energy_time=COALESCE(last_energy_time,?), energy_notified=0 WHERE telegram_id=?",
+            (amount, int(_t.time()), telegram_id)
+        )
+        conn.commit()
     return True
 
 def spend_stat_point(telegram_id: int, stat_name: str) -> bool:
