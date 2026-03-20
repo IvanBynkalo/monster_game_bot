@@ -399,23 +399,97 @@ def render_encounter_text(encounter: dict, attacker_type: str | None = None):
         return "\n".join(lines)
     return encounter["text"]
 
-def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_type: str | None = None):
+def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_type: str | None = None,
+                   active_monster: dict | None = None):
+    """
+    Боевое разрешение атаки.
+    - Применяет таблицу типов (рек. #3) — реально влияет на урон
+    - Применяет комбо-бонусы к атаке (рек. #6)
+    - Учитывает lifesteal из комбо-мутации
+    """
     if encounter["type"] != "monster":
         return {"ok": False, "text": "Здесь не на кого нападать."}
+
+    # ── Тип-множитель (рек. #3) ──────────────────────────────────────────────
     multiplier = get_damage_multiplier(attacker_type, encounter.get("monster_type"))
-    player_attack = random.randint(max(4, active_monster_attack - 2), active_monster_attack + 3)
+    hint       = render_type_hint(attacker_type, encounter.get("monster_type"))
+
+    # ── Комбо-бонус к атаке (рек. #6) ───────────────────────────────────────
+    combo_atk_bonus = 0
+    special_effect  = None
+    if active_monster:
+        from game.infection_service import get_combo_bonuses
+        combo = get_combo_bonuses(active_monster)
+        combo_atk_bonus = combo.get("atk_bonus", 0)
+        special_effect  = combo.get("special")
+
+    # ── Расчёт урона игрока ──────────────────────────────────────────────────
+    base_dmg      = active_monster_attack + combo_atk_bonus
+    player_attack = random.randint(max(4, base_dmg - 2), base_dmg + 3)
     player_attack = max(1, int(round(player_attack * multiplier)))
+
     encounter["hp"] -= player_attack
+
+    # Lifesteal из комбо "Мрачный разрушитель"
+    heal_amount = 0
+    if special_effect == "lifesteal" and active_monster and player_attack > 0:
+        heal_amount = max(1, player_attack // 4)
+        active_monster["current_hp"] = min(
+            active_monster.get("max_hp", 999),
+            active_monster.get("current_hp", 0) + heal_amount
+        )
+        from database.repositories import save_monster
+        save_monster(active_monster)
+
+    # ── Победа ───────────────────────────────────────────────────────────────
     if encounter["hp"] <= 0:
-        return {"ok": True, "finished": True, "victory": True, "monster_defeated": True, "player_damage": 0,
-                "text": f"⚔️ Ты наносишь {player_attack} урона и побеждаешь {encounter['monster_name']}!",
-                "gold": encounter["reward_gold"], "exp": encounter["reward_exp"]}
+        text = f"⚔️ Ты наносишь {player_attack} урона"
+        if multiplier > 1.0:
+            text += f" ({hint})"
+        text += f" и побеждаешь {encounter['monster_name']}!"
+        if heal_amount:
+            text += f"\n🩸 Кража жизни: +{heal_amount} HP"
+        return {
+            "ok": True, "finished": True, "victory": True,
+            "monster_defeated": True, "player_damage": 0,
+            "text": text,
+            "gold": encounter["reward_gold"], "exp": encounter["reward_exp"],
+        }
+
+    # ── Ответный удар врага ──────────────────────────────────────────────────
+    # Комбо def_bonus снижает входящий урон
+    combo_def_bonus = 0
+    if active_monster:
+        from game.infection_service import get_combo_bonuses
+        combo = get_combo_bonuses(active_monster)
+        combo_def_bonus = max(0, combo.get("def_bonus", 0))
+
     enemy_attack = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
     enemy_attack = max(0, int(enemy_attack * encounter.get("counter_multiplier", 1.0)))
+    enemy_attack = max(0, enemy_attack - combo_def_bonus)
     encounter["counter_multiplier"] = 1.0
-    hint = render_type_hint(attacker_type, encounter.get("monster_type"))
-    return {"ok": True, "finished": False, "victory": False, "monster_defeated": False, "player_damage": enemy_attack,
-            "text": f"⚔️ Ты наносишь {player_attack} урона.\n{hint}\n{encounter['monster_name']} ещё держится. Осталось HP: {encounter['hp']}/{encounter.get('max_hp', encounter['hp'])}\nВ ответ монстр атакует на {enemy_attack}."}
+
+    text_parts = [f"⚔️ Ты наносишь {player_attack} урона."]
+    if multiplier != 1.0:
+        text_parts.append(hint)
+    if heal_amount:
+        text_parts.append(f"🩸 Кража жизни: +{heal_amount} HP")
+    text_parts.append(
+        f"{encounter['monster_name']} ещё держится. "
+        f"HP: {max(0, encounter['hp'])}/{encounter.get('max_hp', encounter['hp'])}"
+    )
+    if enemy_attack > 0:
+        text_parts.append(f"В ответ монстр атакует на {enemy_attack}.")
+        if combo_def_bonus > 0:
+            text_parts.append(f"🛡 Комбо-защита снижает урон на {combo_def_bonus}.")
+    else:
+        text_parts.append("Монстр не может пробить твою защиту!")
+
+    return {
+        "ok": True, "finished": False, "victory": False,
+        "monster_defeated": False, "player_damage": enemy_attack,
+        "text": "\n".join(text_parts),
+    }
 
 def resolve_capture(encounter: dict):
     if encounter["type"] != "monster":
