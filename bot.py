@@ -615,8 +615,7 @@ async def analytics_cmd(message: Message):
 @dp.callback_query(lambda c: c.data and c.data.startswith("fight:"))
 async def fight_inline_callback(callback: CallbackQuery):
     """
-    Inline-кнопки боя. Напрямую вызывает игровую логику
-    (НЕ через handler(message) — там from_user был бы бот, а не игрок).
+    Inline-кнопки боя. Работает с monster и wildlife.
     """
     action = callback.data.split(":")[1]
     uid = callback.from_user.id
@@ -625,12 +624,15 @@ async def fight_inline_callback(callback: CallbackQuery):
         get_pending_encounter, save_pending_encounter, clear_pending_encounter,
         get_player, get_active_monster, damage_active_monster, damage_player_hp,
         add_player_gold, add_player_experience, add_active_monster_experience,
+        kill_active_monster, has_living_monster, add_resource, get_item_count,
     )
     from game.encounter_service import resolve_attack, resolve_capture, resolve_flee
     from game.monster_abilities import get_capture_bonus
     from game.skill_service import apply_skill
     from keyboards.main_menu import main_menu
     from keyboards.encounter_menu import encounter_inline_menu
+    from keyboards.location_menu import location_actions_inline
+    from game.dungeon_service import DUNGEONS
 
     await callback.answer()
 
@@ -640,38 +642,40 @@ async def fight_inline_callback(callback: CallbackQuery):
             await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
-        # Показываем меню локации
-        _p0 = get_player(uid)
-        if _p0:
-            from game.dungeon_service import DUNGEONS
-            from game.grid_exploration_service import is_dungeon_available
-            from keyboards.location_menu import location_actions_inline as _lai
+        player0 = get_player(uid)
+        if player0:
             try:
-                _hd = _p0.location_slug in DUNGEONS and is_dungeon_available(uid, _p0.location_slug)
+                from game.grid_exploration_service import is_dungeon_available
+                _hd = player0.location_slug in DUNGEONS and is_dungeon_available(uid, player0.location_slug)
             except Exception:
                 _hd = False
             await callback.message.answer(
                 "🏕 Ты вернулся в безопасную зону.\n\nЧто делать дальше?",
-                reply_markup=_lai(_p0.location_slug, has_dungeon=_hd)
+                reply_markup=location_actions_inline(player0.location_slug, has_dungeon=_hd)
             )
         return
-    # Разрешаем бой как с монстрами так и со зверями
+
+    # Принимаем и monster и wildlife
     if enc.get("type") not in ("monster", "wildlife"):
         await callback.message.answer("Встреча завершена.")
         return
-    # Для зверей нормализуем поля
-    if enc.get("type") == "wildlife" and "monster_name" not in enc:
-        enc["monster_name"] = enc.get("name", "Зверь")
+
+    # Нормализуем зверей
+    if enc.get("type") == "wildlife":
+        if "monster_name" not in enc:
+            enc["monster_name"] = enc.get("name", "Зверь")
         if "monster_type" not in enc:
             enc["monster_type"] = "nature"
 
     player = get_player(uid)
     active = get_active_monster(uid)
     if not player or not active:
-        await callback.message.answer("Ошибка: нет игрока или монстра.", reply_markup=main_menu(player.location_slug if player else "silver_city"))
+        await callback.message.answer("Ошибка: нет игрока или монстра.")
         return
 
     result = None
+    has_trap  = any(get_item_count(uid, t) > 0 for t in ["basic_trap", "frost_trap", "blast_trap"])
+    has_ptrap = get_item_count(uid, "poison_trap") > 0
 
     if action == "attack":
         result = resolve_attack(enc,
@@ -688,75 +692,70 @@ async def fight_inline_callback(callback: CallbackQuery):
                 active_monster=active)
 
     elif action == "capture":
+        if enc.get("type") == "wildlife":
+            await callback.message.answer("🐾 Зверей нельзя поймать — только монстров.")
+            return
         capture_bon = get_capture_bonus(active)
         enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
-        result = resolve_capture(enc)
+        result = resolve_capture(enc, active_monster=active)
 
     elif action == "trap":
-        from database.repositories import spend_item, get_item_count
-        from game.trap_service import ITEM_EFFECTS
-        # Проверяем ловушки по приоритету силы
-        trap_slug = None
-        for t in ["blast_trap", "frost_trap", "poison_trap", "basic_trap"]:
-            if get_item_count(uid, t) > 0:
-                trap_slug = t
-                break
-        if not trap_slug:
-            await callback.message.answer("У тебя нет ловушек.")
+        from game.trap_service import apply_best_trap
+        trap_result = apply_best_trap(uid)
+        if not trap_result:
+            await callback.message.answer("🪤 Нет подходящей ловушки.", reply_markup=encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap))
             return
-        spend_item(uid, trap_slug, 1)
-        effects = ITEM_EFFECTS.get(trap_slug, {})
-        dmg = effects.get("hp_damage", 8)
-        enc["hp"] = max(0, enc["hp"] - dmg)
-        if effects.get("skip_counter"):
-            enc["counter_multiplier"] = 0.0
-        else:
-            enc["counter_multiplier"] = 0.5
+        enc["hp"] = max(0, enc["hp"] - trap_result.get("damage", 0))
+        if trap_result.get("skip_turn"):
+            enc["skip_turn"] = True
         save_pending_encounter(uid, enc)
-        trap_names = {"blast_trap":"💥 Взрывная","frost_trap":"❄️ Морозная",
-                      "poison_trap":"☠️ Ядовитая","basic_trap":"🪤 Простая"}
-        trap_label = trap_names.get(trap_slug, "🪤")
-        result = {"ok": True, "finished": enc["hp"] <= 0, "victory": enc["hp"] <= 0,
-                  "monster_defeated": enc["hp"] <= 0, "player_damage": 0,
-                  "text": f"{trap_label} ловушка! {enc.get('monster_name', enc.get('name','Существо'))} получает {dmg} урона. HP: {max(0,enc['hp'])}",
-                  "gold": enc.get("reward_gold", 0), "exp": enc.get("reward_exp", 0)}
-
-    elif action == "poison_trap":
-        from database.repositories import spend_item, get_item_count
-        if get_item_count(uid, "poison_trap") <= 0:
-            await callback.message.answer("У тебя нет ядовитых ловушек.")
-            return
-        spend_item(uid, "poison_trap", 1)
-        enc["hp"] = max(0, enc["hp"] - 14)
-        enc["counter_multiplier"] = 0.3
-        save_pending_encounter(uid, enc)
-        result = {"ok": True, "finished": enc["hp"] <= 0, "victory": enc["hp"] <= 0,
-                  "monster_defeated": enc["hp"] <= 0, "player_damage": 0,
-                  "text": f"☠️ Ядовитая ловушка! {enc['monster_name']} получает 14 урона. HP: {max(0,enc['hp'])}",
-                  "gold": enc.get("reward_gold", 0), "exp": enc.get("reward_exp", 0)}
+        await callback.message.answer(
+            f"🪤 {trap_result.get('text', 'Ловушка сработала!')}\nHP врага: {enc['hp']}",
+            reply_markup=encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap)
+        )
+        return
 
     elif action == "flee":
-        has_elixir = False  # TODO: check inventory for flee_elixir
+        flee_elixir = get_item_count(uid, "flee_elixir") > 0
         result = resolve_flee(enc,
             player_level=player.level,
             agility=player.agility,
-            has_flee_elixir=has_elixir,
-        )
+            has_flee_elixir=flee_elixir)
 
-    if not result:
-        await callback.message.answer("Неизвестное действие.")
+    if result is None:
         return
 
-    # Apply damage to player's monster from enemy counter-attack
-    if result.get("player_damage", 0) > 0:
-        damage_active_monster(uid, result["player_damage"])
+    lines = [result.get("text", "")]
+
+    # Применяем урон врага по монстру
+    player_damage = result.get("player_damage", 0)
+    if player_damage > 0:
+        damage_active_monster(uid, player_damage)
         active = get_active_monster(uid)
 
-    lines = [result["text"]]
+    # Проверяем HP монстра
+    if active and active.get("current_hp", 1) <= 0:
+        kill_active_monster(uid)
+        clear_pending_encounter(uid)
+        gold_loss = min(50, max(10, player.gold // 10))
+        with __import__("database.db", fromlist=["get_connection"]).get_connection() as _c:
+            _c.execute("UPDATE players SET gold=MAX(0,gold-?) WHERE telegram_id=?", (gold_loss, uid))
+            _c.commit()
+        lines.append(
+            f"\n💀 Твой монстр пал в бою...\n"
+            f"Ты чудом спасся, но теперь беззащитен.\n"
+            f"Потеряно золота: {gold_loss}\n\n"
+            f"⚠️ Без монстра нельзя сражаться.\n"
+            f"Отправляйся в город — купи нового или возроди."
+        )
+        player = get_player(uid)
+        await callback.message.answer("\n".join(lines),
+            reply_markup=main_menu(player.location_slug if player else "silver_city"))
+        return
 
-    # Monster HP after player's hit
+    # HP монстра после удара (если бой продолжается)
     if not result.get("finished") and active:
-        lines.append(f"❤️ Твой монстр: {active.get('current_hp',active['hp'])}/{active.get('max_hp',active['hp'])} HP")
+        lines.append(f"❤️ Твой монстр: {active.get('current_hp', active['hp'])}/{active.get('max_hp', active['hp'])} HP")
 
     if result.get("finished"):
         clear_pending_encounter(uid)
@@ -775,91 +774,60 @@ async def fight_inline_callback(callback: CallbackQuery):
             for lu in lvlups:
                 lines.append(f"⬆️ Монстр достиг уровня {lu['level']}!")
 
-            # Лут с зверя + бестиарий + трофей + недельный квест
+            # Лут с зверя
             if enc.get("type") == "wildlife":
                 from game.bestiary_service import register_bestiary_seen, check_trophy_drop
                 from game.weekly_quest_service import progress_weekly_quest, claim_weekly_reward
                 register_bestiary_seen(uid, enc["name"], "wildlife")
-
-                # Лут-ресурс
                 if enc.get("loot_slug"):
-                    from database.repositories import add_resource
                     add_resource(uid, enc["loot_slug"], 1)
-                    from game.gather_service import RESOURCES_BY_LOCATION
-                    loot_name = enc["loot_slug"]
-                    for loc_pool in RESOURCES_BY_LOCATION.values():
-                        for r in loc_pool:
-                            if r["slug"] == enc["loot_slug"]:
-                                loot_name = r["name"]
-                                break
-                    lines.append(f"🎒 Добыча: {loot_name} x1")
-
-                # Трофей (15% шанс с редких зверей)
+                    lines.append(f"🎒 Добыча: {enc['loot_slug']} x1")
                 trophy = check_trophy_drop(enc["name"])
                 if trophy:
-                    from database.repositories import add_resource
                     add_resource(uid, trophy, 1)
-                    from game.bestiary_service import TROPHY_ITEMS
-                    trophy_name = TROPHY_ITEMS.get(trophy, {}).get("name", trophy)
-                    lines.append(f"🏆 Трофей: {trophy_name}!")
+                    lines.append(f"🏆 Трофей: {trophy}!")
 
-                # Прогресс недельного квеста
-                player_now = get_player(uid)
-                if player_now:
-                    wq_done = progress_weekly_quest(
-                        uid, player_now.location_slug,
-                        action="defeat_wildlife", name=enc["name"]
-                    )
-                    if wq_done:
-                        reward_text = claim_weekly_reward(uid, wq_done)
-                        lines.append(f"\n🎉 Недельный квест выполнен!\n{reward_text}")
-
-            if result.get("captured"):
-                from database.repositories import add_captured_monster
-                add_captured_monster(uid, enc["monster_name"], enc.get("rarity","common"),
-                    enc.get("mood","instinct"), enc.get("max_hp", enc.get("hp",10)),
-                    enc.get("attack",3), source_type="wild")
-                lines.append(f"🎯 {enc['monster_name']} пойман и добавлен в команду!")
-
-            # Infection & birth
-            from game.infection_service import apply_dominant_emotion_infection, render_infection_update
-            from game.emotion_birth_service import try_birth_emotional_monster, render_birth_text
-            from game.emotion_service import grant_event_emotions, render_emotion_changes
-            district_mood = None
-            _, changes = grant_event_emotions(uid, "battle_win", district_mood=district_mood)
-            ec = render_emotion_changes(changes)
-            if ec: lines.append(ec)
-            inf = render_infection_update(apply_dominant_emotion_infection(uid))
-            if inf: lines.append(inf)
-            born = render_birth_text(try_birth_emotional_monster(uid))
-            if born: lines.append(born)
+        elif result.get("flee_success"):
+            pass  # просто выходим
 
         player = get_player(uid)
-        await callback.message.answer("\n".join(lines),
+        from game.evolution_service import render_evolution_text, try_evolve_active_monster
+        evo = try_evolve_active_monster(uid)
+        evo_text = render_evolution_text(evo)
+        if evo_text:
+            lines.append(evo_text)
+
+        await callback.message.answer("\n".join(l for l in lines if l),
             reply_markup=main_menu(player.location_slug if player else "silver_city"))
-        # После боя — показываем inline-меню локации снова
+
+        # Inline меню после боя
         if player:
-            from game.dungeon_service import DUNGEONS
-            from keyboards.location_menu import location_actions_inline
-            has_dungeon = player.location_slug in DUNGEONS
-            await callback.message.answer(
-                "Что делать:",
-                reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
-            )
+            try:
+                from game.grid_exploration_service import is_dungeon_available
+                _hd2 = player.location_slug in DUNGEONS and is_dungeon_available(uid, player.location_slug)
+            except Exception:
+                _hd2 = False
+            await callback.message.answer("Что делать:",
+                reply_markup=location_actions_inline(player.location_slug, has_dungeon=_hd2))
+        return
+
+    # Бой продолжается
+    save_pending_encounter(uid, enc)
+
+    if enc.get("type") == "wildlife":
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
+             InlineKeyboardButton(text="✨ Навык",      callback_data="fight:skill")],
+            *([[InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")]] if has_trap else []),
+            [InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")],
+        ])
     else:
-        # Battle continues - update encounter and show inline buttons again
-        save_pending_encounter(uid, enc)
-        active = get_active_monster(uid)
-        has_trap = False
-        has_ptrap = False
-        from database.repositories import get_item_count
-        has_trap  = get_item_count(uid, "basic_trap") > 0
-        has_ptrap = get_item_count(uid, "poison_trap") > 0
-        await callback.message.answer("\n".join(lines),
-            reply_markup=encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap))
+        kb = encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap)
+
+    await callback.message.answer("\n".join(l for l in lines if l), reply_markup=kb)
 
 
-@dp.callback_query(lambda c: c.data and c.data.startswith("loc:"))
 async def location_inline_callback(callback: CallbackQuery):
     """Inline-действия в локации.
     Вызываем игровую логику напрямую по uid — НЕ мутируем frozen pydantic объект.
