@@ -39,6 +39,7 @@ from game.world_state_service import get_elite_expedition, roll_weather
 from game.player_survival_service import render_injury_warning
 from keyboards.encounter_menu import encounter_inline_menu, encounter_menu
 from keyboards.main_menu import main_menu
+from keyboards.location_menu import location_actions_inline
 from game.exploration_service import advance_exploration, render_exploration_text, apply_exploration_bonuses
 from game.bestiary_service import register_bestiary_seen, check_trophy_drop
 from game.weekly_quest_service import progress_weekly_quest, claim_weekly_reward, render_weekly_quest
@@ -387,10 +388,16 @@ async def explore_handler(message: Message):
             wildlife_kb.inline_keyboard = [r for r in wildlife_kb.inline_keyboard if r]
             await message.answer(full_text, reply_markup=wildlife_kb)
     else:
-        # ── СОБЫТИЕ: текст + сбрасываем reply-меню на основное ──
-        # Боевых кнопок нет, reply-меню всегда в чистом состоянии после события
+        # ── СОБЫТИЕ: текст + reply-меню + inline-меню локации ──
         player = get_player(message.from_user.id)
         await message.answer(
             full_text,
             reply_markup=main_menu(player.location_slug, player.current_district_slug)
+        )
+        # Всегда показываем inline-меню локации после события
+        from game.dungeon_service import DUNGEONS
+        has_dungeon = player.location_slug in DUNGEONS
+        await message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
         )
