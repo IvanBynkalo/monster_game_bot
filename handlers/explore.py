@@ -37,6 +37,10 @@ from game.world_state_service import get_elite_expedition, roll_weather
 from game.player_survival_service import render_injury_warning
 from keyboards.encounter_menu import encounter_inline_menu, encounter_menu
 from keyboards.main_menu import main_menu
+from game.exploration_service import advance_exploration, render_exploration_text, apply_exploration_bonuses
+from game.bestiary_service import register_bestiary_seen, check_trophy_drop
+from game.weekly_quest_service import progress_weekly_quest, claim_weekly_reward, render_weekly_quest
+from game.wildlife_service import roll_wildlife, render_wildlife_encounter, has_wildlife
 from utils.logger import log_event
 from utils.cooldown import cooldown_guard
 from utils.analytics import track_explore
@@ -120,6 +124,11 @@ async def explore_handler(message: Message):
 
     begin_action_scope(message.from_user.id, "explore")
     tick_birth_cooldown(message.from_user.id)
+
+    # Исследование региона (Картограф)
+    _expl_result = advance_exploration(message.from_user.id, player.location_slug)
+    _expl_text = render_exploration_text(_expl_result, player.location_slug)
+    _expl_bonuses = apply_exploration_bonuses(message.from_user.id, player.location_slug)
 
     if not spend_player_energy(message.from_user.id, 1):
         log_event("explore_failed_no_energy", message.from_user.id)
@@ -245,7 +254,30 @@ async def explore_handler(message: Message):
         clear_temp_effect(message.from_user.id, "elite_marsh")
         extras.append("🕸 Элитный маршрут уводит в сердце мёртвого болота.")
 
-    encounter = generate_district_encounter(encounter_slug) if encounter_slug else {"type": "event", "text": "Тишина окутывает местность."}
+    # Распределение встреч: звери > события >> монстры
+    # Монстры — редкость, их ценность в уникальности
+    _expl_bonus_pct = int(_expl_bonuses.get("rare_bonus", 0) * 100)
+    _monster_chance  = max(5, 8 + _expl_bonus_pct)   # 5-18%
+    _wildlife_chance = 62                              # 62%
+    _event_chance    = 100 - _monster_chance - _wildlife_chance
+
+    _roll = random.randint(1, 100)
+    if _roll <= _monster_chance and encounter_slug:
+        encounter = generate_district_encounter(encounter_slug)
+        # Убеждаемся что это действительно монстр (не событие из пула)
+        if encounter.get("type") != "monster":
+            encounter = {"type": "event", "text": "В чаще что-то шевелится, но исчезает прежде чем ты успеваешь разглядеть."}
+    elif _roll <= _monster_chance + _wildlife_chance and has_wildlife(player.location_slug):
+        _animal = roll_wildlife(player.location_slug)
+        if _animal:
+            encounter = _animal
+        else:
+            encounter = {"type": "event", "text": "Тишина окутывает местность."}
+    else:
+        encounter = generate_district_encounter(encounter_slug) if encounter_slug else {"type": "event", "text": "Тишина окутывает местность."}
+        # Если выпал монстр — превращаем в событие (шанс монстра уже использован)
+        if encounter.get("type") == "monster":
+            encounter = {"type": "event", "text": encounter.get("text", "Что-то промелькнуло в тени и скрылось.")}
     if encounter["type"] == "monster":
         capture_bonus = 0.0
         if has_temp_effect(message.from_user.id, "field_capture"):
@@ -284,6 +316,8 @@ async def explore_handler(message: Message):
     extras.extend(_render_completed_quests(message.from_user.id, completed_now))
     if story_done:
         extras.append(apply_story_reward(message.from_user.id, story_done))
+    if _expl_text:
+        extras.append(_expl_text)
     extras.append(effect_text)
     if expired_text:
         extras.append(expired_text)
@@ -295,14 +329,21 @@ async def explore_handler(message: Message):
         from utils.images import send_birth_image
         await send_birth_image(message, _born_emotion_local, born)
 
-    if encounter["type"] == "monster":
+    if encounter["type"] in ("monster", "wildlife"):
         kb = encounter_inline_menu(
             has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
             has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
         )
-        from utils.images import send_monster_image
-        mtype = locals().get("_encounter_monster_type", encounter.get("monster_type", "void"))
-        await send_monster_image(message, mtype, full_text, reply_markup=kb)
+        if encounter["type"] == "wildlife":
+            # Зверей нельзя поймать — используем боевое меню без кнопки поимки
+            from keyboards.encounter_menu import encounter_inline_menu as _wkb
+            kb = _wkb(has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+                      has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0)
+            await message.answer(full_text, reply_markup=kb)
+        else:
+            from utils.images import send_monster_image
+            mtype = locals().get("_encounter_monster_type", encounter.get("monster_type", "void"))
+            await send_monster_image(message, mtype, full_text, reply_markup=kb)
     else:
         # Для событий без монстра — показываем картинку локации
         from utils.images import send_location_image

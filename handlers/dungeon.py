@@ -20,15 +20,17 @@ from keyboards.dungeon_menu import dungeon_menu
 from keyboards.main_menu import main_menu
 
 def _get_dungeon_state(player):
-    flags = getattr(player, "_dungeon_flags", None)
-    return flags
+    """Достаём состояние подземелья из SQLite (ui context)."""
+    ui = get_ui_state(player.telegram_id)
+    return ui.get("context", {}).get("dungeon_state")
 
 def _set_dungeon_state(player, state):
-    player._dungeon_flags = state
+    """Сохраняем состояние подземелья в SQLite."""
+    set_ui_screen(player.telegram_id, "dungeon", dungeon_state=state)
 
 def _clear_dungeon_state(player):
-    if hasattr(player, "_dungeon_flags"):
-        player._dungeon_flags = None
+    """Очищаем состояние подземелья."""
+    set_ui_screen(player.telegram_id, "main")
 
 async def dungeon_handler(message: Message):
     player = get_player(message.from_user.id)

@@ -1,5 +1,7 @@
 from aiogram.types import Message, FSInputFile
 from utils.images import send_location_image
+from game.exploration_service import render_exploration_panel
+from game.weekly_quest_service import check_and_assign_weekly_quest, get_active_weekly_quest, render_weekly_quest
 
 from database.repositories import get_player, set_ui_screen, update_player_location, update_story_progress
 from game.location_rules import check_location_access
@@ -93,7 +95,16 @@ async def move_handler(message: Message):
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
     set_ui_screen(message.from_user.id, "main")
 
-    text = f"🚶 Ты переместился в новую область.\n\n{render_location_card(target.slug)}"
+    _expl_panel = render_exploration_panel(message.from_user.id, target.slug)
+    # Проверяем недельный квест при входе в регион
+    _new_wq = check_and_assign_weekly_quest(message.from_user.id, target.slug)
+    _active_wq = get_active_weekly_quest(message.from_user.id, target.slug)
+    _wq_text = ""
+    if _new_wq:
+        _wq_text = f"\n\n🎉 Новый недельный квест!\n{render_weekly_quest(_new_wq)}"
+    elif _active_wq and not _active_wq["completed"]:
+        _wq_text = f"\n\n{render_weekly_quest(_active_wq)}"
+    text = f"🚶 Ты переместился в новую область.\n\n{render_location_card(target.slug)}\n\n{_expl_panel}{_wq_text}"
     if story_done:
         text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
 

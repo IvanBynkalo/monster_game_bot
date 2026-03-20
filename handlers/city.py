@@ -1111,19 +1111,14 @@ async def leave_city_handler(message: Message):
         await message.answer("Ты и так не в городе.")
         return
 
-    if player.current_district_slug != "main_gate":
-        await message.answer(
-            "Покинуть город можно только через 🚪 Главные ворота.",
-            reply_markup=city_menu(player.current_district_slug),
-        )
-        return
-
+    # Выходим напрямую — без требования идти в главные ворота
     update_player_location(message.from_user.id, "dark_forest")
+    update_player_district(message.from_user.id, "mushroom_path")
     set_ui_screen(message.from_user.id, "main")
 
     await message.answer(
-        "🚶 Ты покидаешь Сереброград через главные ворота и выходишь в Тёмный лес.",
-        reply_markup=main_menu("dark_forest", None),
+        "🚶 Ты покидаешь Сереброград и выходишь в Тёмный лес.",
+        reply_markup=main_menu("dark_forest", "mushroom_path"),
     )
 
 
