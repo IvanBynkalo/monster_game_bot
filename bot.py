@@ -1407,6 +1407,16 @@ async def global_error_handler(event: ErrorEvent):
     return True
 
 
+@dp.callback_query()
+async def fallback_callback_handler(callback: CallbackQuery):
+    logger.warning(
+        "UNHANDLED CALLBACK: user=%s data=%r",
+        callback.from_user.id if callback.from_user else None,
+        callback.data,
+    )
+    await callback.answer("Кнопка не работает", show_alert=False)
+
+
 @dp.message()
 async def fallback_handler(message: Message):
     logger.info(
