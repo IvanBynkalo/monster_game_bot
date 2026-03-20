@@ -774,18 +774,40 @@ async def fight_inline_callback(callback: CallbackQuery):
             for lu in lvlups:
                 lines.append(f"⬆️ Монстр достиг уровня {lu['level']}!")
 
-            # Лут с зверя
+            # Лут с зверя + квесты охоты
             if enc.get("type") == "wildlife":
                 from game.bestiary_service import register_bestiary_seen, check_trophy_drop
-                from game.weekly_quest_service import progress_weekly_quest, claim_weekly_reward
-                register_bestiary_seen(uid, enc["name"], "wildlife")
-                if enc.get("loot_slug"):
-                    add_resource(uid, enc["loot_slug"], 1)
-                    lines.append(f"🎒 Добыча: {enc['loot_slug']} x1")
-                trophy = check_trophy_drop(enc["name"])
+                from game.wildlife_loot import roll_wildlife_loot
+                from game.hunting_quests import progress_hunting_kill, assign_daily_hunting_quest
+                from game.weekly_quest_service import progress_weekly_quest
+
+                animal_name = enc.get("name", "")
+                register_bestiary_seen(uid, animal_name, "wildlife")
+
+                # Бросаем дайс на лут
+                loot_drops = roll_wildlife_loot(animal_name)
+                for loot_slug, loot_name, loot_amt in loot_drops:
+                    add_resource(uid, loot_slug, loot_amt)
+                    lines.append(f"🎒 Добыча: {loot_name} x{loot_amt}")
+
+                # Трофей (15% с редких зверей)
+                trophy = check_trophy_drop(animal_name)
                 if trophy:
                     add_resource(uid, trophy, 1)
-                    lines.append(f"🏆 Трофей: {trophy}!")
+                    lines.append(f"🏆 Редкий трофей: {trophy}!")
+
+                # Прогресс квестов охоты
+                completed_hunts = progress_hunting_kill(uid, animal_name)
+                for hq in completed_hunts:
+                    add_player_gold(uid, hq["reward_gold"])
+                    add_player_experience(uid, hq["reward_exp"])
+                    lines.append(
+                        f"\n✅ Квест выполнен: {hq['title']}\n"
+                        f"💰 +{hq['reward_gold']} золота  ✨ +{hq['reward_exp']} опыта"
+                    )
+
+                # Выдаём новый дневной квест охоты если нет активного
+                assign_daily_hunting_quest(uid)
 
         elif result.get("flee_success"):
             pass  # просто выходим
@@ -1163,8 +1185,11 @@ async def explore_direction_callback(callback: CallbackQuery):
         if infection_update:
             parts.append(infection_update)
     else:
-        # Событие — показываем всё включая мини-карту
-        event_text = encounter.get("text") or encounter.get("title") or "Тишина..."
+        # Событие — уникальный текст локации или из пула
+        from game.location_events import get_weighted_event
+        _pool_text = encounter.get("text") or encounter.get("title") or None
+        event_text = get_weighted_event(player.location_slug, 
+                                         {"text": _pool_text} if _pool_text else None)
         parts.append(event_text)
         if emotion_text:
             parts.append(emotion_text)
@@ -1285,6 +1310,96 @@ async def map_grid_cmd(message: Message):
     mini = render_mini_map(grid)
     panel = render_exploration_panel(message.from_user.id, player.location_slug)
     await message.answer(panel + "\n\n" + mini)
+
+
+@dp.message(Command("hunt_craft"))
+async def hunt_craft_cmd(message: Message):
+    """Меню крафта из охотничьего лута. Доступно в Ремесленном квартале."""
+    from database.repositories import get_player, get_resources
+    from game.hunting_recipes import get_available_recipes, can_craft, get_recipe
+    from game.location_rules import is_city
+
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    if not is_city(player.location_slug):
+        await message.answer("Крафт доступен только в Ремесленном квартале Сереброграда.")
+        return
+
+    recipes = get_available_recipes(player.level)
+    resources = get_resources(message.from_user.id)
+
+    if not recipes:
+        await message.answer("Рецепты для твоего уровня недоступны.")
+        return
+
+    lines = [f"🔨 Охотничий крафт (уровень {player.level}+)\n"]
+    for r in recipes:
+        ok, _ = can_craft(r, resources, player.gold)
+        status = "✅" if ok else "❌"
+        ingr = ", ".join(f"{slug} x{amt}" for slug, amt in r["ingredients"])
+        lines.append(
+            f"{status} {r['name']}\n"
+            f"  📋 {r['description']}\n"
+            f"  🧱 {ingr} + {r['gold_cost']}з\n"
+            f"  👉 /craft_{r['id']}"
+        )
+
+    await message.answer("\n\n".join(lines))
+
+
+@dp.message(filters.Text(startswith="/craft_"))
+async def do_hunt_craft(message: Message):
+    """Выполняет крафт по ID рецепта."""
+    from database.repositories import get_player, get_resources, add_resource, get_connection
+    from game.hunting_recipes import get_recipe, can_craft
+
+    recipe_id = (message.text or "").strip().lstrip("/craft_")
+    # Убираем /craft_ prefix
+    if message.text:
+        recipe_id = message.text.strip()[7:]  # убираем "/craft_"
+
+    player = get_player(message.from_user.id)
+    if not player:
+        return
+
+    recipe = get_recipe(recipe_id)
+    if not recipe:
+        await message.answer("Рецепт не найден.")
+        return
+
+    if player.level < recipe["min_level"]:
+        await message.answer(f"Нужен уровень {recipe['min_level']}+.")
+        return
+
+    resources = get_resources(message.from_user.id)
+    ok, err = can_craft(recipe, resources, player.gold)
+    if not ok:
+        await message.answer(f"❌ {err}")
+        return
+
+    # Списываем ингредиенты и золото
+    with get_connection() as conn:
+        for slug, amt in recipe["ingredients"]:
+            conn.execute(
+                "UPDATE player_resources SET amount=amount-? WHERE telegram_id=? AND slug=?",
+                (amt, message.from_user.id, slug)
+            )
+        conn.execute(
+            "UPDATE players SET gold=gold-? WHERE telegram_id=?",
+            (recipe["gold_cost"], message.from_user.id)
+        )
+        conn.commit()
+
+    # Выдаём результат
+    add_resource(message.from_user.id, recipe["result_item"], recipe["result_count"])
+
+    await message.answer(
+        f"✅ Скрафтовано: {recipe['name']} x{recipe['result_count']}\n"
+        f"{recipe['description']}\n"
+        f"Потрачено: {recipe['gold_cost']} золота"
+    )
 
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
