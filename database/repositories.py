@@ -1,1343 +1,379 @@
+"""
+repositories.py — полный слой доступа к данным на SQLite.
+Все данные персистентны между перезапусками.
+"""
+import json
+import time
+from database.db import get_connection, json_get, json_set
 from database.models import Player
 
-PLAYERS = {}
-PENDING_ENCOUNTERS = {}
-PLAYER_MONSTERS = {}
-PLAYER_EMOTIONS = {}
-PLAYER_QUESTS = {}
-PLAYER_STORY = {}
-PLAYER_ACTION_FLAGS = {}
-PLAYER_ITEMS = {}
-PLAYER_CODEX = {}
-PLAYER_RELICS = {}
-PLAYER_RESOURCES = {}
-PLAYER_CRAFT_QUESTS = {}
-PLAYER_EXTRA_QUESTS = {}
-PLAYER_BOARD_QUESTS = {}
-PLAYER_GUILD_QUESTS = {}
-MARKET_ITEMS = {}
-MARKET_MONSTERS = {}
-CITY_RESOURCE_MARKETS = {}
-NEXT_MONSTER_ID = 1
-PLAYER_UI = {}
-
-DEFAULT_EMOTIONS = {"rage": 0, "fear": 0, "instinct": 0, "inspiration": 0}
+# ─── Константы квестов ────────────────────────────────────────────────────────
 
 STARTER_QUESTS = {
-    "first_steps": {
-        "title": "Первые шаги",
-        "description": "Исследуй мир 3 раза.",
-        "target_type": "explore",
-        "target_value": 3,
-        "reward_gold": 20,
-        "reward_exp": 10,
-    },
-    "first_hunt": {
-        "title": "Первая охота",
-        "description": "Победи 2 монстров в бою.",
-        "target_type": "win",
-        "target_value": 2,
-        "reward_gold": 25,
-        "reward_exp": 12,
-    },
-    "collector": {
-        "title": "Коллекционер",
-        "description": "Поймай 2 монстров.",
-        "target_type": "capture",
-        "target_value": 2,
-        "reward_gold": 30,
-        "reward_exp": 15,
-    },
-    "veteran_scout": {
-        "title": "Опытный разведчик",
-        "description": "Исследуй мир 8 раз.",
-        "target_type": "explore",
-        "target_value": 8,
-        "reward_gold": 45,
-        "reward_exp": 20,
-    },
-    "field_hunter": {
-        "title": "Полевой охотник",
-        "description": "Победи 6 монстров в бою.",
-        "target_type": "win",
-        "target_value": 6,
-        "reward_gold": 55,
-        "reward_exp": 24,
-    },
-    "fields_explorer": {
-        "title": "Разведка лугов",
-        "description": "Исследуй Изумрудные поля 4 раза.",
-        "target_type": "explore",
-        "target_value": 4,
-        "reward_gold": 60,
-        "reward_exp": 28,
-    },
-    "hills_miner": {
-        "title": "Рудная жила",
-        "description": "Собери 5 ресурсов в Каменных холмах.",
-        "target_type": "explore",
-        "target_value": 5,
-        "reward_gold": 65,
-        "reward_exp": 30,
-    },
-    "marsh_survivor": {
-        "title": "Выживание в болотах",
-        "description": "Победи 3 монстров в Болоте теней.",
-        "target_type": "win",
-        "target_value": 3,
-        "reward_gold": 70,
-        "reward_exp": 32,
-    },
-    "monster_research": {
-        "title": "Исследователь видов",
-        "description": "Поймай 5 монстров.",
-        "target_type": "capture",
-        "target_value": 5,
-        "reward_gold": 60,
-        "reward_exp": 26,
-    },
+    "first_steps":      {"title": "Первые шаги",          "description": "Исследуй мир 3 раза.",            "target_type": "explore", "target_value": 3,  "reward_gold": 20, "reward_exp": 10},
+    "first_hunt":       {"title": "Первая охота",          "description": "Победи 2 монстров в бою.",        "target_type": "win",     "target_value": 2,  "reward_gold": 25, "reward_exp": 12},
+    "collector":        {"title": "Коллекционер",          "description": "Поймай 2 монстров.",              "target_type": "capture", "target_value": 2,  "reward_gold": 30, "reward_exp": 15},
+    "veteran_scout":    {"title": "Опытный разведчик",     "description": "Исследуй мир 8 раз.",             "target_type": "explore", "target_value": 8,  "reward_gold": 45, "reward_exp": 20},
+    "field_hunter":     {"title": "Полевой охотник",       "description": "Победи 6 монстров в бою.",        "target_type": "win",     "target_value": 6,  "reward_gold": 55, "reward_exp": 24},
+    "fields_explorer":  {"title": "Разведка лугов",        "description": "Исследуй Изумрудные поля 4 раза.","target_type": "explore", "target_value": 4,  "reward_gold": 60, "reward_exp": 28},
+    "hills_miner":      {"title": "Рудная жила",           "description": "Собери 5 ресурсов.",              "target_type": "explore", "target_value": 5,  "reward_gold": 65, "reward_exp": 30},
+    "marsh_survivor":   {"title": "Выживание в болотах",   "description": "Победи 3 монстров в Болоте.",     "target_type": "win",     "target_value": 3,  "reward_gold": 70, "reward_exp": 32},
+    "monster_research": {"title": "Исследователь видов",   "description": "Поймай 5 монстров.",              "target_type": "capture", "target_value": 5,  "reward_gold": 60, "reward_exp": 26},
 }
-
-STARTER_QUEST_CHAIN = [
-    "first_steps",
-    "first_hunt",
-    "collector",
-    "veteran_scout",
-    "field_hunter",
-    "fields_explorer",
-    "hills_miner",
-    "marsh_survivor",
-    "monster_research",
-]
+STARTER_QUEST_CHAIN = ["first_steps","first_hunt","collector","veteran_scout","field_hunter","fields_explorer","hills_miner","marsh_survivor","monster_research"]
 
 STORY_QUESTS = [
-    {
-        "id": "forest_echo",
-        "title": "Шёпот леса",
-        "description": "Исследуй Тёмный лес 2 раза.",
-        "requirements": {"location_slug": "dark_forest", "explore_count": 2},
-        "reward_gold": 25,
-        "reward_exp": 12,
-        "reward_text": "След уходит в Болото теней.",
-    },
-    {
-        "id": "swamp_sign",
-        "title": "Тени у воды",
-        "description": "Доберись до Болота теней и исследуй его 1 раз.",
-        "requirements": {"location_slug": "shadow_swamp", "explore_count": 1},
-        "reward_gold": 35,
-        "reward_exp": 16,
-        "reward_text": "Голоса ведут к Вулкану ярости.",
-    },
-    {
-        "id": "volcano_trial",
-        "title": "Испытание жаром",
-        "description": "Доберись до Вулкана ярости и победи там 1 монстра.",
-        "requirements": {"location_slug": "volcano_wrath", "win_count": 1},
-        "reward_gold": 50,
-        "reward_exp": 25,
-        "reward_text": "Первый акт истории региона завершён.",
-    },
+    {"id":"forest_echo",   "title":"Шёпот леса",       "description":"Исследуй Тёмный лес 2 раза.",           "requirements":{"location_slug":"dark_forest",    "explore_count":2},"reward_gold":25,"reward_exp":12,"reward_text":"След уходит в Болото теней."},
+    {"id":"swamp_sign",    "title":"Тени у воды",       "description":"Исследуй Болото теней 1 раз.",          "requirements":{"location_slug":"shadow_swamp",   "explore_count":1},"reward_gold":35,"reward_exp":16,"reward_text":"Голоса ведут к Вулкану ярости."},
+    {"id":"volcano_trial", "title":"Испытание жаром",   "description":"Победи монстра на Вулкане ярости.",     "requirements":{"location_slug":"volcano_wrath",  "win_count":1},    "reward_gold":50,"reward_exp":25,"reward_text":"Первый акт завершён."},
 ]
 
-
-def _default_story():
-    return {
-        "current_index": 0,
-        "completed_ids": [],
-        "forest_echo": {"explore_count": 0, "win_count": 0, "visited": False},
-        "swamp_sign": {"explore_count": 0, "win_count": 0, "visited": False},
-        "volcano_trial": {"explore_count": 0, "win_count": 0, "visited": False},
-    }
-
-
-def _default_craft_quests():
-    return {
-        "craft_big_potion": {
-            "progress": 0,
-            "completed": False,
-            "craft_key": "big_potion",
-            "count": 1,
-            "title": "Полевой алхимик",
-            "reward_gold": 35,
-            "reward_exp": 12,
-        },
-        "craft_poison_trap": {
-            "progress": 0,
-            "completed": False,
-            "craft_key": "poison_trap",
-            "count": 1,
-            "title": "Опасная приманка",
-            "reward_gold": 50,
-            "reward_exp": 16,
-        },
-    }
-
-
-def _default_extra_quests():
-    return {
-        "extra_first_gather": {
-            "progress": 0,
-            "completed": False,
-            "action_type": "gather",
-            "count": 3,
-            "title": "Первые находки",
-            "reward_gold": 25,
-            "reward_exp": 10,
-        },
-        "extra_first_craft": {
-            "progress": 0,
-            "completed": False,
-            "action_type": "craft",
-            "count": 1,
-            "title": "Первый рецепт",
-            "reward_gold": 20,
-            "reward_exp": 10,
-        },
-        "extra_survivor": {
-            "progress": 0,
-            "completed": False,
-            "action_type": "win",
-            "count": 4,
-            "title": "Выживший",
-            "reward_gold": 40,
-            "reward_exp": 18,
-        },
-    }
-
-
-def _default_board_quests():
-    return {
-        "board_hunt_small": {
-            "progress": 0,
-            "completed": False,
-            "action_type": "win",
-            "count": 3,
-            "title": "Заказ охотников",
-            "reward_gold": 45,
-            "reward_exp": 18,
-        },
-        "board_capture_live": {
-            "progress": 0,
-            "completed": False,
-            "action_type": "capture",
-            "count": 2,
-            "title": "Живой экземпляр",
-            "reward_gold": 55,
-            "reward_exp": 22,
-        },
-        "board_field_work": {
-            "progress": 0,
-            "completed": False,
-            "action_type": "explore",
-            "count": 5,
-            "title": "Полевые работы",
-            "reward_gold": 50,
-            "reward_exp": 20,
-        },
-    }
-
-
-def _default_guild_quests():
-    return {
-        "hunters_trial": {
-            "progress": 0,
-            "completed": False,
-            "guild_key": "hunters",
-            "action_type": "win",
-            "count": 3,
-            "title": "Испытание ловцов",
-            "reward_gold": 50,
-            "reward_exp": 20,
-        },
-        "gatherers_route": {
-            "progress": 0,
-            "completed": False,
-            "guild_key": "gatherers",
-            "action_type": "gather",
-            "count": 4,
-            "title": "Маршрут собирателя",
-            "reward_gold": 45,
-            "reward_exp": 18,
-        },
-        "geologists_find": {
-            "progress": 0,
-            "completed": False,
-            "guild_key": "geologists",
-            "action_type": "explore",
-            "count": 4,
-            "title": "Находка геолога",
-            "reward_gold": 45,
-            "reward_exp": 18,
-        },
-        "alchemists_work": {
-            "progress": 0,
-            "completed": False,
-            "guild_key": "alchemists",
-            "action_type": "craft",
-            "count": 2,
-            "title": "Работа алхимика",
-            "reward_gold": 50,
-            "reward_exp": 22,
-        },
-    }
-
-
-def _ensure_market_defaults():
-    MARKET_ITEMS.setdefault("small_potion", {"base_price": 14, "demand": 0.0, "updated_at": 0.0})
-    MARKET_ITEMS.setdefault("energy_capsule", {"base_price": 18, "demand": 0.0, "updated_at": 0.0})
-    MARKET_ITEMS.setdefault("basic_trap", {"base_price": 20, "demand": 0.0, "updated_at": 0.0})
-    MARKET_MONSTERS.setdefault("forest_sprite", {"base_price": 90, "demand": 0.0, "updated_at": 0.0})
-    MARKET_MONSTERS.setdefault("swamp_hunter", {"base_price": 105, "demand": 0.0, "updated_at": 0.0})
-    MARKET_MONSTERS.setdefault("ember_fang", {"base_price": 160, "demand": 0.0, "updated_at": 0.0})
-
-
-def _apply_market_decay(entry: dict, decay_per_hour: float = 0.35):
-    import time
-
-    now = time.time()
-    updated_at = entry.get("updated_at", 0.0)
-    if not updated_at:
-        entry["updated_at"] = now
-        return entry
-
-    hours = max(0.0, (now - updated_at) / 3600.0)
-    if hours > 0:
-        entry["demand"] = max(0.0, entry.get("demand", 0.0) - hours * decay_per_hour)
-        entry["updated_at"] = now
-    return entry
-
-
-def get_market_item_entry(item_slug: str):
-    _ensure_market_defaults()
-    return _apply_market_decay(MARKET_ITEMS[item_slug])
-
-
-def get_market_monster_entry(monster_slug: str):
-    _ensure_market_defaults()
-    return _apply_market_decay(MARKET_MONSTERS[monster_slug])
-
-
-def get_market_item_price(item_slug: str):
-    entry = get_market_item_entry(item_slug)
-    return max(1, int(round(entry["base_price"] * (1 + 0.12 * entry.get("demand", 0.0)))))
-
-
-def get_market_monster_price(monster_slug: str):
-    entry = get_market_monster_entry(monster_slug)
-    return max(1, int(round(entry["base_price"] * (1 + 0.10 * entry.get("demand", 0.0)))))
-
-
-def purchase_market_item(telegram_id: int, item_slug: str):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-
-    price = get_market_item_price(item_slug)
-    if player.gold < price:
-        return None
-
-    player.gold -= price
-    entry = get_market_item_entry(item_slug)
-    entry["demand"] = min(10.0, entry.get("demand", 0.0) + 1.0)
-    return price
-
-
-def purchase_market_monster(telegram_id: int, monster_slug: str):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-
-    price = get_market_monster_price(monster_slug)
-    if player.gold < price:
-        return None
-
-    player.gold -= price
-    entry = get_market_monster_entry(monster_slug)
-    entry["demand"] = min(10.0, entry.get("demand", 0.0) + 1.0)
-    return price
-
-
-def _default_city_resource_market():
-    return {
-        "forest_herb": {"base_price": 6, "stock": 8, "target_stock": 8, "updated_at": 0.0},
-        "mushroom_cap": {"base_price": 7, "stock": 8, "target_stock": 8, "updated_at": 0.0},
-        "silver_moss": {"base_price": 24, "stock": 2, "target_stock": 2, "updated_at": 0.0},
-        "swamp_moss": {"base_price": 8, "stock": 6, "target_stock": 6, "updated_at": 0.0},
-        "toxic_spore": {"base_price": 11, "stock": 5, "target_stock": 5, "updated_at": 0.0},
-        "black_pearl": {"base_price": 28, "stock": 1, "target_stock": 1, "updated_at": 0.0},
-        "ember_stone": {"base_price": 10, "stock": 5, "target_stock": 5, "updated_at": 0.0},
-        "ash_leaf": {"base_price": 9, "stock": 5, "target_stock": 5, "updated_at": 0.0},
-        "magma_core": {"base_price": 35, "stock": 1, "target_stock": 1, "updated_at": 0.0},
-        "field_grass": {"base_price": 6, "stock": 9, "target_stock": 9, "updated_at": 0.0},
-        "sun_blossom": {"base_price": 9, "stock": 4, "target_stock": 4, "updated_at": 0.0},
-        "dew_crystal": {"base_price": 26, "stock": 2, "target_stock": 2, "updated_at": 0.0},
-        "raw_ore": {"base_price": 10, "stock": 6, "target_stock": 6, "updated_at": 0.0},
-        "granite_shard": {"base_price": 8, "stock": 6, "target_stock": 6, "updated_at": 0.0},
-        "sky_crystal": {"base_price": 30, "stock": 1, "target_stock": 1, "updated_at": 0.0},
-        "bog_flower": {"base_price": 9, "stock": 4, "target_stock": 4, "updated_at": 0.0},
-        "dark_resin": {"base_price": 11, "stock": 4, "target_stock": 4, "updated_at": 0.0},
-        "ghost_reed": {"base_price": 32, "stock": 1, "target_stock": 1, "updated_at": 0.0},
-    }
-
-
-def _ensure_city_resource_market(city_slug: str):
-    if city_slug not in CITY_RESOURCE_MARKETS:
-        CITY_RESOURCE_MARKETS[city_slug] = _default_city_resource_market()
-
-
-def _apply_resource_market_decay(entry: dict, drift_per_hour: float = 0.75):
-    import time
-
-    now = time.time()
-    updated_at = entry.get("updated_at", 0.0)
-
-    if not updated_at:
-        entry["updated_at"] = now
-        return entry
-
-    hours = max(0.0, (now - updated_at) / 3600.0)
-    if hours <= 0:
-        return entry
-
-    stock = float(entry.get("stock", 0))
-    target = float(entry.get("target_stock", max(1, stock)))
-
-    if stock > target:
-        stock = max(target, stock - hours * drift_per_hour)
-    elif stock < target:
-        stock = min(target, stock + hours * drift_per_hour * 0.5)
-
-    entry["stock"] = round(stock, 2)
-    entry["updated_at"] = now
-    return entry
-
-
-def get_city_resource_market(city_slug: str):
-    _ensure_city_resource_market(city_slug)
-    market = CITY_RESOURCE_MARKETS[city_slug]
-    for entry in market.values():
-        _apply_resource_market_decay(entry)
-    return market
-
-
-def get_city_resource_market_entry(city_slug: str, slug: str):
-    market = get_city_resource_market(city_slug)
-    return market.get(slug)
-
-
-def get_city_resource_sell_price(city_slug: str, slug: str, merchant_level: int = 1, amount: int = 1):
-    entry = get_city_resource_market_entry(city_slug, slug)
-    if not entry:
-        return 1
-
-    base_price = entry["base_price"]
-    stock = float(entry.get("stock", 0))
-    target = max(1.0, float(entry.get("target_stock", 1)))
-
-    scarcity_ratio = max(0.0, (target - stock) / target)
-    surplus_ratio = max(0.0, (stock - target) / target)
-
-    market_multiplier = 1.0 + scarcity_ratio * 0.35 - min(0.45, surplus_ratio * 0.18)
-    merchant_multiplier = 1.0 + max(0, merchant_level - 1) * 0.05
-
-    unit_price = max(1, int(round(base_price * market_multiplier * merchant_multiplier)))
-    return unit_price * max(1, amount)
-
-
-def get_city_resource_buy_price(city_slug: str, slug: str, amount: int = 1):
-    entry = get_city_resource_market_entry(city_slug, slug)
-    if not entry:
-        return 1
-
-    sell_unit = get_city_resource_sell_price(city_slug, slug, merchant_level=1, amount=1)
-    stock = float(entry.get("stock", 0))
-    target = max(1.0, float(entry.get("target_stock", 1)))
-
-    scarcity_ratio = max(0.0, (target - stock) / target)
-    markup_multiplier = 1.25 + scarcity_ratio * 0.25
-
-    unit_price = max(sell_unit + 1, int(round(entry["base_price"] * markup_multiplier)))
-    return unit_price * max(1, amount)
-
-
-def sell_resource_to_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-
-    resources = get_resources(telegram_id)
-    if resources.get(slug, 0) < amount:
-        return None
-
-    gold = get_city_resource_sell_price(
-        city_slug,
-        slug,
-        merchant_level=getattr(player, "merchant_level", 1),
-        amount=amount,
-    )
-
-    if not spend_resource(telegram_id, slug, amount):
-        return None
-
-    player.gold += gold
-    entry = get_city_resource_market_entry(city_slug, slug)
-    entry["stock"] = round(float(entry.get("stock", 0)) + amount, 2)
-
-    return gold
-
-
-def buy_resource_from_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-
-    entry = get_city_resource_market_entry(city_slug, slug)
-    if not entry:
-        return None
-
-    if float(entry.get("stock", 0)) < amount:
-        return None
-
-    price = get_city_resource_buy_price(city_slug, slug, amount=amount)
-    if player.gold < price:
-        return None
-
-    player.gold -= price
-    add_resource(telegram_id, slug, amount)
-    entry["stock"] = round(float(entry.get("stock", 0)) - amount, 2)
-
-    return price
-
-
-def _default_ui_state():
-    return {
-        "screen": "main",
-        "context": {},
-    }
-
-
-def get_ui_state(telegram_id: int):
-    return PLAYER_UI.setdefault(telegram_id, _default_ui_state())
-
-
-def set_ui_screen(telegram_id: int, screen: str, **context):
-    state = get_ui_state(telegram_id)
-    state["screen"] = screen
-    state["context"] = context
-    return state
-
-
-def get_ui_screen(telegram_id: int) -> str:
-    return get_ui_state(telegram_id).get("screen", "main")
-
-
-def get_player(telegram_id: int):
-    player = PLAYERS.get(telegram_id)
-    if player:
-        for attr, default in {
-            "alchemist_level": 1,
-            "merchant_level": 1,
-            "gatherer_level": 1,
-            "hunter_level": 1,
-            "geologist_level": 1,
-            "gatherer_exp": 0,
-            "hunter_exp": 0,
-            "geologist_exp": 0,
-            "alchemist_exp": 0,
-            "merchant_exp": 0,
-            "strength": 1,
-            "agility": 1,
-            "intellect": 1,
-            "stat_points": 0,
-            "bag_capacity": 12,
-            "location_slug": "silver_city",
-            "current_district_slug": "market_square",
-            "hp": 30,
-            "max_hp": 30,
-            "is_defeated": False,
-            "injury_turns": 0,
-            "birth_cooldown_actions": 0,
-        }.items():
-            if not hasattr(player, attr):
-                setattr(player, attr, default)
-    return player
-
-
-def _ensure_player_collections(telegram_id: int):
-    PLAYER_MONSTERS.setdefault(telegram_id, [])
-    PLAYER_EMOTIONS.setdefault(telegram_id, DEFAULT_EMOTIONS.copy())
-    PLAYER_QUESTS.setdefault(
-        telegram_id,
-        {k: {"progress": 0, "completed": False, **v} for k, v in STARTER_QUESTS.items()},
-    )
-    PLAYER_STORY.setdefault(telegram_id, _default_story())
-    PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
-    PLAYER_ITEMS.setdefault(telegram_id, {"small_potion": 2, "energy_capsule": 1, "basic_trap": 3})
-    PLAYER_RESOURCES.setdefault(telegram_id, {})
-    PLAYER_CRAFT_QUESTS.setdefault(telegram_id, _default_craft_quests())
-    PLAYER_BOARD_QUESTS.setdefault(telegram_id, _default_board_QUESTS() if False else _default_board_quests())
-    PLAYER_GUILD_QUESTS.setdefault(telegram_id, _default_guild_quests())
-    PLAYER_EXTRA_QUESTS.setdefault(telegram_id, _default_extra_quests())
-    PLAYER_CODEX.setdefault(telegram_id, set())
-    PLAYER_RELICS.setdefault(telegram_id, [])
-
-
-def create_player(telegram_id: int, name: str):
-    player = Player(telegram_id=telegram_id, name=name)
-    PLAYERS[telegram_id] = player
-    _ensure_player_collections(telegram_id)
-    get_ui_state(telegram_id)
-    return player
-
-
-def reset_player_state(telegram_id: int, name: str = "Игрок"):
-    PLAYERS[telegram_id] = Player(telegram_id=telegram_id, name=name)
-    PLAYER_MONSTERS[telegram_id] = []
-    PLAYER_EMOTIONS[telegram_id] = DEFAULT_EMOTIONS.copy()
-    PLAYER_QUESTS[telegram_id] = {
-        k: {"progress": 0, "completed": False, **v} for k, v in STARTER_QUESTS.items()
-    }
-    PLAYER_STORY[telegram_id] = _default_story()
-    PLAYER_ACTION_FLAGS[telegram_id] = {}
-    PLAYER_ITEMS[telegram_id] = {"small_potion": 2, "energy_capsule": 1, "basic_trap": 3}
-    PLAYER_RESOURCES[telegram_id] = {}
-    PLAYER_CRAFT_QUESTS[telegram_id] = _default_craft_quests()
-    PLAYER_EXTRA_QUESTS[telegram_id] = _default_extra_quests()
-    PLAYER_BOARD_QUESTS[telegram_id] = _default_board_quests()
-    PLAYER_GUILD_QUESTS[telegram_id] = _default_guild_quests()
-    PLAYER_CODEX[telegram_id] = set()
-    PLAYER_RELICS[telegram_id] = []
-    PENDING_ENCOUNTERS.pop(telegram_id, None)
-    set_ui_screen(telegram_id, "main")
-    return PLAYERS[telegram_id]
-
-
-def get_or_create_player(telegram_id: int, name: str):
-    player = get_player(telegram_id)
-    if player:
-        _ensure_player_collections(telegram_id)
-        return player, False
-    return create_player(telegram_id, name), True
-
-
-def begin_action_scope(telegram_id: int, action_key: str):
-    flags = PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
-    flags["current_action"] = action_key
-    flags["birth_done"] = False
-    return flags
-
-
-def get_action_flags(telegram_id: int):
-    return PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
-
-
-def get_temp_effects(telegram_id: int):
-    flags = PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
-    return flags.setdefault("effects", {})
-
-
-def set_temp_effect(telegram_id: int, effect_name: str, duration: int):
-    effects = get_temp_effects(telegram_id)
-    effects[effect_name] = max(duration, effects.get(effect_name, 0))
-    return effects
-
-
-def has_temp_effect(telegram_id: int, effect_name: str):
-    return get_temp_effects(telegram_id).get(effect_name, 0) > 0
-
-
-def tick_temp_effects(telegram_id: int):
-    effects = get_temp_effects(telegram_id)
-    expired = []
-    for key in list(effects.keys()):
-        effects[key] -= 1
-        if effects[key] <= 0:
-            expired.append(key)
-            effects.pop(key, None)
-    return expired
-
-
-def clear_temp_effect(telegram_id: int, effect_name: str):
-    effects = get_temp_effects(telegram_id)
-    effects.pop(effect_name, None)
-    return effects
-
-
-def mark_birth_done(telegram_id: int):
-    flags = PLAYER_ACTION_FLAGS.setdefault(telegram_id, {})
-    flags["birth_done"] = True
-    return flags
-
-
-def is_birth_done(telegram_id: int):
-    return PLAYER_ACTION_FLAGS.setdefault(telegram_id, {}).get("birth_done", False)
-
-
-def tick_birth_cooldown(telegram_id: int):
-    player = get_player(telegram_id)
-    if not player:
-        return 0
-    if getattr(player, "birth_cooldown_actions", 0) > 0:
-        player.birth_cooldown_actions -= 1
-    return player.birth_cooldown_actions
-
-
-def start_birth_cooldown(telegram_id: int, actions: int = 3):
-    player = get_player(telegram_id)
-    if not player:
-        return 0
-    player.birth_cooldown_actions = actions
-    return player.birth_cooldown_actions
-
-
-def get_player_story(telegram_id: int):
-    _ensure_player_collections(telegram_id)
-    return PLAYER_STORY[telegram_id]
-
-
-def get_current_story_quest(telegram_id: int):
-    story = get_player_story(telegram_id)
-    idx = story["current_index"]
-    if idx >= len(STORY_QUESTS):
-        return None
-    return STORY_QUESTS[idx]
-
-
-def update_story_progress(telegram_id: int, action_type: str, current_location_slug: str):
-    story = get_player_story(telegram_id)
-    quest = get_current_story_quest(telegram_id)
-    if not quest:
-        return None
-
-    state = story[quest["id"]]
-    state["visited"] = state["visited"] or current_location_slug == quest["requirements"]["location_slug"]
-
-    if current_location_slug == quest["requirements"]["location_slug"]:
-        if action_type == "explore":
-            state["explore_count"] += 1
-        elif action_type == "win":
-            state["win_count"] += 1
-
-    req = quest["requirements"]
-    if (
-        state["visited"]
-        and state["explore_count"] >= req.get("explore_count", 0)
-        and state["win_count"] >= req.get("win_count", 0)
-    ):
-        story["completed_ids"].append(quest["id"])
-        story["current_index"] += 1
-        return quest
-
-    return None
-
-
-def get_player_quests(telegram_id: int):
-    _ensure_player_collections(telegram_id)
-    quests = PLAYER_QUESTS[telegram_id]
-
-    for key, value in STARTER_QUESTS.items():
-        if key not in quests:
-            quests[key] = {
-                "progress": 0,
-                "completed": False,
-                "active": False,
-                "source": "starter",
-                **value,
-            }
-
-    active_found = False
-    for quest_id in STARTER_QUEST_CHAIN:
-        quest = quests[quest_id]
-
-        if quest.get("completed"):
-            quest["active"] = False
-            continue
-
-        if not active_found:
-            quest["active"] = True
-            active_found = True
-        else:
-            quest["active"] = False
-
-    return quests
-
-
-def get_active_player_quests(telegram_id: int):
-    quests = get_player_quests(telegram_id)
-    active = {}
-
-    for quest_id, quest in quests.items():
-        if quest.get("active") and not quest.get("completed"):
-            active[quest_id] = quest
-
-    return active
-
-
-def progress_quests(telegram_id: int, action_type: str):
-    quests = get_player_quests(telegram_id)
-    completed_now = []
-
-    for quest_id in STARTER_QUEST_CHAIN:
-        quest = quests[quest_id]
-
-        if quest.get("completed"):
-            continue
-        if not quest.get("active"):
-            continue
-        if quest["target_type"] != action_type:
-            continue
-
-        quest["progress"] += 1
-
-        if quest["progress"] >= quest["target_value"]:
-            quest["completed"] = True
-            quest["active"] = False
-            completed_now.append((quest_id, quest))
-
-            current_index = STARTER_QUEST_CHAIN.index(quest_id)
-            if current_index + 1 < len(STARTER_QUEST_CHAIN):
-                next_quest_id = STARTER_QUEST_CHAIN[current_index + 1]
-                if not quests[next_quest_id].get("completed"):
-                    quests[next_quest_id]["active"] = True
-
-        break
-
-    return completed_now
-
-
-def get_player_emotions(telegram_id: int):
-    _ensure_player_collections(telegram_id)
-    return PLAYER_EMOTIONS[telegram_id]
-
-
-def add_emotions(telegram_id: int, changes: dict):
-    emotions = get_player_emotions(telegram_id)
-    for key, value in changes.items():
-        emotions[key] = emotions.get(key, 0) + value
-    return emotions
-
-
-def spend_emotions(telegram_id: int, changes: dict):
-    emotions = get_player_emotions(telegram_id)
-    for key, value in changes.items():
-        emotions[key] = max(0, emotions.get(key, 0) - value)
-    return emotions
-
-
-def update_player_location(telegram_id: int, location_slug: str):
-    player = PLAYERS.get(telegram_id)
-    if not player:
-        return None
-
-    player.location_slug = location_slug
-    defaults = {
-        "dark_forest": "mushroom_path",
-        "shadow_swamp": "black_water",
-        "volcano_wrath": "ash_slope",
-        "bone_desert": "",
-        "ancient_ruins": "",
-        "emotion_rift": "",
-        "storm_ridge": "",
-        "silver_city": "market_square",
-    }
-    player.current_district_slug = defaults.get(location_slug, "")
-    return player
-
-
-def update_player_district(telegram_id: int, district_slug: str):
-    player = PLAYERS.get(telegram_id)
-    if player:
-        player.current_district_slug = district_slug
-    return player
-
-
-def save_pending_encounter(telegram_id: int, encounter: dict):
-    PENDING_ENCOUNTERS[telegram_id] = encounter
-    return encounter
-
-
-def get_pending_encounter(telegram_id: int):
-    return PENDING_ENCOUNTERS.get(telegram_id)
-
-
-def clear_pending_encounter(telegram_id: int):
-    return PENDING_ENCOUNTERS.pop(telegram_id, None)
-
-
-def add_player_gold(telegram_id: int, amount: int):
-    player = PLAYERS.get(telegram_id)
-    if player:
-        player.gold += amount
-    return player
-
-
-def add_player_experience(telegram_id: int, amount: int):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-
-    player.experience += amount
-    while player.experience >= player.level * 10:
-        player.experience -= player.level * 10
-        player.level += 1
-        player.stat_points += 2
-    return player
-
-
-def restore_player_energy(telegram_id: int, amount: int, max_energy: int = 10):
-    player = PLAYERS.get(telegram_id)
-    if player:
-        player.energy = min(max_energy, player.energy + amount)
-    return player
-
-
-def spend_player_energy(telegram_id: int, amount: int):
-    player = PLAYERS.get(telegram_id)
-    if not player or player.energy < amount:
-        return False
-    player.energy -= amount
-    return True
-
-
-def get_inventory(telegram_id: int):
-    _ensure_player_collections(telegram_id)
-    return PLAYER_ITEMS[telegram_id]
-
-
-def get_item_count(telegram_id: int, item_slug: str):
-    return get_inventory(telegram_id).get(item_slug, 0)
-
-
-def add_item(telegram_id: int, item_slug: str, amount: int = 1):
-    inventory = get_inventory(telegram_id)
-    inventory[item_slug] = inventory.get(item_slug, 0) + amount
-    return inventory[item_slug]
-
-
-def spend_item(telegram_id: int, item_slug: str, amount: int = 1):
-    inventory = get_inventory(telegram_id)
-    current = inventory.get(item_slug, 0)
-    if current < amount:
-        return False
-    inventory[item_slug] = current - amount
-    return True
-
-
-def add_resource(telegram_id: int, slug: str, count: int):
-    inv = PLAYER_RESOURCES.setdefault(telegram_id, {})
-    inv[slug] = inv.get(slug, 0) + count
-    return inv[slug]
-
-
-def spend_resource(telegram_id: int, slug: str, count: int):
-    inv = PLAYER_RESOURCES.setdefault(telegram_id, {})
-    current = inv.get(slug, 0)
-    if current < count:
-        return False
-    inv[slug] = current - count
-    return True
-
-
-def get_resources(telegram_id: int):
-    _ensure_player_collections(telegram_id)
-    return PLAYER_RESOURCES[telegram_id]
-
-
-def progress_crafting_quests(telegram_id: int, craft_key: str):
-    _ensure_player_collections(telegram_id)
-    quests = PLAYER_CRAFT_QUESTS[telegram_id]
-    completed_now = []
-
-    for quest in quests.values():
-        if quest["completed"] or quest["craft_key"] != craft_key:
-            continue
-        quest["progress"] += 1
-        if quest["progress"] >= quest["count"]:
-            quest["completed"] = True
-            completed_now.append(quest)
-
-    return completed_now
-
-
-def get_player_guild_quests(telegram_id: int):
-    _ensure_player_collections(telegram_id)
-    return PLAYER_GUILD_QUESTS[telegram_id]
-
-
-def progress_guild_quests(
-    telegram_id: int,
-    action_type: str,
-    guild_key: str | None = None,
-    amount: int = 1,
-):
-    quests = get_player_guild_quests(telegram_id)
-    completed_now = []
-
-    for quest_id, quest in quests.items():
-        if quest.get("completed"):
-            continue
-
-        quest_action_type = quest.get("target_type") or quest.get("action_type")
-        quest_guild_key = quest.get("guild_key") or quest.get("guild")
-
-        if quest_action_type and quest_action_type != action_type:
-            continue
-
-        if guild_key and quest_guild_key and quest_guild_key != guild_key:
-            continue
-
-        current_progress = quest.get("progress", 0)
-        target_value = quest.get("target_value", quest.get("count", 1))
-        quest["progress"] = current_progress + amount
-
-        if quest["progress"] >= target_value:
-            quest["completed"] = True
-            completed_now.append((quest_id, quest))
-
-    return completed_now
-
-
-def progress_extra_quests(
-    telegram_id: int,
-    action_type: str,
-    amount: int = 1,
-):
-    extra_quests = PLAYER_EXTRA_QUESTS.get(telegram_id)
-    if not extra_quests:
-        return []
-
-    completed_now = []
-
-    for quest_id, quest in extra_quests.items():
-        if quest.get("completed"):
-            continue
-
-        quest_action = quest.get("target_type") or quest.get("action_type")
-        if quest_action and quest_action != action_type:
-            continue
-
-        current = quest.get("progress", 0)
-        target = quest.get("target_value", quest.get("count", 1))
-        quest["progress"] = current + amount
-
-        if quest["progress"] >= target:
-            quest["completed"] = True
-            completed_now.append((quest_id, quest))
-
-    return completed_now
-
-
-def progress_board_quests(
-    telegram_id: int,
-    action_type: str,
-    amount: int = 1,
-):
-    board_quests = PLAYER_BOARD_QUESTS.get(telegram_id)
-    if not board_quests:
-        return []
-
-    completed_now = []
-
-    for quest_id, quest in board_quests.items():
-        if quest.get("completed"):
-            continue
-
-        quest_action = quest.get("target_type") or quest.get("action_type")
-        if quest_action and quest_action != action_type:
-            continue
-
-        current = quest.get("progress", 0)
-        target = quest.get("target_value", quest.get("count", 1))
-        quest["progress"] = current + amount
-
-        if quest["progress"] >= target:
-            quest["completed"] = True
-            completed_now.append((quest_id, quest))
-
-    return completed_now
-
-
-def _guess_monster_type(name: str, mood: str):
-    name_lower = name.lower()
-
-    if "плам" in name_lower or "лав" in name_lower or "магм" in name_lower or mood == "rage":
-        return "flame"
-    if "тен" in name_lower or "сумрач" in name_lower or mood == "fear":
-        return "shadow"
-    if "гриб" in name_lower or "мох" in name_lower or "корн" in name_lower:
-        return "nature"
-    if "дух" in name_lower or "оракул" in name_lower:
-        return "spirit"
-    if "кост" in name_lower or "курган" in name_lower:
-        return "bone"
-    if "бур" in name_lower or "искр" in name_lower:
-        return "storm"
-    if "эхо" in name_lower or "шёп" in name_lower:
-        return "echo"
-
-    return "void"
-
-
-def get_damage_multiplier(attacker_type: str | None, defender_type: str | None) -> float:
-    if not attacker_type or not defender_type:
-        return 1.0
-
-    chart = {
-        ("flame", "nature"): 1.5,
-        ("nature", "storm"): 1.25,
-        ("storm", "shadow"): 1.25,
-        ("shadow", "spirit"): 1.25,
-        ("spirit", "bone"): 1.25,
-        ("bone", "flame"): 1.25,
-        ("echo", "void"): 1.25,
-        ("void", "echo"): 1.25,
-        ("nature", "flame"): 0.75,
-        ("storm", "nature"): 0.85,
-        ("shadow", "storm"): 0.85,
-        ("spirit", "shadow"): 0.85,
-        ("bone", "spirit"): 0.85,
-        ("flame", "bone"): 0.85,
-    }
-
-    return chart.get((attacker_type, defender_type), 1.0)
-
-
-def render_type_hint(attacker_type: str | None, defender_type: str | None) -> str:
-    multiplier = get_damage_multiplier(attacker_type, defender_type)
-
-    if multiplier >= 1.5:
-        return "🔥 Очень эффективно"
-    if multiplier > 1.0:
-        return "⚔️ Эффективно"
-    if multiplier < 1.0:
-        return "🛡 Слабо"
-    return "➖ Без преимущества"
-
-
-def _migrate_monster_fields(monster: dict):
-    from game.monster_abilities import MONSTER_ABILITIES
-
-    if "distortion" not in monster:
-        if "corruption" in monster:
-            monster["distortion"] = monster.pop("corruption")
-        else:
-            monster["distortion"] = 0
-
-    monster.setdefault("infection_type", None)
-    monster.setdefault("infection_stage", 0)
-    monster.setdefault("current_hp", monster.get("hp", 1))
-    monster.setdefault("max_hp", monster.get("hp", 1))
-    monster.setdefault("experience", 0)
-    monster.setdefault("evolution_stage", 0)
-    monster.setdefault("monster_type", _guess_monster_type(monster.get("name", ""), monster.get("mood", "")))
-    monster.setdefault("abilities", MONSTER_ABILITIES.get(monster.get("name", ""), []).copy())
-    return monster
-
-
-def add_captured_monster(
-    telegram_id: int,
-    name: str,
-    rarity: str,
-    mood: str,
-    hp: int,
-    attack: int,
-    source_type: str = "wild",
-):
-    global NEXT_MONSTER_ID
-
-    _ensure_player_collections(telegram_id)
-    is_first = len(PLAYER_MONSTERS[telegram_id]) == 0
-
-    monster = {
-        "id": NEXT_MONSTER_ID,
-        "name": name,
-        "rarity": rarity,
-        "mood": mood,
-        "monster_type": _guess_monster_type(name, mood),
-        "hp": hp,
-        "max_hp": hp,
-        "current_hp": hp,
-        "attack": attack,
-        "level": 1,
-        "experience": 0,
-        "is_active": is_first,
-        "infection_type": None,
-        "infection_stage": 0,
-        "distortion": 0,
-        "source_type": source_type,
-        "evolution_stage": 0,
-        "abilities": [],
-    }
-
-    NEXT_MONSTER_ID += 1
-    PLAYER_MONSTERS[telegram_id].append(monster)
-    return monster
-
-
-def get_player_monsters(telegram_id: int):
-    _ensure_player_collections(telegram_id)
-    monsters = PLAYER_MONSTERS[telegram_id]
-    for monster in monsters:
-        _migrate_monster_fields(monster)
-    return monsters
-
-
-def get_active_monster(telegram_id: int):
-    for monster in get_player_monsters(telegram_id):
-        if monster.get("is_active"):
-            return _migrate_monster_fields(monster)
-    return None
-
-
-def damage_active_monster(telegram_id: int, amount: int):
-    monster = get_active_monster(telegram_id)
-    if monster:
-        monster["current_hp"] = max(0, monster["current_hp"] - amount)
-    return monster
-
-
-def heal_active_monster(telegram_id: int, amount: int = 999):
-    monster = get_active_monster(telegram_id)
-    if monster:
-        monster["current_hp"] = min(monster["max_hp"], monster["current_hp"] + amount)
-    return monster
-
-
-def heal_all_monsters(telegram_id: int):
-    monsters = get_player_monsters(telegram_id)
-    for monster in monsters:
-        monster["current_hp"] = monster.get("max_hp", monster.get("hp", 1))
-    return monsters
-
-
-def add_active_monster_experience(telegram_id: int, amount: int):
-    monster = get_active_monster(telegram_id)
-    if not monster:
-        return None, []
-
-    monster["experience"] += amount
-    level_ups = []
-
-    while monster["experience"] >= monster["level"] * 5:
-        monster["experience"] -= monster["level"] * 5
-        monster["level"] += 1
-        monster["max_hp"] += 4
-        monster["attack"] += 1
-        monster["current_hp"] = monster["max_hp"]
-        level_ups.append(
-            {
-                "level": monster["level"],
-                "max_hp": monster["max_hp"],
-                "attack": monster["attack"],
-            }
-        )
-
-    return monster, level_ups
-
-
-def set_active_monster(telegram_id: int, monster_id: int):
-    target = None
-    for monster in get_player_monsters(telegram_id):
-        monster["is_active"] = False
-        _migrate_monster_fields(monster)
-        if monster["id"] == monster_id:
-            target = monster
-
-    if target:
-        target["is_active"] = True
-
-    return target
-
-
-def get_monster_by_id(telegram_id: int, monster_id: int):
-    for monster in get_player_monsters(telegram_id):
-        if monster["id"] == monster_id:
-            return _migrate_monster_fields(monster)
-    return None
-
-
-def spend_stat_point(telegram_id: int, stat_name: str):
-    player = get_player(telegram_id)
-    if not player or player.stat_points <= 0:
-        return False
-    if stat_name not in {"strength", "agility", "intellect"}:
-        return False
-
-    setattr(player, stat_name, getattr(player, stat_name) + 1)
-    player.stat_points -= 1
-    return True
-
-
-def get_resources_count_total(telegram_id: int):
-    return sum(max(0, value) for value in get_resources(telegram_id).values())
-
-
-PROFESSION_LEVEL_CAP = 10
-
-PROFESSION_FIELD_MAP = {
-    "gatherer": ("gatherer_level", "gatherer_exp"),
-    "hunter": ("hunter_level", "hunter_exp"),
-    "geologist": ("geologist_level", "geologist_exp"),
-    "alchemist": ("alchemist_level", "alchemist_exp"),
-    "merchant": ("merchant_level", "merchant_exp"),
+DEFAULT_CRAFT_QUESTS = {
+    "craft_big_potion":  {"craft_key":"big_potion",  "count":1,"title":"Полевой алхимик",   "reward_gold":35,"reward_exp":12},
+    "craft_poison_trap": {"craft_key":"poison_trap", "count":1,"title":"Опасная приманка",  "reward_gold":50,"reward_exp":16},
+}
+DEFAULT_EXTRA_QUESTS = {
+    "extra_first_gather": {"action_type":"gather","count":3,"title":"Первые находки",   "reward_gold":25,"reward_exp":10},
+    "extra_first_craft":  {"action_type":"craft", "count":1,"title":"Первый рецепт",    "reward_gold":20,"reward_exp":10},
+    "extra_survivor":     {"action_type":"win",   "count":4,"title":"Выживший",         "reward_gold":40,"reward_exp":18},
+}
+DEFAULT_BOARD_QUESTS = {
+    "board_hunt_small":   {"action_type":"win",     "count":3,"title":"Заказ охотников","reward_gold":45,"reward_exp":18},
+    "board_capture_live": {"action_type":"capture", "count":2,"title":"Живой экземпляр","reward_gold":55,"reward_exp":22},
+    "board_field_work":   {"action_type":"explore", "count":5,"title":"Полевые работы", "reward_gold":50,"reward_exp":20},
+}
+DEFAULT_GUILD_QUESTS = {
+    "hunters_trial":    {"guild_key":"hunters",    "action_type":"win",    "count":3,"title":"Испытание ловцов",   "reward_gold":50,"reward_exp":20},
+    "gatherers_route":  {"guild_key":"gatherers",  "action_type":"gather", "count":4,"title":"Маршрут собирателя","reward_gold":45,"reward_exp":18},
+    "geologists_find":  {"guild_key":"geologists", "action_type":"explore","count":4,"title":"Находка геолога",   "reward_gold":45,"reward_exp":18},
+    "alchemists_work":  {"guild_key":"alchemists", "action_type":"craft",  "count":2,"title":"Работа алхимика",   "reward_gold":50,"reward_exp":22},
 }
 
+DEFAULT_MARKET_ITEMS = {
+    "small_potion":   {"base_price":14},
+    "energy_capsule": {"base_price":18},
+    "basic_trap":     {"base_price":20},
+}
+DEFAULT_MARKET_MONSTERS = {
+    "forest_sprite":  {"base_price":90},
+    "swamp_hunter":   {"base_price":105},
+    "ember_fang":     {"base_price":160},
+}
+DEFAULT_CITY_RESOURCE_MARKET = {
+    "forest_herb":   {"base_price":6,  "stock":8.0, "target_stock":8.0},
+    "mushroom_cap":  {"base_price":7,  "stock":8.0, "target_stock":8.0},
+    "silver_moss":   {"base_price":24, "stock":2.0, "target_stock":2.0},
+    "swamp_moss":    {"base_price":8,  "stock":6.0, "target_stock":6.0},
+    "toxic_spore":   {"base_price":11, "stock":5.0, "target_stock":5.0},
+    "black_pearl":   {"base_price":28, "stock":1.0, "target_stock":1.0},
+    "ember_stone":   {"base_price":10, "stock":5.0, "target_stock":5.0},
+    "ash_leaf":      {"base_price":9,  "stock":5.0, "target_stock":5.0},
+    "magma_core":    {"base_price":35, "stock":1.0, "target_stock":1.0},
+    "field_grass":   {"base_price":6,  "stock":9.0, "target_stock":9.0},
+    "sun_blossom":   {"base_price":9,  "stock":4.0, "target_stock":4.0},
+    "dew_crystal":   {"base_price":26, "stock":2.0, "target_stock":2.0},
+    "raw_ore":       {"base_price":10, "stock":6.0, "target_stock":6.0},
+    "granite_shard": {"base_price":8,  "stock":6.0, "target_stock":6.0},
+    "sky_crystal":   {"base_price":30, "stock":1.0, "target_stock":1.0},
+    "bog_flower":    {"base_price":9,  "stock":4.0, "target_stock":4.0},
+    "dark_resin":    {"base_price":11, "stock":4.0, "target_stock":4.0},
+    "ghost_reed":    {"base_price":32, "stock":1.0, "target_stock":1.0},
+}
+
+# ─── Утилиты ──────────────────────────────────────────────────────────────────
+
+def _row_to_player(row) -> Player | None:
+    if not row:
+        return None
+    d = dict(row)
+    p = Player.__new__(Player)
+    for field in Player.__dataclass_fields__:
+        val = d.get(field)
+        if field == "is_defeated":
+            setattr(p, field, bool(val))
+        else:
+            setattr(p, field, val if val is not None else Player.__dataclass_fields__[field].default)
+    return p
+
+def _guess_monster_type(name: str, mood: str) -> str:
+    n = name.lower()
+    if "плам" in n or "лав" in n or "магм" in n or mood == "rage": return "flame"
+    if "тен" in n or "сумрач" in n or mood == "fear": return "shadow"
+    if "гриб" in n or "мох" in n or "корн" in n: return "nature"
+    if "дух" in n or "оракул" in n: return "spirit"
+    if "кост" in n or "курган" in n: return "bone"
+    if "бур" in n or "искр" in n: return "storm"
+    if "эхо" in n or "шёп" in n: return "echo"
+    return "void"
+
+def _migrate_monster(d: dict) -> dict:
+    from game.monster_abilities import MONSTER_ABILITIES
+    d.setdefault("distortion", 0)
+    d.setdefault("infection_type", None)
+    d.setdefault("infection_stage", 0)
+    d.setdefault("current_hp", d.get("hp", 1))
+    d.setdefault("max_hp", d.get("hp", 1))
+    d.setdefault("experience", 0)
+    d.setdefault("evolution_stage", 0)
+    d.setdefault("combo_mutation", None)
+    d.setdefault("monster_type", _guess_monster_type(d.get("name",""), d.get("mood","")))
+    if isinstance(d.get("abilities"), str):
+        d["abilities"] = json_get(d["abilities"])
+    d.setdefault("abilities", MONSTER_ABILITIES.get(d.get("name",""), []).copy())
+    return d
+
+def _monster_row_to_dict(row) -> dict:
+    d = dict(row)
+    d["abilities"] = json_get(d.get("abilities", "[]"))
+    d["is_active"] = bool(d.get("is_active", 0))
+    d["is_listed"] = bool(d.get("is_listed", 0))
+    return _migrate_monster(d)
+
+# ─── Игрок ────────────────────────────────────────────────────────────────────
+
+def get_player(telegram_id: int) -> Player | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM players WHERE telegram_id=?", (telegram_id,)).fetchone()
+    return _row_to_player(row)
+
+def create_player(telegram_id: int, name: str) -> Player:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO players (telegram_id, name) VALUES (?,?)",
+            (telegram_id, name)
+        )
+        # Default items
+        for slug, amt in [("small_potion",2),("energy_capsule",1),("basic_trap",3)]:
+            conn.execute("INSERT OR IGNORE INTO player_items (telegram_id,item_slug,amount) VALUES (?,?,?)", (telegram_id,slug,amt))
+        # Default emotions
+        conn.execute("INSERT OR IGNORE INTO player_emotions (telegram_id) VALUES (?)", (telegram_id,))
+        # Default quests
+        for i, qid in enumerate(STARTER_QUEST_CHAIN):
+            q = STARTER_QUESTS[qid]
+            conn.execute("""INSERT OR IGNORE INTO player_quests
+                (telegram_id,quest_id,progress,completed,active,source)
+                VALUES (?,?,0,0,?,?)""",
+                (telegram_id, qid, 1 if i==0 else 0, "starter"))
+        # Story
+        conn.execute("INSERT OR IGNORE INTO player_story_index (telegram_id,current_index) VALUES (?,0)", (telegram_id,))
+        for sq in STORY_QUESTS:
+            conn.execute("INSERT OR IGNORE INTO player_story (telegram_id,story_id) VALUES (?,?)", (telegram_id, sq["id"]))
+        # Craft/extra/board/guild quests
+        for qid, q in DEFAULT_CRAFT_QUESTS.items():
+            conn.execute("INSERT OR IGNORE INTO player_craft_quests (telegram_id,quest_id,craft_key,count,title,reward_gold,reward_exp) VALUES (?,?,?,?,?,?,?)",
+                (telegram_id,qid,q["craft_key"],q["count"],q["title"],q["reward_gold"],q["reward_exp"]))
+        for qid, q in DEFAULT_EXTRA_QUESTS.items():
+            conn.execute("INSERT OR IGNORE INTO player_extra_quests (telegram_id,quest_id,action_type,count,title,reward_gold,reward_exp) VALUES (?,?,?,?,?,?,?)",
+                (telegram_id,qid,q["action_type"],q["count"],q["title"],q["reward_gold"],q["reward_exp"]))
+        for qid, q in DEFAULT_BOARD_QUESTS.items():
+            conn.execute("INSERT OR IGNORE INTO player_board_quests (telegram_id,quest_id,action_type,count,title,reward_gold,reward_exp) VALUES (?,?,?,?,?,?,?)",
+                (telegram_id,qid,q["action_type"],q["count"],q["title"],q["reward_gold"],q["reward_exp"]))
+        for qid, q in DEFAULT_GUILD_QUESTS.items():
+            conn.execute("INSERT OR IGNORE INTO player_guild_quests (telegram_id,quest_id,guild_key,action_type,count,title,reward_gold,reward_exp) VALUES (?,?,?,?,?,?,?,?)",
+                (telegram_id,qid,q["guild_key"],q["action_type"],q["count"],q["title"],q["reward_gold"],q["reward_exp"]))
+        # UI
+        conn.execute("INSERT OR IGNORE INTO player_ui (telegram_id) VALUES (?)", (telegram_id,))
+        # PvP
+        conn.execute("INSERT OR IGNORE INTO player_pvp (telegram_id) VALUES (?)", (telegram_id,))
+        conn.commit()
+    return get_player(telegram_id)
+
+def get_or_create_player(telegram_id: int, name: str) -> tuple[Player, bool]:
+    p = get_player(telegram_id)
+    if p:
+        return p, False
+    return create_player(telegram_id, name), True
+
+def reset_player_state(telegram_id: int, name: str = "Игрок") -> Player:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM player_monsters WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_emotions WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_items WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_resources WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_quests WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_story WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_story_index WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_craft_quests WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_extra_quests WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_board_quests WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_guild_quests WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM pending_encounters WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_action_flags WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_codex WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_relics WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_pvp WHERE telegram_id=?", (telegram_id,))
+        conn.execute("""UPDATE players SET
+            name=?,location_slug='silver_city',current_region_slug='valley_of_emotions',
+            current_district_slug='market_square',gold=120,level=1,experience=0,
+            energy=12,birth_cooldown_actions=0,strength=1,agility=1,intellect=1,
+            stat_points=0,gatherer_level=1,gatherer_exp=0,hunter_level=1,hunter_exp=0,
+            geologist_level=1,geologist_exp=0,alchemist_level=1,alchemist_exp=0,
+            merchant_level=1,merchant_exp=0,bag_capacity=12,hp=30,max_hp=30,
+            is_defeated=0,injury_turns=0,daily_streak=0,last_login_date=''
+            WHERE telegram_id=?""", (name, telegram_id))
+        conn.commit()
+    return create_player(telegram_id, name)
+
+def _update_player_field(telegram_id: int, **fields):
+    if not fields:
+        return
+    sets = ", ".join(f"{k}=?" for k in fields)
+    vals = list(fields.values()) + [telegram_id]
+    with get_connection() as conn:
+        conn.execute(f"UPDATE players SET {sets} WHERE telegram_id=?", vals)
+        conn.commit()
+
+def update_player_location(telegram_id: int, location_slug: str) -> Player | None:
+    defaults = {
+        "dark_forest":"mushroom_path","shadow_swamp":"black_water",
+        "volcano_wrath":"ash_slope","silver_city":"market_square",
+    }
+    district = defaults.get(location_slug, "")
+    _update_player_field(telegram_id, location_slug=location_slug, current_district_slug=district)
+    return get_player(telegram_id)
+
+def update_player_district(telegram_id: int, district_slug: str) -> Player | None:
+    _update_player_field(telegram_id, current_district_slug=district_slug)
+    return get_player(telegram_id)
+
+def add_player_gold(telegram_id: int, amount: int) -> Player | None:
+    with get_connection() as conn:
+        conn.execute("UPDATE players SET gold=MAX(0,gold+?) WHERE telegram_id=?", (amount,telegram_id))
+        conn.commit()
+    return get_player(telegram_id)
+
+def add_player_experience(telegram_id: int, amount: int) -> Player | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    exp = p.experience + amount
+    level = p.level
+    stat_pts = p.stat_points
+    while exp >= level * 10:
+        exp -= level * 10
+        level += 1
+        stat_pts += 2
+    _update_player_field(telegram_id, experience=exp, level=level, stat_points=stat_pts)
+    return get_player(telegram_id)
+
+def restore_player_energy(telegram_id: int, amount: int, max_energy: int = 10) -> Player | None:
+    with get_connection() as conn:
+        conn.execute("UPDATE players SET energy=MIN(?,energy+?) WHERE telegram_id=?", (max_energy,amount,telegram_id))
+        conn.commit()
+    return get_player(telegram_id)
+
+def spend_player_energy(telegram_id: int, amount: int) -> bool:
+    p = get_player(telegram_id)
+    if not p or p.energy < amount:
+        return False
+    _update_player_field(telegram_id, energy=p.energy - amount)
+    return True
+
+def spend_stat_point(telegram_id: int, stat_name: str) -> bool:
+    if stat_name not in {"strength","agility","intellect"}:
+        return False
+    p = get_player(telegram_id)
+    if not p or p.stat_points <= 0:
+        return False
+    _update_player_field(telegram_id, stat_points=p.stat_points-1,
+        **{stat_name: getattr(p, stat_name)+1})
+    return True
+
+def damage_player_hp(telegram_id: int, amount: int) -> Player | None:
+    p = get_player(telegram_id)
+    if not p or amount <= 0:
+        return p
+    new_hp = max(0, p.hp - amount)
+    defeated = 1 if new_hp <= 0 else 0
+    _update_player_field(telegram_id, hp=new_hp, is_defeated=defeated)
+    return get_player(telegram_id)
+
+def heal_player_hp(telegram_id: int, amount: int) -> Player | None:
+    p = get_player(telegram_id)
+    if not p or amount <= 0:
+        return p
+    new_hp = min(p.max_hp, p.hp + amount)
+    defeated = 0 if new_hp > 1 else p.is_defeated
+    _update_player_field(telegram_id, hp=new_hp, is_defeated=int(defeated))
+    return get_player(telegram_id)
+
+def defeat_player_state(telegram_id: int, gold_loss: int = 0) -> Player | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    new_gold = max(0, p.gold - gold_loss) if gold_loss > 0 else p.gold
+    _update_player_field(telegram_id, is_defeated=1, hp=1,
+        injury_turns=max(p.injury_turns, 5), gold=new_gold,
+        location_slug="silver_city", current_district_slug="market_square")
+    return get_player(telegram_id)
+
+def tick_player_injuries(telegram_id: int, amount: int = 1) -> Player | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    if p.injury_turns > 0:
+        _update_player_field(telegram_id, injury_turns=max(0, p.injury_turns - amount))
+    return get_player(telegram_id)
+
+def clear_player_injuries(telegram_id: int) -> Player | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    _update_player_field(telegram_id, injury_turns=0, is_defeated=0, hp=p.max_hp)
+    return get_player(telegram_id)
+
+def start_birth_cooldown(telegram_id: int, actions: int = 3) -> int:
+    _update_player_field(telegram_id, birth_cooldown_actions=actions)
+    return actions
+
+def tick_birth_cooldown(telegram_id: int) -> int:
+    p = get_player(telegram_id)
+    if not p:
+        return 0
+    new_val = max(0, p.birth_cooldown_actions - 1)
+    _update_player_field(telegram_id, birth_cooldown_actions=new_val)
+    return new_val
+
+# ─── Профессии ────────────────────────────────────────────────────────────────
+
+PROFESSION_LEVEL_CAP = 10
+PROFESSION_FIELD_MAP = {
+    "gatherer":  ("gatherer_level",  "gatherer_exp"),
+    "hunter":    ("hunter_level",    "hunter_exp"),
+    "geologist": ("geologist_level", "geologist_exp"),
+    "alchemist": ("alchemist_level", "alchemist_exp"),
+    "merchant":  ("merchant_level",  "merchant_exp"),
+}
 
 def get_profession_exp_required(level: int) -> int:
     return 6 + level * 4
 
-
-def get_profession_state(player, kind: str):
+def get_profession_state(player: Player, kind: str) -> dict | None:
     fields = PROFESSION_FIELD_MAP.get(kind)
     if not fields:
         return None
+    lf, ef = fields
+    level = getattr(player, lf, 1)
+    exp   = getattr(player, ef, 0)
+    return {"kind":kind,"level":level,"exp":exp,
+            "exp_to_next": 0 if level>=PROFESSION_LEVEL_CAP else get_profession_exp_required(level)}
 
-    level_field, exp_field = fields
-    level = getattr(player, level_field, 1)
-    exp = getattr(player, exp_field, 0)
-
-    return {
-        "kind": kind,
-        "level_field": level_field,
-        "exp_field": exp_field,
-        "level": level,
-        "exp": exp,
-        "exp_to_next": 0 if level >= PROFESSION_LEVEL_CAP else get_profession_exp_required(level),
-    }
-
-
-def improve_profession_from_action(telegram_id: int, kind: str, amount: int = 1):
-    player = get_player(telegram_id)
-    if not player:
+def improve_profession_from_action(telegram_id: int, kind: str, amount: int = 1) -> dict | None:
+    p = get_player(telegram_id)
+    if not p:
         return None
-
     fields = PROFESSION_FIELD_MAP.get(kind)
     if not fields:
         return None
-
-    level_field, exp_field = fields
-
-    old_level = getattr(player, level_field, 1)
-    old_exp = getattr(player, exp_field, 0)
-
+    lf, ef = fields
+    old_level = getattr(p, lf, 1)
+    old_exp   = getattr(p, ef, 0)
     if old_level >= PROFESSION_LEVEL_CAP:
-        return {
-            "kind": kind,
-            "leveled_up": False,
-            "level_before": old_level,
-            "level_after": old_level,
-            "exp_before": old_exp,
-            "exp_after": old_exp,
-            "exp_to_next": 0,
-            "is_max_level": True,
-            "gained_exp": 0,
-        }
-
-    new_exp = old_exp + max(0, amount)
+        return {"kind":kind,"leveled_up":False,"level_before":old_level,"level_after":old_level,
+                "exp_before":old_exp,"exp_after":old_exp,"exp_to_next":0,"is_max_level":True,"gained_exp":0}
+    new_exp   = old_exp + max(0, amount)
     new_level = old_level
     leveled_up = False
-
     while new_level < PROFESSION_LEVEL_CAP:
         need = get_profession_exp_required(new_level)
         if new_exp < need:
@@ -1345,243 +381,1049 @@ def improve_profession_from_action(telegram_id: int, kind: str, amount: int = 1)
         new_exp -= need
         new_level += 1
         leveled_up = True
-
     if new_level >= PROFESSION_LEVEL_CAP:
         new_level = PROFESSION_LEVEL_CAP
-        new_exp = 0
+        new_exp   = 0
+    _update_player_field(telegram_id, **{lf: new_level, ef: new_exp})
+    return {"kind":kind,"leveled_up":leveled_up,"level_before":old_level,"level_after":new_level,
+            "exp_before":old_exp,"exp_after":new_exp,
+            "exp_to_next":0 if new_level>=PROFESSION_LEVEL_CAP else get_profession_exp_required(new_level),
+            "is_max_level":new_level>=PROFESSION_LEVEL_CAP,"gained_exp":max(0,amount)}
 
-    setattr(player, level_field, new_level)
-    setattr(player, exp_field, new_exp)
+# ─── Монстры ──────────────────────────────────────────────────────────────────
 
-    return {
-        "kind": kind,
-        "leveled_up": leveled_up,
-        "level_before": old_level,
-        "level_after": new_level,
-        "exp_before": old_exp,
-        "exp_after": new_exp,
-        "exp_to_next": 0 if new_level >= PROFESSION_LEVEL_CAP else get_profession_exp_required(new_level),
-        "is_max_level": new_level >= PROFESSION_LEVEL_CAP,
-        "gained_exp": max(0, amount),
-    }
+def add_captured_monster(telegram_id: int, name: str, rarity: str, mood: str,
+                          hp: int, attack: int, source_type: str = "wild") -> dict:
+    from game.monster_abilities import MONSTER_ABILITIES
+    mtype = _guess_monster_type(name, mood)
+    abilities = json_set(MONSTER_ABILITIES.get(name, []))
+    is_first = len(get_player_monsters(telegram_id)) == 0
+    with get_connection() as conn:
+        cur = conn.execute("""INSERT INTO player_monsters
+            (telegram_id,name,rarity,mood,monster_type,hp,max_hp,current_hp,attack,
+             level,experience,is_active,source_type,abilities)
+            VALUES (?,?,?,?,?,?,?,?,?,1,0,?,?,?)""",
+            (telegram_id,name,rarity,mood,mtype,hp,hp,hp,attack,
+             1 if is_first else 0, source_type, abilities))
+        mid = cur.lastrowid
+        conn.commit()
+    return get_monster_by_id(telegram_id, mid)
+
+def get_player_monsters(telegram_id: int) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM player_monsters WHERE telegram_id=? ORDER BY id", (telegram_id,)).fetchall()
+    return [_monster_row_to_dict(r) for r in rows]
+
+def get_active_monster(telegram_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM player_monsters WHERE telegram_id=? AND is_active=1 LIMIT 1", (telegram_id,)).fetchone()
+    return _monster_row_to_dict(row) if row else None
+
+def get_monster_by_id(telegram_id: int, monster_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM player_monsters WHERE telegram_id=? AND id=?", (telegram_id,monster_id)).fetchone()
+    return _monster_row_to_dict(row) if row else None
+
+def set_active_monster(telegram_id: int, monster_id: int) -> dict | None:
+    with get_connection() as conn:
+        conn.execute("UPDATE player_monsters SET is_active=0 WHERE telegram_id=?", (telegram_id,))
+        conn.execute("UPDATE player_monsters SET is_active=1 WHERE telegram_id=? AND id=?", (telegram_id,monster_id))
+        conn.commit()
+    return get_monster_by_id(telegram_id, monster_id)
+
+def save_monster(monster: dict):
+    """Сохраняет изменённый словарь монстра обратно в БД."""
+    with get_connection() as conn:
+        conn.execute("""UPDATE player_monsters SET
+            name=?,rarity=?,mood=?,monster_type=?,hp=?,max_hp=?,current_hp=?,attack=?,
+            level=?,experience=?,is_active=?,infection_type=?,infection_stage=?,
+            distortion=?,source_type=?,evolution_stage=?,evolution_from=?,
+            abilities=?,combo_mutation=?,is_listed=?,list_price=?
+            WHERE id=?""",
+            (monster["name"],monster["rarity"],monster["mood"],monster.get("monster_type","void"),
+             monster["hp"],monster["max_hp"],monster["current_hp"],monster["attack"],
+             monster.get("level",1),monster.get("experience",0),
+             1 if monster.get("is_active") else 0,
+             monster.get("infection_type"),monster.get("infection_stage",0),
+             monster.get("distortion",0),monster.get("source_type","wild"),
+             monster.get("evolution_stage",0),monster.get("evolution_from"),
+             json_set(monster.get("abilities",[])),
+             monster.get("combo_mutation"),
+             1 if monster.get("is_listed") else 0,
+             monster.get("list_price",0),
+             monster["id"]))
+        conn.commit()
+
+def damage_active_monster(telegram_id: int, amount: int) -> dict | None:
+    m = get_active_monster(telegram_id)
+    if m:
+        m["current_hp"] = max(0, m["current_hp"] - amount)
+        save_monster(m)
+    return m
+
+def heal_active_monster(telegram_id: int, amount: int = 999) -> dict | None:
+    m = get_active_monster(telegram_id)
+    if m:
+        m["current_hp"] = min(m["max_hp"], m["current_hp"] + amount)
+        save_monster(m)
+    return m
+
+def heal_all_monsters(telegram_id: int) -> list[dict]:
+    monsters = get_player_monsters(telegram_id)
+    for m in monsters:
+        m["current_hp"] = m.get("max_hp", m.get("hp",1))
+        save_monster(m)
+    return monsters
+
+def add_active_monster_experience(telegram_id: int, amount: int) -> tuple[dict | None, list]:
+    m = get_active_monster(telegram_id)
+    if not m:
+        return None, []
+    m["experience"] = m.get("experience",0) + amount
+    level_ups = []
+    while m["experience"] >= m.get("level",1) * 5:
+        m["experience"] -= m.get("level",1) * 5
+        m["level"] = m.get("level",1) + 1
+        m["max_hp"] += 4
+        m["attack"] += 1
+        m["current_hp"] = m["max_hp"]
+        level_ups.append({"level":m["level"],"max_hp":m["max_hp"],"attack":m["attack"]})
+    save_monster(m)
+    return m, level_ups
+
+def get_resources_count_total(telegram_id: int) -> int:
+    with get_connection() as conn:
+        row = conn.execute("SELECT COALESCE(SUM(amount),0) as total FROM player_resources WHERE telegram_id=?", (telegram_id,)).fetchone()
+    return int(row["total"]) if row else 0
 
 
-def get_player_codex(telegram_id: int):
-    return PLAYER_CODEX.setdefault(telegram_id, set())
+def remove_player_monster(telegram_id: int, monster_id: int) -> bool:
+    """Удалить монстра из команды игрока (продажа, освобождение)."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM player_monsters WHERE telegram_id=? AND id=? AND is_active=0",
+            (telegram_id, monster_id)
+        )
+        conn.commit()
+    return cur.rowcount > 0
 
+# ─── Эмоции ───────────────────────────────────────────────────────────────────
 
-def register_monster_seen(telegram_id: int, monster_name: str):
-    codex = get_player_codex(telegram_id)
-    codex.add(monster_name)
-    return codex
+def _ensure_emotions(telegram_id: int):
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO player_emotions (telegram_id) VALUES (?)", (telegram_id,))
+        conn.commit()
 
+def get_player_emotions(telegram_id: int) -> dict:
+    _ensure_emotions(telegram_id)
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM player_emotions WHERE telegram_id=?", (telegram_id,)).fetchone()
+    if not row:
+        return {"rage":0,"fear":0,"instinct":0,"inspiration":0,"sadness":0,"joy":0,"disgust":0,"surprise":0}
+    d = dict(row)
+    d.pop("telegram_id", None)
+    return d
 
-def get_player_relics(telegram_id: int):
-    return PLAYER_RELICS.setdefault(telegram_id, [])
+def add_emotions(telegram_id: int, changes: dict) -> dict:
+    _ensure_emotions(telegram_id)
+    current = get_player_emotions(telegram_id)
+    for k, v in changes.items():
+        if k in current:
+            current[k] = max(0, current[k] + v)
+    sets = ", ".join(f"{k}=?" for k in current)
+    vals = list(current.values()) + [telegram_id]
+    with get_connection() as conn:
+        conn.execute(f"UPDATE player_emotions SET {sets} WHERE telegram_id=?", vals)
+        conn.commit()
+    return current
 
+def spend_emotions(telegram_id: int, changes: dict) -> dict:
+    return add_emotions(telegram_id, {k: -v for k, v in changes.items()})
 
-def add_relic(telegram_id: int, relic_slug: str):
-    relics = get_player_relics(telegram_id)
-    if relic_slug not in relics:
-        relics.append(relic_slug)
-    return relics
+# ─── Инвентарь ────────────────────────────────────────────────────────────────
 
+def get_inventory(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT item_slug, amount FROM player_items WHERE telegram_id=?", (telegram_id,)).fetchall()
+    return {r["item_slug"]: r["amount"] for r in rows}
 
-def has_relic(telegram_id: int, relic_slug: str):
+def get_item_count(telegram_id: int, item_slug: str) -> int:
+    with get_connection() as conn:
+        row = conn.execute("SELECT amount FROM player_items WHERE telegram_id=? AND item_slug=?", (telegram_id,item_slug)).fetchone()
+    return row["amount"] if row else 0
+
+def add_item(telegram_id: int, item_slug: str, amount: int = 1) -> int:
+    with get_connection() as conn:
+        conn.execute("""INSERT INTO player_items (telegram_id,item_slug,amount)
+            VALUES (?,?,?) ON CONFLICT(telegram_id,item_slug) DO UPDATE SET amount=amount+?""",
+            (telegram_id,item_slug,amount,amount))
+        conn.commit()
+    return get_item_count(telegram_id, item_slug)
+
+def spend_item(telegram_id: int, item_slug: str, amount: int = 1) -> bool:
+    current = get_item_count(telegram_id, item_slug)
+    if current < amount:
+        return False
+    with get_connection() as conn:
+        conn.execute("UPDATE player_items SET amount=amount-? WHERE telegram_id=? AND item_slug=?",
+            (amount,telegram_id,item_slug))
+        conn.commit()
+    return True
+
+# ─── Ресурсы ──────────────────────────────────────────────────────────────────
+
+def get_resources(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT slug, amount FROM player_resources WHERE telegram_id=?", (telegram_id,)).fetchall()
+    return {r["slug"]: r["amount"] for r in rows}
+
+def add_resource(telegram_id: int, slug: str, count: int) -> int:
+    with get_connection() as conn:
+        conn.execute("""INSERT INTO player_resources (telegram_id,slug,amount)
+            VALUES (?,?,?) ON CONFLICT(telegram_id,slug) DO UPDATE SET amount=amount+?""",
+            (telegram_id,slug,count,count))
+        conn.commit()
+    with get_connection() as conn:
+        row = conn.execute("SELECT amount FROM player_resources WHERE telegram_id=? AND slug=?", (telegram_id,slug)).fetchone()
+    return row["amount"] if row else 0
+
+def spend_resource(telegram_id: int, slug: str, count: int) -> bool:
+    with get_connection() as conn:
+        row = conn.execute("SELECT amount FROM player_resources WHERE telegram_id=? AND slug=?", (telegram_id,slug)).fetchone()
+    if not row or row["amount"] < count:
+        return False
+    with get_connection() as conn:
+        conn.execute("UPDATE player_resources SET amount=amount-? WHERE telegram_id=? AND slug=?",
+            (count,telegram_id,slug))
+        conn.commit()
+    return True
+
+# ─── Квесты ───────────────────────────────────────────────────────────────────
+
+def get_player_quests(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM player_quests WHERE telegram_id=?", (telegram_id,)).fetchall()
+    result = {}
+    existing = {r["quest_id"]: dict(r) for r in rows}
+    for i, qid in enumerate(STARTER_QUEST_CHAIN):
+        base = STARTER_QUESTS[qid]
+        q = existing.get(qid, {"progress":0,"completed":0,"active":1 if i==0 else 0,"source":"starter"})
+        result[qid] = {"progress":q["progress"],"completed":bool(q["completed"]),
+                       "active":bool(q["active"]),"source":q.get("source","starter"),**base}
+    # recompute active chain
+    active_found = False
+    for qid in STARTER_QUEST_CHAIN:
+        q = result[qid]
+        if q["completed"]:
+            q["active"] = False
+            continue
+        if not active_found:
+            q["active"] = True
+            active_found = True
+        else:
+            q["active"] = False
+    return result
+
+def get_active_player_quests(telegram_id: int) -> dict:
+    quests = get_player_quests(telegram_id)
+    return {qid: q for qid, q in quests.items() if q.get("active") and not q.get("completed")}
+
+def progress_quests(telegram_id: int, action_type: str) -> list:
+    quests = get_player_quests(telegram_id)
+    completed_now = []
+    for qid in STARTER_QUEST_CHAIN:
+        q = quests[qid]
+        if q["completed"] or not q["active"] or q["target_type"] != action_type:
+            continue
+        new_progress = q["progress"] + 1
+        completed = new_progress >= q["target_value"]
+        with get_connection() as conn:
+            conn.execute("""INSERT INTO player_quests (telegram_id,quest_id,progress,completed,active,source)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(telegram_id,quest_id) DO UPDATE SET progress=?,completed=?,active=?""",
+                (telegram_id,qid,new_progress,int(completed),int(not completed),"starter",
+                 new_progress,int(completed),int(not completed)))
+            if completed:
+                idx = STARTER_QUEST_CHAIN.index(qid)
+                if idx+1 < len(STARTER_QUEST_CHAIN):
+                    nqid = STARTER_QUEST_CHAIN[idx+1]
+                    conn.execute("""INSERT INTO player_quests (telegram_id,quest_id,progress,completed,active,source)
+                        VALUES (?,?,0,0,1,'starter')
+                        ON CONFLICT(telegram_id,quest_id) DO UPDATE SET active=1""",
+                        (telegram_id,nqid))
+            conn.commit()
+        if completed:
+            completed_now.append((qid, q))
+        break
+    return completed_now
+
+# ─── Сюжетные квесты ──────────────────────────────────────────────────────────
+
+def get_player_story(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        idx_row = conn.execute("SELECT current_index FROM player_story_index WHERE telegram_id=?", (telegram_id,)).fetchone()
+        rows    = conn.execute("SELECT * FROM player_story WHERE telegram_id=?", (telegram_id,)).fetchall()
+    current_index = idx_row["current_index"] if idx_row else 0
+    story_data = {r["story_id"]: dict(r) for r in rows}
+    result = {"current_index": current_index, "completed_ids": []}
+    for sq in STORY_QUESTS:
+        sid = sq["id"]
+        if sid not in story_data:
+            result[sid] = {"explore_count":0,"win_count":0,"visited":False}
+        else:
+            d = story_data[sid]
+            result[sid] = {"explore_count":d["explore_count"],"win_count":d["win_count"],"visited":bool(d["visited"])}
+            if d["completed"]:
+                result["completed_ids"].append(sid)
+    return result
+
+def get_current_story_quest(telegram_id: int) -> dict | None:
+    story = get_player_story(telegram_id)
+    idx = story["current_index"]
+    if idx >= len(STORY_QUESTS):
+        return None
+    return STORY_QUESTS[idx]
+
+def update_story_progress(telegram_id: int, action_type: str, current_location_slug: str) -> dict | None:
+    quest = get_current_story_quest(telegram_id)
+    if not quest:
+        return None
+    sid = quest["id"]
+    story = get_player_story(telegram_id)
+    state = story[sid]
+    visited = state["visited"] or current_location_slug == quest["requirements"]["location_slug"]
+    ec = state["explore_count"] + (1 if current_location_slug == quest["requirements"]["location_slug"] and action_type == "explore" else 0)
+    wc = state["win_count"]    + (1 if current_location_slug == quest["requirements"]["location_slug"] and action_type == "win"     else 0)
+    req = quest["requirements"]
+    completed = visited and ec >= req.get("explore_count",0) and wc >= req.get("win_count",0)
+    with get_connection() as conn:
+        conn.execute("""INSERT INTO player_story (telegram_id,story_id,explore_count,win_count,visited,completed)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(telegram_id,story_id) DO UPDATE SET
+            explore_count=?,win_count=?,visited=?,completed=?""",
+            (telegram_id,sid,ec,wc,int(visited),int(completed),ec,wc,int(visited),int(completed)))
+        if completed:
+            new_idx = story["current_index"] + 1
+            conn.execute("INSERT INTO player_story_index (telegram_id,current_index) VALUES (?,?) ON CONFLICT(telegram_id) DO UPDATE SET current_index=?",
+                (telegram_id,new_idx,new_idx))
+        conn.commit()
+    return quest if completed else None
+
+# ─── Encounters ───────────────────────────────────────────────────────────────
+
+def save_pending_encounter(telegram_id: int, encounter: dict) -> dict:
+    with get_connection() as conn:
+        conn.execute("""INSERT INTO pending_encounters (telegram_id,data) VALUES (?,?)
+            ON CONFLICT(telegram_id) DO UPDATE SET data=?""",
+            (telegram_id, json_set(encounter), json_set(encounter)))
+        conn.commit()
+    return encounter
+
+def get_pending_encounter(telegram_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT data FROM pending_encounters WHERE telegram_id=?", (telegram_id,)).fetchone()
+    return json_get(row["data"]) if row else None
+
+def clear_pending_encounter(telegram_id: int):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM pending_encounters WHERE telegram_id=?", (telegram_id,))
+        conn.commit()
+
+# ─── Action flags ─────────────────────────────────────────────────────────────
+
+def _get_flags(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        row = conn.execute("SELECT data FROM player_action_flags WHERE telegram_id=?", (telegram_id,)).fetchone()
+    return json_get(row["data"]) if row else {}
+
+def _save_flags(telegram_id: int, flags: dict):
+    with get_connection() as conn:
+        conn.execute("""INSERT INTO player_action_flags (telegram_id,data) VALUES (?,?)
+            ON CONFLICT(telegram_id) DO UPDATE SET data=?""",
+            (telegram_id, json_set(flags), json_set(flags)))
+        conn.commit()
+
+def begin_action_scope(telegram_id: int, action_key: str) -> dict:
+    flags = _get_flags(telegram_id)
+    flags["current_action"] = action_key
+    flags["birth_done"] = False
+    _save_flags(telegram_id, flags)
+    return flags
+
+def get_action_flags(telegram_id: int) -> dict:
+    return _get_flags(telegram_id)
+
+def get_temp_effects(telegram_id: int) -> dict:
+    return _get_flags(telegram_id).get("effects", {})
+
+def set_temp_effect(telegram_id: int, effect_name: str, duration: int) -> dict:
+    flags = _get_flags(telegram_id)
+    effects = flags.setdefault("effects", {})
+    effects[effect_name] = max(duration, effects.get(effect_name, 0))
+    _save_flags(telegram_id, flags)
+    return effects
+
+def has_temp_effect(telegram_id: int, effect_name: str) -> bool:
+    return get_temp_effects(telegram_id).get(effect_name, 0) > 0
+
+def tick_temp_effects(telegram_id: int) -> list:
+    flags = _get_flags(telegram_id)
+    effects = flags.setdefault("effects", {})
+    expired = []
+    for k in list(effects.keys()):
+        effects[k] -= 1
+        if effects[k] <= 0:
+            expired.append(k)
+            del effects[k]
+    _save_flags(telegram_id, flags)
+    return expired
+
+def clear_temp_effect(telegram_id: int, effect_name: str):
+    flags = _get_flags(telegram_id)
+    flags.get("effects", {}).pop(effect_name, None)
+    _save_flags(telegram_id, flags)
+
+def mark_birth_done(telegram_id: int):
+    flags = _get_flags(telegram_id)
+    flags["birth_done"] = True
+    _save_flags(telegram_id, flags)
+
+def is_birth_done(telegram_id: int) -> bool:
+    return _get_flags(telegram_id).get("birth_done", False)
+
+# ─── UI ───────────────────────────────────────────────────────────────────────
+
+def get_ui_state(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        row = conn.execute("SELECT screen, context_data FROM player_ui WHERE telegram_id=?", (telegram_id,)).fetchone()
+    if not row:
+        with get_connection() as conn:
+            conn.execute("INSERT OR IGNORE INTO player_ui (telegram_id) VALUES (?)", (telegram_id,))
+            conn.commit()
+        return {"screen":"main","context":{}}
+    return {"screen": row["screen"], "context": json_get(row["context_data"])}
+
+def set_ui_screen(telegram_id: int, screen: str, **context) -> dict:
+    with get_connection() as conn:
+        conn.execute("""INSERT INTO player_ui (telegram_id,screen,context_data) VALUES (?,?,?)
+            ON CONFLICT(telegram_id) DO UPDATE SET screen=?,context_data=?""",
+            (telegram_id,screen,json_set(context),screen,json_set(context)))
+        conn.commit()
+    return {"screen":screen,"context":context}
+
+def get_ui_screen(telegram_id: int) -> str:
+    return get_ui_state(telegram_id).get("screen","main")
+
+# ─── Кодекс и реликвии ────────────────────────────────────────────────────────
+
+def get_player_codex(telegram_id: int) -> set:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT monster_name FROM player_codex WHERE telegram_id=?", (telegram_id,)).fetchall()
+    return {r["monster_name"] for r in rows}
+
+def register_monster_seen(telegram_id: int, monster_name: str) -> set:
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO player_codex (telegram_id,monster_name) VALUES (?,?)", (telegram_id,monster_name))
+        conn.commit()
+    return get_player_codex(telegram_id)
+
+def get_player_relics(telegram_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT relic_slug FROM player_relics WHERE telegram_id=?", (telegram_id,)).fetchall()
+    return [r["relic_slug"] for r in rows]
+
+def add_relic(telegram_id: int, relic_slug: str) -> list:
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO player_relics (telegram_id,relic_slug) VALUES (?,?)", (telegram_id,relic_slug))
+        conn.commit()
+    return get_player_relics(telegram_id)
+
+def has_relic(telegram_id: int, relic_slug: str) -> bool:
     return relic_slug in get_player_relics(telegram_id)
 
+# ─── Craft/Extra/Board/Guild квесты ───────────────────────────────────────────
 
-def damage_player_hp(telegram_id: int, amount: int):
-    player = get_player(telegram_id)
-    if not player or amount <= 0:
-        return player
+def progress_crafting_quests(telegram_id: int, craft_key: str) -> list:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM player_craft_quests WHERE telegram_id=? AND completed=0 AND craft_key=?", (telegram_id,craft_key)).fetchall()
+    completed_now = []
+    for row in rows:
+        new_prog = row["progress"] + 1
+        done = new_prog >= row["count"]
+        with get_connection() as conn:
+            conn.execute("UPDATE player_craft_quests SET progress=?,completed=? WHERE telegram_id=? AND quest_id=?",
+                (new_prog,int(done),telegram_id,row["quest_id"]))
+            conn.commit()
+        if done:
+            completed_now.append(dict(row))
+    return completed_now
 
-    player.hp = max(0, player.hp - amount)
-    if player.hp <= 0:
-        player.is_defeated = True
-    return player
+def _progress_generic_quests(table: str, telegram_id: int, action_type: str, amount: int = 1) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(f"SELECT * FROM {table} WHERE telegram_id=? AND completed=0 AND action_type=?", (telegram_id,action_type)).fetchall()
+    completed_now = []
+    for row in rows:
+        new_prog = row["progress"] + amount
+        done = new_prog >= row["count"]
+        with get_connection() as conn:
+            conn.execute(f"UPDATE {table} SET progress=?,completed=? WHERE telegram_id=? AND quest_id=?",
+                (new_prog,int(done),telegram_id,row["quest_id"]))
+            conn.commit()
+        if done:
+            completed_now.append((row["quest_id"], dict(row)))
+    return completed_now
 
+def progress_extra_quests(telegram_id: int, action_type: str, amount: int = 1) -> list:
+    return _progress_generic_quests("player_extra_quests", telegram_id, action_type, amount)
 
-def heal_player_hp(telegram_id: int, amount: int):
-    player = get_player(telegram_id)
-    if not player or amount <= 0:
-        return player
+def progress_board_quests(telegram_id: int, action_type: str, amount: int = 1) -> list:
+    return _progress_generic_quests("player_board_quests", telegram_id, action_type, amount)
 
-    player.hp = min(player.max_hp, player.hp + amount)
-    if player.hp > 1:
-        player.is_defeated = False
-    return player
+def get_player_guild_quests(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM player_guild_quests WHERE telegram_id=?", (telegram_id,)).fetchall()
+    return {r["quest_id"]: dict(r) for r in rows}
 
+def progress_guild_quests(telegram_id: int, action_type: str, guild_key: str | None = None, amount: int = 1) -> list:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM player_guild_quests WHERE telegram_id=? AND completed=0", (telegram_id,)).fetchall()
+    completed_now = []
+    for row in rows:
+        if row["action_type"] != action_type:
+            continue
+        if guild_key and row["guild_key"] and row["guild_key"] != guild_key:
+            continue
+        new_prog = row["progress"] + amount
+        done = new_prog >= row["count"]
+        with get_connection() as conn:
+            conn.execute("UPDATE player_guild_quests SET progress=?,completed=? WHERE telegram_id=? AND quest_id=?",
+                (new_prog,int(done),telegram_id,row["quest_id"]))
+            conn.commit()
+        if done:
+            completed_now.append((row["quest_id"], dict(row)))
+    return completed_now
 
-def defeat_player_state(telegram_id: int, gold_loss: int = 0):
-    player = get_player(telegram_id)
-    if not player:
-        return None
+# ─── Городские заказы ─────────────────────────────────────────────────────────
 
-    player.is_defeated = True
-    player.hp = 1
-    player.injury_turns = max(getattr(player, "injury_turns", 0), 5)
-
-    if gold_loss > 0:
-        player.gold = max(0, player.gold - gold_loss)
-
-    player.location_slug = "silver_city"
-    player.current_district_slug = "market_square"
-    return player
-
-
-def tick_player_injuries(telegram_id: int, amount: int = 1):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-
-    if getattr(player, "injury_turns", 0) > 0:
-        player.injury_turns = max(0, player.injury_turns - amount)
-    return player
-
-
-def clear_player_injuries(telegram_id: int):
-    player = get_player(telegram_id)
-    if not player:
-        return None
-
-    player.injury_turns = 0
-    player.is_defeated = False
-    player.hp = player.max_hp
-    return player
-
-
-# =========================
-# 🧱 SQLITE: ГОРОДСКИЕ ЗАКАЗЫ
-# =========================
-
-import sqlite3
-from pathlib import Path
-
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "game.db"
-
-
-def _get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _init_city_orders_db():
-    with _get_connection() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS player_city_orders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER NOT NULL,
-                order_slug TEXT NOT NULL,
-                title TEXT NOT NULL,
-                goal_text TEXT NOT NULL,
-                reward_gold INTEGER NOT NULL,
-                reward_exp INTEGER NOT NULL,
-                status TEXT NOT NULL DEFAULT 'active',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        conn.commit()
-
-
-_init_city_orders_db()
-
-
-def get_active_city_orders(telegram_id: int):
-    with _get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM player_city_orders
-            WHERE telegram_id = ? AND status = 'active'
-            ORDER BY created_at ASC
-            """,
-            (telegram_id,),
-        ).fetchall()
-
-    return [dict(row) for row in rows]
-
+def get_active_city_orders(telegram_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM player_city_orders WHERE telegram_id=? AND status='active' ORDER BY created_at", (telegram_id,)).fetchall()
+    return [dict(r) for r in rows]
 
 def count_active_city_orders(telegram_id: int) -> int:
-    with _get_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT COUNT(*) as cnt
-            FROM player_city_orders
-            WHERE telegram_id = ? AND status = 'active'
-            """,
-            (telegram_id,),
-        ).fetchone()
-
-    return int(row["cnt"] if row else 0)
-
+    with get_connection() as conn:
+        row = conn.execute("SELECT COUNT(*) as cnt FROM player_city_orders WHERE telegram_id=? AND status='active'", (telegram_id,)).fetchone()
+    return int(row["cnt"]) if row else 0
 
 def has_active_city_order(telegram_id: int, order_slug: str) -> bool:
-    with _get_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT 1
-            FROM player_city_orders
-            WHERE telegram_id = ? AND order_slug = ? AND status = 'active'
-            LIMIT 1
-            """,
-            (telegram_id, order_slug),
-        ).fetchone()
-
+    with get_connection() as conn:
+        row = conn.execute("SELECT 1 FROM player_city_orders WHERE telegram_id=? AND order_slug=? AND status='active' LIMIT 1", (telegram_id,order_slug)).fetchone()
     return row is not None
 
-
-def add_city_order(
-    telegram_id: int,
-    order_slug: str,
-    title: str,
-    goal_text: str,
-    reward_gold: int,
-    reward_exp: int,
-):
-    with _get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO player_city_orders (
-                telegram_id,
-                order_slug,
-                title,
-                goal_text,
-                reward_gold,
-                reward_exp,
-                status
-            )
-            VALUES (?, ?, ?, ?, ?, ?, 'active')
-            """,
-            (telegram_id, order_slug, title, goal_text, reward_gold, reward_exp),
-        )
+def add_city_order(telegram_id: int, order_slug: str, title: str, goal_text: str, reward_gold: int, reward_exp: int):
+    with get_connection() as conn:
+        conn.execute("INSERT INTO player_city_orders (telegram_id,order_slug,title,goal_text,reward_gold,reward_exp) VALUES (?,?,?,?,?,?)",
+            (telegram_id,order_slug,title,goal_text,reward_gold,reward_exp))
         conn.commit()
-
 
 def complete_city_order(order_id: int):
-    with _get_connection() as conn:
-        conn.execute(
-            """
-            UPDATE player_city_orders
-            SET status = 'completed'
-            WHERE id = ?
-            """,
-            (order_id,),
-        )
+    with get_connection() as conn:
+        conn.execute("UPDATE player_city_orders SET status='completed' WHERE id=?", (order_id,))
         conn.commit()
-
 
 def clear_active_city_orders(telegram_id: int):
-    with _get_connection() as conn:
-        conn.execute(
-            """
-            DELETE FROM player_city_orders
-            WHERE telegram_id = ? AND status = 'active'
-            """,
-            (telegram_id,),
-        )
+    with get_connection() as conn:
+        conn.execute("DELETE FROM player_city_orders WHERE telegram_id=? AND status='active'", (telegram_id,))
         conn.commit()
+
+# ─── Рынок (NPC) ──────────────────────────────────────────────────────────────
+
+def _ensure_market_defaults():
+    with get_connection() as conn:
+        for slug, d in DEFAULT_MARKET_ITEMS.items():
+            conn.execute("INSERT OR IGNORE INTO market_items (item_slug,base_price) VALUES (?,?)", (slug,d["base_price"]))
+        for slug, d in DEFAULT_MARKET_MONSTERS.items():
+            conn.execute("INSERT OR IGNORE INTO market_monsters_npc (monster_slug,base_price) VALUES (?,?)", (slug,d["base_price"]))
+        conn.commit()
+
+def _decay(entry: dict, decay_per_hour: float = 0.35) -> dict:
+    now = time.time()
+    updated_at = entry.get("updated_at", 0.0)
+    if updated_at:
+        hours = max(0.0, (now - updated_at) / 3600.0)
+        entry["demand"] = max(0.0, entry.get("demand",0.0) - hours * decay_per_hour)
+    entry["updated_at"] = now
+    return entry
+
+def get_market_item_entry(item_slug: str) -> dict:
+    _ensure_market_defaults()
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM market_items WHERE item_slug=?", (item_slug,)).fetchone()
+    return _decay(dict(row)) if row else {"base_price":10,"demand":0.0,"updated_at":time.time()}
+
+def get_market_monster_entry(monster_slug: str) -> dict:
+    _ensure_market_defaults()
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM market_monsters_npc WHERE monster_slug=?", (monster_slug,)).fetchone()
+    return _decay(dict(row)) if row else {"base_price":90,"demand":0.0,"updated_at":time.time()}
+
+def get_market_item_price(item_slug: str) -> int:
+    e = get_market_item_entry(item_slug)
+    return max(1, int(round(e["base_price"] * (1 + 0.12 * e.get("demand",0.0)))))
+
+def get_market_monster_price(monster_slug: str) -> int:
+    e = get_market_monster_entry(monster_slug)
+    return max(1, int(round(e["base_price"] * (1 + 0.10 * e.get("demand",0.0)))))
+
+def purchase_market_item(telegram_id: int, item_slug: str) -> int | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    price = get_market_item_price(item_slug)
+    if p.gold < price:
+        return None
+    _update_player_field(telegram_id, gold=p.gold - price)
+    e = get_market_item_entry(item_slug)
+    new_demand = min(10.0, e.get("demand",0.0) + 1.0)
+    with get_connection() as conn:
+        conn.execute("UPDATE market_items SET demand=?,updated_at=? WHERE item_slug=?", (new_demand,time.time(),item_slug))
+        conn.commit()
+    return price
+
+def purchase_market_monster(telegram_id: int, monster_slug: str) -> int | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    price = get_market_monster_price(monster_slug)
+    if p.gold < price:
+        return None
+    _update_player_field(telegram_id, gold=p.gold - price)
+    e = get_market_monster_entry(monster_slug)
+    new_demand = min(10.0, e.get("demand",0.0) + 1.0)
+    with get_connection() as conn:
+        conn.execute("UPDATE market_monsters_npc SET demand=?,updated_at=? WHERE monster_slug=?", (new_demand,time.time(),monster_slug))
+        conn.commit()
+    return price
+
+# ─── Ресурсный рынок города ───────────────────────────────────────────────────
+
+def _ensure_city_resource_market(city_slug: str):
+    with get_connection() as conn:
+        for slug, d in DEFAULT_CITY_RESOURCE_MARKET.items():
+            conn.execute("""INSERT OR IGNORE INTO city_resource_markets
+                (city_slug,resource_slug,base_price,stock,target_stock)
+                VALUES (?,?,?,?,?)""",
+                (city_slug,slug,d["base_price"],d["stock"],d["target_stock"]))
+        conn.commit()
+
+def _resource_decay(entry: dict, drift_per_hour: float = 0.75) -> dict:
+    now = time.time()
+    updated_at = entry.get("updated_at", 0.0)
+    if updated_at:
+        hours = max(0.0, (now - updated_at) / 3600.0)
+        if hours > 0:
+            stock  = float(entry.get("stock", 0))
+            target = float(entry.get("target_stock", max(1, stock)))
+            if stock > target:
+                stock = max(target, stock - hours * drift_per_hour)
+            elif stock < target:
+                stock = min(target, stock + hours * drift_per_hour * 0.5)
+            entry["stock"] = round(stock, 2)
+    entry["updated_at"] = now
+    return entry
+
+def get_city_resource_market(city_slug: str) -> dict:
+    _ensure_city_resource_market(city_slug)
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM city_resource_markets WHERE city_slug=?", (city_slug,)).fetchall()
+    result = {}
+    for row in rows:
+        entry = _resource_decay(dict(row))
+        result[row["resource_slug"]] = entry
+    return result
+
+def get_city_resource_market_entry(city_slug: str, slug: str) -> dict | None:
+    return get_city_resource_market(city_slug).get(slug)
+
+def get_city_resource_sell_price(city_slug: str, slug: str, merchant_level: int = 1, amount: int = 1) -> int:
+    entry = get_city_resource_market_entry(city_slug, slug)
+    if not entry:
+        return 1
+    bp     = entry["base_price"]
+    stock  = float(entry.get("stock", 0))
+    target = max(1.0, float(entry.get("target_stock", 1)))
+    sc_r   = max(0.0, (target - stock) / target)
+    su_r   = max(0.0, (stock - target) / target)
+    mm     = 1.0 + sc_r * 0.35 - min(0.45, su_r * 0.18)
+    xm     = 1.0 + max(0, merchant_level - 1) * 0.05
+    return max(1, int(round(bp * mm * xm))) * max(1, amount)
+
+def get_city_resource_buy_price(city_slug: str, slug: str, amount: int = 1) -> int:
+    entry = get_city_resource_market_entry(city_slug, slug)
+    if not entry:
+        return 1
+    sell  = get_city_resource_sell_price(city_slug, slug, merchant_level=1, amount=1)
+    stock = float(entry.get("stock", 0))
+    target = max(1.0, float(entry.get("target_stock", 1)))
+    sc_r  = max(0.0, (target - stock) / target)
+    mu    = 1.25 + sc_r * 0.25
+    return max(sell+1, int(round(entry["base_price"] * mu))) * max(1, amount)
+
+def sell_resource_to_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1) -> int | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    if not spend_resource(telegram_id, slug, amount):
+        return None
+    gold = get_city_resource_sell_price(city_slug, slug, merchant_level=getattr(p,"merchant_level",1), amount=amount)
+    _update_player_field(telegram_id, gold=p.gold + gold)
+    with get_connection() as conn:
+        conn.execute("UPDATE city_resource_markets SET stock=ROUND(stock+?,2) WHERE city_slug=? AND resource_slug=?",
+            (amount,city_slug,slug))
+        conn.commit()
+    return gold
+
+def buy_resource_from_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1) -> int | None:
+    p = get_player(telegram_id)
+    if not p:
+        return None
+    entry = get_city_resource_market_entry(city_slug, slug)
+    if not entry or float(entry.get("stock",0)) < amount:
+        return None
+    price = get_city_resource_buy_price(city_slug, slug, amount=amount)
+    if p.gold < price:
+        return None
+    _update_player_field(telegram_id, gold=p.gold - price)
+    add_resource(telegram_id, slug, amount)
+    with get_connection() as conn:
+        conn.execute("UPDATE city_resource_markets SET stock=ROUND(MAX(0,stock-?),2) WHERE city_slug=? AND resource_slug=?",
+            (amount,city_slug,slug))
+        conn.commit()
+    return price
+
+# ─── Система типов ────────────────────────────────────────────────────────────
+
+def get_damage_multiplier(attacker_type: str | None, defender_type: str | None) -> float:
+    if not attacker_type or not defender_type:
+        return 1.0
+    chart = {
+        ("flame","nature"):1.5, ("nature","storm"):1.25, ("storm","shadow"):1.25,
+        ("shadow","spirit"):1.25, ("spirit","bone"):1.25, ("bone","flame"):1.25,
+        ("echo","void"):1.25, ("void","echo"):1.25,
+        ("nature","flame"):0.75, ("storm","nature"):0.85, ("shadow","storm"):0.85,
+        ("spirit","shadow"):0.85, ("bone","spirit"):0.85, ("flame","bone"):0.85,
+    }
+    return chart.get((attacker_type, defender_type), 1.0)
+
+def render_type_hint(attacker_type: str | None, defender_type: str | None) -> str:
+    m = get_damage_multiplier(attacker_type, defender_type)
+    if m >= 1.5: return "🔥 Очень эффективно"
+    if m > 1.0:  return "⚔️ Эффективно"
+    if m < 1.0:  return "🛡 Слабо"
+    return "➖ Без преимущества"
+
+# ─── Таблица лидеров ──────────────────────────────────────────────────────────
+
+def get_leaderboard(limit: int = 10) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT p.telegram_id, p.name, p.level, p.gold,
+                   COUNT(m.id) as monster_count,
+                   pv.wins as pvp_wins, pv.rating as pvp_rating
+            FROM players p
+            LEFT JOIN player_monsters m ON m.telegram_id = p.telegram_id
+            LEFT JOIN player_pvp pv ON pv.telegram_id = p.telegram_id
+            GROUP BY p.telegram_id
+            ORDER BY p.level DESC, p.experience DESC
+            LIMIT ?""", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+def get_pvp_leaderboard(limit: int = 10) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT p.telegram_id, p.name, p.level, pv.wins, pv.losses, pv.rating
+            FROM player_pvp pv
+            JOIN players p ON p.telegram_id = pv.telegram_id
+            ORDER BY pv.rating DESC
+            LIMIT ?""", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+# ─── PvP ──────────────────────────────────────────────────────────────────────
+
+def get_pvp_stats(telegram_id: int) -> dict:
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO player_pvp (telegram_id) VALUES (?)", (telegram_id,))
+        row = conn.execute("SELECT * FROM player_pvp WHERE telegram_id=?", (telegram_id,)).fetchone()
+        conn.commit()
+    return dict(row) if row else {"wins":0,"losses":0,"rating":1000}
+
+def record_pvp_result(winner_id: int, loser_id: int):
+    rating_delta = 25
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO player_pvp (telegram_id) VALUES (?)", (winner_id,))
+        conn.execute("INSERT OR IGNORE INTO player_pvp (telegram_id) VALUES (?)", (loser_id,))
+        conn.execute("UPDATE player_pvp SET wins=wins+1, rating=rating+? WHERE telegram_id=?", (rating_delta,winner_id))
+        conn.execute("UPDATE player_pvp SET losses=losses+1, rating=MAX(0,rating-?) WHERE telegram_id=?", (rating_delta,loser_id))
+        conn.commit()
+
+def create_pvp_challenge(challenger_id: int, target_id: int) -> int:
+    with get_connection() as conn:
+        cur = conn.execute("INSERT INTO pvp_challenges (challenger_id,target_id) VALUES (?,?)", (challenger_id,target_id))
+        cid = cur.lastrowid
+        conn.commit()
+    return cid
+
+def get_pending_challenge(target_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM pvp_challenges WHERE target_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1", (target_id,)).fetchone()
+    return dict(row) if row else None
+
+def resolve_pvp_challenge(challenge_id: int, status: str = "accepted"):
+    with get_connection() as conn:
+        conn.execute("UPDATE pvp_challenges SET status=? WHERE id=?", (status,challenge_id))
+        conn.commit()
+
+# ─── Гильдии ──────────────────────────────────────────────────────────────────
+
+def create_guild(name: str, leader_id: int, description: str = "") -> dict | None:
+    try:
+        with get_connection() as conn:
+            cur = conn.execute("INSERT INTO guilds (name,leader_id,description) VALUES (?,?,?)", (name,leader_id,description))
+            gid = cur.lastrowid
+            conn.execute("INSERT INTO guild_members (guild_id,telegram_id,role) VALUES (?,?,'leader')", (gid,leader_id))
+            conn.commit()
+        return get_guild_by_id(gid)
+    except Exception:
+        return None
+
+def get_guild_by_id(guild_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM guilds WHERE id=?", (guild_id,)).fetchone()
+    return dict(row) if row else None
+
+def get_player_guild(telegram_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("""SELECT g.* FROM guilds g
+            JOIN guild_members gm ON gm.guild_id=g.id
+            WHERE gm.telegram_id=?""", (telegram_id,)).fetchone()
+    return dict(row) if row else None
+
+def join_guild(guild_id: int, telegram_id: int) -> bool:
+    try:
+        with get_connection() as conn:
+            conn.execute("INSERT INTO guild_members (guild_id,telegram_id) VALUES (?,?)", (guild_id,telegram_id))
+            conn.commit()
+        return True
+    except Exception:
+        return False
+
+def leave_guild(telegram_id: int) -> bool:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM guild_members WHERE telegram_id=?", (telegram_id,))
+        conn.commit()
+    return True
+
+def get_guild_members(guild_id: int) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""SELECT p.telegram_id, p.name, p.level, gm.role
+            FROM guild_members gm JOIN players p ON p.telegram_id=gm.telegram_id
+            WHERE gm.guild_id=? ORDER BY p.level DESC""", (guild_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+def add_guild_treasury(guild_id: int, amount: int):
+    with get_connection() as conn:
+        conn.execute("UPDATE guilds SET treasury_gold=treasury_gold+? WHERE id=?", (amount,guild_id))
+        conn.commit()
+
+def list_guilds(limit: int = 20) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""SELECT g.*, COUNT(gm.telegram_id) as member_count
+            FROM guilds g LEFT JOIN guild_members gm ON gm.guild_id=g.id
+            GROUP BY g.id ORDER BY member_count DESC LIMIT ?""", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+# ─── Ежедневные задания ───────────────────────────────────────────────────────
+
+import random as _random
+from datetime import date as _date
+
+DAILY_TASK_POOL = [
+    {"task_id":"daily_win3",     "description":"Победи 3 монстров в бою",    "action_type":"win",     "target":3, "reward_gold":50},
+    {"task_id":"daily_explore5", "description":"Исследуй локации 5 раз",     "action_type":"explore", "target":5, "reward_gold":40},
+    {"task_id":"daily_gather3",  "description":"Собери 3 ресурса",           "action_type":"gather",  "target":3, "reward_gold":35},
+    {"task_id":"daily_capture1", "description":"Поймай монстра",             "action_type":"capture", "target":1, "reward_gold":60},
+    {"task_id":"daily_craft1",   "description":"Создай 1 предмет в мастерской","action_type":"craft", "target":1, "reward_gold":45},
+    {"task_id":"daily_win5",     "description":"Победи 5 монстров в бою",    "action_type":"win",     "target":5, "reward_gold":75},
+]
+
+def get_today_tasks(telegram_id: int) -> list[dict]:
+    today = str(_date.today())
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM daily_tasks WHERE telegram_id=? AND task_date=?", (telegram_id,today)).fetchall()
+    if rows:
+        return [dict(r) for r in rows]
+    # Генерируем 3 случайных задания на сегодня
+    chosen = _random.sample(DAILY_TASK_POOL, min(3, len(DAILY_TASK_POOL)))
+    with get_connection() as conn:
+        for t in chosen:
+            conn.execute("""INSERT OR IGNORE INTO daily_tasks
+                (telegram_id,task_date,task_id,description,action_type,target,reward_gold)
+                VALUES (?,?,?,?,?,?,?)""",
+                (telegram_id,today,t["task_id"],t["description"],t["action_type"],t["target"],t["reward_gold"]))
+        conn.commit()
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM daily_tasks WHERE telegram_id=? AND task_date=?", (telegram_id,today)).fetchall()
+    return [dict(r) for r in rows]
+
+def progress_daily_tasks(telegram_id: int, action_type: str, amount: int = 1) -> list[dict]:
+    today = str(_date.today())
+    tasks = get_today_tasks(telegram_id)
+    completed_now = []
+    for t in tasks:
+        if t["completed"] or t["action_type"] != action_type:
+            continue
+        new_prog = t["progress"] + amount
+        done = new_prog >= t["target"]
+        with get_connection() as conn:
+            conn.execute("""UPDATE daily_tasks SET progress=?,completed=?
+                WHERE telegram_id=? AND task_date=? AND task_id=?""",
+                (new_prog,int(done),telegram_id,today,t["task_id"]))
+            conn.commit()
+        if done:
+            completed_now.append(t)
+    return completed_now
+
+def check_and_update_daily_streak(telegram_id: int) -> tuple[int, bool]:
+    """Возвращает (streak, is_new_day). Вызывать при каждом входе игрока."""
+    p = get_player(telegram_id)
+    if not p:
+        return 0, False
+    today = str(_date.today())
+    last  = p.last_login_date or ""
+    if last == today:
+        return p.daily_streak, False
+    yesterday = str(_date.fromordinal(_date.today().toordinal()-1))
+    new_streak = (p.daily_streak + 1) if last == yesterday else 1
+    _update_player_field(telegram_id, daily_streak=new_streak, last_login_date=today)
+    return new_streak, True
+
+def get_streak_reward(streak: int) -> int:
+    rewards = {1:30, 2:40, 3:55, 4:70, 5:90, 6:110, 7:200}
+    return rewards.get(min(streak, 7), 50 + (streak//7)*50)
+
+# ─── Сезонный пасс ────────────────────────────────────────────────────────────
+
+SEASON_TASKS = [
+    {"task_id":"s_win20",      "description":"Победи 20 монстров",       "action_type":"win",     "target":20, "reward_gold":100, "premium_reward":250},
+    {"task_id":"s_capture10",  "description":"Поймай 10 монстров",       "action_type":"capture", "target":10, "reward_gold":80,  "premium_reward":200},
+    {"task_id":"s_gather30",   "description":"Собери 30 ресурсов",       "action_type":"gather",  "target":30, "reward_gold":80,  "premium_reward":180},
+    {"task_id":"s_craft5",     "description":"Создай 5 предметов",       "action_type":"craft",   "target":5,  "reward_gold":70,  "premium_reward":160},
+    {"task_id":"s_explore40",  "description":"Исследуй локации 40 раз",  "action_type":"explore", "target":40, "reward_gold":90,  "premium_reward":220},
+]
+CURRENT_SEASON = 1
+
+def get_season_tasks(telegram_id: int) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM player_season_pass WHERE telegram_id=? AND season_id=?",
+            (telegram_id, CURRENT_SEASON)).fetchall()
+    existing = {r["task_id"]: dict(r) for r in rows}
+    result = []
+    for t in SEASON_TASKS:
+        row = existing.get(t["task_id"])
+        result.append({
+            **t,
+            "progress":  row["progress"]  if row else 0,
+            "completed": bool(row["completed"]) if row else False,
+        })
+    return result
+
+def progress_season_tasks(telegram_id: int, action_type: str, amount: int = 1) -> list[dict]:
+    tasks = get_season_tasks(telegram_id)
+    completed_now = []
+    for t in tasks:
+        if t["completed"] or t["action_type"] != action_type:
+            continue
+        new_prog = t["progress"] + amount
+        done = new_prog >= t["target"]
+        with get_connection() as conn:
+            conn.execute("""INSERT INTO player_season_pass (telegram_id,season_id,task_id,progress,completed)
+                VALUES (?,?,?,?,?)
+                ON CONFLICT(telegram_id,season_id,task_id) DO UPDATE SET progress=?,completed=?""",
+                (telegram_id,CURRENT_SEASON,t["task_id"],new_prog,int(done),new_prog,int(done)))
+            conn.commit()
+        if done:
+            completed_now.append(t)
+    return completed_now
+
+# ─── P2P рынок монстров ───────────────────────────────────────────────────────
+
+def list_monster_for_sale(telegram_id: int, monster_id: int, price: int) -> bool:
+    m = get_monster_by_id(telegram_id, monster_id)
+    if not m or m.get("is_active"):
+        return False
+    m["is_listed"] = True
+    m["list_price"] = price
+    save_monster(m)
+    return True
+
+def delist_monster(telegram_id: int, monster_id: int) -> bool:
+    m = get_monster_by_id(telegram_id, monster_id)
+    if not m:
+        return False
+    m["is_listed"] = False
+    m["list_price"] = 0
+    save_monster(m)
+    return True
+
+def get_p2p_market_listings(limit: int = 20) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""SELECT m.*, p.name as seller_name
+            FROM player_monsters m JOIN players p ON p.telegram_id=m.telegram_id
+            WHERE m.is_listed=1 ORDER BY m.list_price ASC LIMIT ?""", (limit,)).fetchall()
+    return [_monster_row_to_dict(dict(r)) for r in rows]
+
+def buy_p2p_monster(buyer_id: int, monster_id: int) -> dict | None:
+    """Покупка монстра у другого игрока с комиссией 8%."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM player_monsters WHERE id=? AND is_listed=1", (monster_id,)).fetchone()
+    if not row:
+        return None
+    m = _monster_row_to_dict(row)
+    seller_id = m["telegram_id"]
+    if seller_id == buyer_id:
+        return None
+    price    = m["list_price"]
+    buyer    = get_player(buyer_id)
+    if not buyer or buyer.gold < price:
+        return None
+    commission = int(price * 0.08)
+    seller_gets = price - commission
+    _update_player_field(buyer_id,  gold=buyer.gold - price)
+    seller = get_player(seller_id)
+    if seller:
+        _update_player_field(seller_id, gold=seller.gold + seller_gets)
+    with get_connection() as conn:
+        conn.execute("UPDATE player_monsters SET telegram_id=?,is_active=0,is_listed=0,list_price=0 WHERE id=?",
+            (buyer_id, monster_id))
+        conn.commit()
+    return get_monster_by_id(buyer_id, monster_id)
+
+# ─── Аналитика ────────────────────────────────────────────────────────────────
+
+def track(telegram_id: int, event: str, data: dict | None = None):
+    try:
+        with get_connection() as conn:
+            conn.execute("INSERT INTO analytics_events (telegram_id,event,data) VALUES (?,?,?)",
+                (telegram_id, event, json_set(data or {})))
+            conn.commit()
+    except Exception:
+        pass
+
+def get_analytics_summary() -> dict:
+    with get_connection() as conn:
+        total    = conn.execute("SELECT COUNT(*) as c FROM players").fetchone()["c"]
+        active7d = conn.execute("""SELECT COUNT(DISTINCT telegram_id) as c FROM analytics_events
+            WHERE created_at > datetime('now','-7 days')""").fetchone()["c"]
+        events   = conn.execute("""SELECT event, COUNT(*) as cnt FROM analytics_events
+            GROUP BY event ORDER BY cnt DESC LIMIT 20""").fetchall()
+    return {"total_players":total,"active_7d":active7d,"top_events":[dict(r) for r in events]}

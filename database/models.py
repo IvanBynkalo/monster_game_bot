@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -20,16 +20,12 @@ class Player:
 
     gatherer_level: int = 1
     gatherer_exp: int = 0
-
     hunter_level: int = 1
     hunter_exp: int = 0
-
     geologist_level: int = 1
     geologist_exp: int = 0
-
     alchemist_level: int = 1
     alchemist_exp: int = 0
-
     merchant_level: int = 1
     merchant_exp: int = 0
 
@@ -38,6 +34,12 @@ class Player:
     max_hp: int = 30
     is_defeated: bool = False
     injury_turns: int = 0
+
+    # Новые поля (рек. #12, #14, #15)
+    daily_streak: int = 0
+    last_login_date: str = ""
+    season_pass_active: int = 0
+    season_points: int = 0
 
 
 @dataclass
