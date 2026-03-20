@@ -10,7 +10,10 @@ from aiogram.types import FSInputFile, Message
 ASSETS_ROOT = Path(__file__).resolve().parent.parent / "assets"
 
 # ── Пути по категориям ────────────────────────────────────────────────────────
-CITY_DIR      = ASSETS_ROOT / "city"
+# Поддерживаем оба варианта написания папки города: city и sity (опечатка в репо)
+_city_dir = ASSETS_ROOT / "city"
+_sity_dir = ASSETS_ROOT / "sity"
+CITY_DIR      = _city_dir if _city_dir.exists() else _sity_dir
 LOCATION_DIR  = ASSETS_ROOT / "locations"
 MONSTER_DIR   = ASSETS_ROOT / "monsters"
 EMOTION_DIR   = ASSETS_ROOT / "emotions"
@@ -92,17 +95,20 @@ async def send_image(
 ) -> None:
     """
     Отправляет фото с подписью. Если файл не найден — отправляет текст.
-    Использовать везде вместо прямого message.answer_photo().
     """
     if image_path and image_path.exists():
-        await message.answer_photo(
-            photo=FSInputFile(str(image_path)),
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-        )
-    else:
-        await message.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        try:
+            await message.answer_photo(
+                photo=FSInputFile(str(image_path)),
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+            return
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"send_image failed for {image_path}: {e}")
+    await message.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
 
 
 # ── Хелперы по контексту ─────────────────────────────────────────────────────
