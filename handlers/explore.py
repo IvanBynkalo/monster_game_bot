@@ -228,9 +228,7 @@ async def explore_handler(message: Message):
         infection_update = render_infection_update(apply_dominant_emotion_infection(message.from_user.id))
         if infection_update:
             extras.append(infection_update)
-        born = render_birth_text(try_birth_emotional_monster(message.from_user.id))
-        if born:
-            extras.append(born)
+        # авторождение отключено
         extras.extend(_render_completed_quests(message.from_user.id, completed_now))
         if story_done:
             extras.append(apply_story_reward(message.from_user.id, story_done))
@@ -351,11 +349,7 @@ async def explore_handler(message: Message):
     if extras_clean:
         full_text += "\n\n" + "\n\n".join(extras_clean)
 
-    # Рождение монстра — отдельное красивое сообщение
-    _born_emotion_local = locals().get("_born_emotion")
-    if _born_emotion_local and born:
-        from utils.images import send_birth_image
-        await send_birth_image(message, _born_emotion_local, born)
+    # (авторождение отключено — images не нужны)
 
     if encounter["type"] in ("monster", "wildlife"):
         # ── БОЙ: сначала сбрасываем reply-меню, потом показываем inline на сообщении ──

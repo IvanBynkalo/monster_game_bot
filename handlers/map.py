@@ -15,6 +15,7 @@ from game.map_service import (
 )
 from game.story_service import apply_story_reward
 from keyboards.main_menu import main_menu
+from keyboards.location_menu import location_actions_inline
 from keyboards.navigation_menu import navigation_menu
 
 
@@ -60,9 +61,22 @@ async def location_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     set_ui_screen(message.from_user.id, "main")
-    await send_location_image(message, player.location_slug,
-                               render_location_card(player.location_slug),
-                               reply_markup=main_menu(player.location_slug, player.current_district_slug))
+    loc_text = render_location_card(player.location_slug)
+    # Добавляем панель рождения если в нужном месте
+    from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
+    if player.location_slug in BIRTH_LOCATIONS:
+        birth_p = get_birth_panel(message.from_user.id, player.location_slug)
+        if birth_p:
+            loc_text += f"\n\n{birth_p}"
+    await message.answer(
+        loc_text,
+        reply_markup=main_menu(player.location_slug, player.current_district_slug)
+    )
+    # Inline-меню действий локации отдельным сообщением
+    from game.dungeon_service import DUNGEONS
+    has_dungeon = player.location_slug in DUNGEONS
+    inline_kb = location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+    await message.answer("Действия:", reply_markup=inline_kb)
 
 
 async def move_handler(message: Message):
@@ -104,6 +118,16 @@ async def move_handler(message: Message):
     if story_done:
         text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
 
-    # Показываем картинку локации при прибытии
     await send_location_image(message, target.slug, text,
                                reply_markup=main_menu(target.slug, None))
+    # Inline-меню действий при прибытии
+    from game.dungeon_service import DUNGEONS
+    from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
+    has_dungeon = target.slug in DUNGEONS
+    inline_kb = location_actions_inline(target.slug, has_dungeon=has_dungeon)
+    await message.answer("Что делать:", reply_markup=inline_kb)
+    # Панель рождения если это место ритуала
+    if target.slug in BIRTH_LOCATIONS:
+        birth_p = get_birth_panel(message.from_user.id, target.slug)
+        if birth_p:
+            await message.answer(birth_p)
