@@ -9,6 +9,9 @@ from game.location_rules import is_city
 from game.gather_service import has_gathering_in_location
 from keyboards.city_menu import district_actions_menu
 from keyboards.main_menu import main_menu
+from keyboards.location_menu import location_actions_inline
+from game.dungeon_service import DUNGEONS
+from game.grid_exploration_service import is_dungeon_available
 
 
 def _normalize_district_text(text: str) -> str:
@@ -136,10 +139,22 @@ async def district_move_handler(message: Message):
     # В полевых локациях — показать основное меню с Исследовать/Собирать
     if is_city(player.location_slug):
         kb = district_actions_menu(new_slug)
+        await message.answer(
+            f"{transition_text}\n\n{district_card}",
+            reply_markup=kb,
+        )
     else:
         kb = main_menu(player.location_slug, new_slug)
-
-    await message.answer(
-        f"{transition_text}\n\n{district_card}",
-        reply_markup=kb,
-    )
+        await message.answer(
+            f"{transition_text}\n\n{district_card}",
+            reply_markup=kb,
+        )
+        # Inline-меню действий для полевых районов
+        has_dungeon = (
+            player.location_slug in DUNGEONS and
+            is_dungeon_available(message.from_user.id, player.location_slug)
+        )
+        await message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+        )
