@@ -1020,6 +1020,19 @@ async def city_guilds_handler(message: Message):
         text,
         district_actions_menu("guild_quarter"),
     )
+    # Алтарь рождения — отдельной кнопкой после основного меню
+    birth_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="🌌 Алтарь — Ритуал рождения монстра",
+            callback_data="loc:birth"
+        )
+    ]])
+    from game.emotion_birth_service import get_birth_panel
+    birth_panel = get_birth_panel(message.from_user.id, "silver_city")
+    if birth_panel:
+        await message.answer(birth_panel, reply_markup=birth_kb)
+    else:
+        await message.answer("🌌 Алтарь Сереброграда доступен для ритуала рождения.", reply_markup=birth_kb)
 
 
 async def guild_hunters_handler(message: Message):

@@ -149,12 +149,14 @@ async def move_handler(message: Message):
     from game.dungeon_service import DUNGEONS
     from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
     from game.grid_exploration_service import is_dungeon_available
-    try:
-        has_dungeon = target.slug in DUNGEONS and is_dungeon_available(message.from_user.id, target.slug)
-    except Exception:
-        has_dungeon = False
-    inline_kb = location_actions_inline(target.slug, has_dungeon=has_dungeon)
-    await message.answer("Что делать:", reply_markup=inline_kb)
+    from game.location_rules import is_city as _is_city
+    if not _is_city(target.slug):
+        try:
+            has_dungeon = target.slug in DUNGEONS and is_dungeon_available(message.from_user.id, target.slug)
+        except Exception:
+            has_dungeon = False
+        inline_kb = location_actions_inline(target.slug, has_dungeon=has_dungeon)
+        await message.answer("Что делать:", reply_markup=inline_kb)
     # Панель рождения если это место ритуала
     if target.slug in BIRTH_LOCATIONS:
         birth_p = get_birth_panel(message.from_user.id, target.slug)
