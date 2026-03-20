@@ -676,6 +676,10 @@ async def fight_inline_callback(callback: CallbackQuery):
                 active_monster=active)
 
     elif action == "capture":
+        # Зверей нельзя поймать
+        if enc.get("type") == "wildlife":
+            await callback.message.answer("🐾 Зверей нельзя поймать — только монстров.")
+            return
         capture_bon = get_capture_bonus(active)
         enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
         result = resolve_capture(enc)
@@ -824,7 +828,11 @@ async def fight_inline_callback(callback: CallbackQuery):
         if player:
             from game.dungeon_service import DUNGEONS
             from keyboards.location_menu import location_actions_inline
-            has_dungeon = player.location_slug in DUNGEONS
+            from game.grid_exploration_service import is_dungeon_available
+            has_dungeon = (
+                player.location_slug in DUNGEONS and
+                is_dungeon_available(uid, player.location_slug)
+            )
             await callback.message.answer(
                 "Что делать:",
                 reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
@@ -838,8 +846,19 @@ async def fight_inline_callback(callback: CallbackQuery):
         from database.repositories import get_item_count
         has_trap  = get_item_count(uid, "basic_trap") > 0
         has_ptrap = get_item_count(uid, "poison_trap") > 0
-        await callback.message.answer("\n".join(lines),
-            reply_markup=encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap))
+        # Для зверей — без кнопки Поймать
+        if enc.get("type") == "wildlife":
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            _wkb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
+                 InlineKeyboardButton(text="✨ Навык", callback_data="fight:skill")],
+                *([[InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")]] if has_trap else []),
+                [InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")],
+            ])
+            await callback.message.answer("\n".join(lines), reply_markup=_wkb)
+        else:
+            await callback.message.answer("\n".join(lines),
+                reply_markup=encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap))
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("loc:"))
