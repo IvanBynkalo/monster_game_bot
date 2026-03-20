@@ -13,20 +13,21 @@ from database.repositories import get_connection
 
 # Расстояния между локациями (симметричные)
 # Единица ≈ 1 минута базового времени
+# Расстояния в секундах (базовое время без ловкости)
 DISTANCES: dict[tuple[str, str], int] = {
-    ("silver_city",    "dark_forest"):    3,
-    ("dark_forest",    "emerald_fields"): 5,
-    ("dark_forest",    "shadow_marsh"):   7,
-    ("dark_forest",    "ancient_ruins"):  8,
-    ("emerald_fields", "stone_hills"):    6,
-    ("emerald_fields", "shadow_swamp"):   9,
-    ("stone_hills",    "volcano_wrath"):  12,
-    ("stone_hills",    "bone_desert"):    10,
-    ("shadow_marsh",   "shadow_swamp"):   4,
-    ("shadow_swamp",   "volcano_wrath"):  11,
-    ("bone_desert",    "storm_ridge"):    8,
-    ("volcano_wrath",  "emotion_rift"):   15,
-    ("storm_ridge",    "emotion_rift"):   10,
+    ("silver_city",    "dark_forest"):    45,   # 45 сек — стартовый маршрут
+    ("dark_forest",    "emerald_fields"): 90,   # 1.5 мин
+    ("dark_forest",    "shadow_marsh"):   150,  # 2.5 мин
+    ("dark_forest",    "ancient_ruins"):  180,  # 3 мин
+    ("emerald_fields", "stone_hills"):    120,  # 2 мин
+    ("emerald_fields", "shadow_swamp"):   210,  # 3.5 мин
+    ("stone_hills",    "volcano_wrath"):  300,  # 5 мин
+    ("stone_hills",    "bone_desert"):    240,  # 4 мин
+    ("shadow_marsh",   "shadow_swamp"):   90,   # 1.5 мин
+    ("shadow_swamp",   "volcano_wrath"):  270,  # 4.5 мин
+    ("bone_desert",    "storm_ridge"):    210,  # 3.5 мин
+    ("volcano_wrath",  "emotion_rift"):   420,  # 7 мин
+    ("storm_ridge",    "emotion_rift"):   300,  # 5 мин
 }
 
 LOCATION_NAMES = {
@@ -54,11 +55,10 @@ def get_distance(from_slug: str, to_slug: str) -> int:
 def get_travel_seconds(from_slug: str, to_slug: str, agility: int = 0) -> int:
     """
     Время перехода в секундах.
-    Базовое: расстояние × 60 сек.
+    Базовое: из таблицы DISTANCES (уже в секундах).
     Ловкость: каждые 5 очков = −10%, максимум −70%.
     """
-    distance = get_distance(from_slug, to_slug)
-    base_seconds = distance * 60
+    base_seconds = get_distance(from_slug, to_slug)
     agility_discount = min(0.70, (agility // 5) * 0.10)
     return max(10, int(base_seconds * (1 - agility_discount)))
 
