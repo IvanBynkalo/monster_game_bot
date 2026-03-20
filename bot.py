@@ -237,7 +237,6 @@ dp.message.register(city_monsters_handler, text_is("🐲 Рынок монстр
 dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов"))
 dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов"))
 dp.message.register(city_guilds_handler, text_is("🏛 Гильдии", "Гильдии"))
-dp.message.register(birth_cmd, text_is("🌌 Алтарь рождения", "Алтарь рождения"))
 dp.message.register(city_craft_quarter_handler, text_is("⚒ Ремесленный квартал", "Ремесленный квартал"))
 dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
 dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
@@ -1024,6 +1023,9 @@ async def birth_cmd(message: Message):
     from utils.analytics import track_emotion_birth
     track_emotion_birth(message.from_user.id, monster["name"], monster["mood"], monster["rarity"])
 
+
+
+dp.message.register(birth_cmd, text_is("🌌 Алтарь рождения", "Алтарь рождения"))
 
 @dp.message(Command("birth_panel"))
 async def birth_panel_cmd(message: Message):
