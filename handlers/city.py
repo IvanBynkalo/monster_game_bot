@@ -1118,21 +1118,32 @@ async def leave_city_handler(message: Message):
     set_ui_screen(message.from_user.id, "main")
 
     from game.map_service import render_location_card
-    from game.exploration_service import render_exploration_panel
     from game.dungeon_service import DUNGEONS
     from keyboards.location_menu import location_actions_inline
 
-    loc_text = (
-        "🚶 Ты покидаешь Сереброград и выходишь в Тёмный лес.\n\n"
-        + render_location_card("dark_forest")
-        + "\n\n"
-        + render_exploration_panel(message.from_user.id, "dark_forest")
-    )
+    loc_card = render_location_card("dark_forest")
+    try:
+        from game.grid_exploration_service import render_exploration_panel as _grid_panel
+        _expl = _grid_panel(message.from_user.id, "dark_forest")
+    except Exception:
+        _expl = ""
 
-    await message.answer(loc_text, reply_markup=main_menu("dark_forest", "mushroom_path"))
+    loc_text = "🚶 Ты покидаешь Сереброград и выходишь в Тёмный лес.\n\n" + loc_card
+    if _expl:
+        loc_text += "\n\n" + _expl
+
+    try:
+        from game.grid_exploration_service import is_dungeon_available
+        has_dungeon = "dark_forest" in DUNGEONS and is_dungeon_available(message.from_user.id, "dark_forest")
+    except Exception:
+        has_dungeon = False
+
+    from utils.images import send_location_image
+    await send_location_image(message, "dark_forest", loc_text,
+                               reply_markup=main_menu("dark_forest", "mushroom_path"))
     await message.answer(
         "Что делать:",
-        reply_markup=location_actions_inline("dark_forest", has_dungeon="dark_forest" in DUNGEONS)
+        reply_markup=location_actions_inline("dark_forest", has_dungeon=has_dungeon)
     )
 
 
