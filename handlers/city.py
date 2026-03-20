@@ -63,6 +63,7 @@ from game.city_service import render_city_menu, render_guild_text, GUILD_QUESTS
 from game.craft_service import render_craft_text
 from game.item_service import ITEMS
 from game.location_rules import is_city
+from game.trap_service import render_trap_shop, craft_trap_item, TRAP_RECIPES, CATEGORY_LABELS
 from game.market_service import BAG_OFFERS, get_resource_label
 from game.shop_service import MONSTER_SHOP_OFFERS
 
@@ -1237,24 +1238,92 @@ async def city_traps_handler(message: Message):
         await message.answer("Мастер ловушек доступен только в городе.")
         return
 
-    text = (
-        "🪤 Мастер ловушек\n\n"
-        "Он советует всегда держать в запасе хотя бы одну ловушку и приносить редкие материалы "
-        "для будущих улучшений."
-    )
+    resources = get_resources(message.from_user.id)
+    text = render_trap_shop(player, resources)
+    set_ui_screen(message.from_user.id, "traps")
 
-    set_ui_screen(message.from_user.id, "district")
-    await _answer_with_city_image(
-        message,
-        "trap_workshop.png",
-        text,
-        district_actions_menu("craft_quarter"),
-    )
+    # Inline кнопки крафта по категориям
+    hunter_level = getattr(player, "hunter_level", 1)
+    rows = []
+    for slug, recipe in TRAP_RECIPES.items():
+        if recipe["hunter_level"] > hunter_level:
+            continue
+        has_mats = all(resources.get(r, 0) >= qty for r, qty in recipe["ingredients"].items())
+        can_afford = player.gold >= recipe["gold_cost"]
+        status = "✅" if (has_mats and can_afford) else "❌"
+        rows.append([InlineKeyboardButton(
+            text=f"{status} {recipe['name']} — {recipe['gold_cost']}з",
+            callback_data=f"trap:craft:{slug}",
+        )])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="trap:back")])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+
+    await _answer_with_city_image(message, "trap_workshop.png", text, district_actions_menu("craft_quarter"))
+    await message.answer("Выбери предмет для крафта:", reply_markup=kb)
 
 
 # =========================================================
 # CALLBACK: ТОРГОВЦЫ КВАРТАЛА
 # =========================================================
+
+
+async def trap_inline_callback(callback: CallbackQuery):
+    """Обработчик inline-кнопок Мастера ловушек."""
+    data = callback.data or ""
+    uid  = callback.from_user.id
+
+    if data == "trap:back":
+        await callback.answer()
+        await callback.message.delete()
+        return
+
+    if data.startswith("trap:craft:"):
+        slug   = data.split(":", 2)[2]
+        player = get_player(uid)
+        if not player:
+            await callback.answer("Сначала напиши /start", show_alert=True)
+            return
+
+        resources = get_resources(uid)
+        result = craft_trap_item(player, resources, slug)
+
+        if not result["ok"]:
+            await callback.answer(result["msg"], show_alert=True)
+            return
+
+        # Списываем ресурсы и золото, выдаём предмет
+        from database.repositories import spend_resource, add_item, improve_profession_from_action
+        for res_slug, qty in result["ingredients"].items():
+            spend_resource(uid, res_slug, qty)
+        add_player_gold(uid, -result["gold_cost"])
+        add_item(uid, result["item"], result["amount"])
+        improve_profession_from_action(uid, "hunter")
+
+        await callback.answer(f"✅ Создано: {result['msg']}", show_alert=False)
+
+        # Обновляем кнопки
+        player = get_player(uid)
+        resources = get_resources(uid)
+        hunter_level = getattr(player, "hunter_level", 1)
+        rows = []
+        for s, recipe in TRAP_RECIPES.items():
+            if recipe["hunter_level"] > hunter_level:
+                continue
+            has_mats = all(resources.get(r, 0) >= qty for r, qty in recipe["ingredients"].items())
+            can_afford = player.gold >= recipe["gold_cost"]
+            status = "✅" if (has_mats and can_afford) else "❌"
+            rows.append([InlineKeyboardButton(
+                text=f"{status} {recipe['name']} — {recipe['gold_cost']}з",
+                callback_data=f"trap:craft:{s}",
+            )])
+        rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="trap:back")])
+        try:
+            await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        except Exception:
+            pass
+
+        msg_text = f"🪤 {result['msg']}\n💰 Потрачено: {result['gold_cost']}з\n🎒 Получено: x{result['amount']}"
+        await callback.message.answer(msg_text)
 
 async def market_inline_callback(callback: CallbackQuery):
     player = get_player(callback.from_user.id)

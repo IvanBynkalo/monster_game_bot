@@ -87,10 +87,6 @@ async def move_handler(message: Message):
         await message.answer("Из текущей локации туда пройти нельзя.")
         return
 
-    if player.location_slug == "silver_city" and player.current_district_slug != "main_gate" and target.slug != "silver_city":
-        await message.answer("Покинуть город можно только через район 🚪 Главные ворота.")
-        return
-
     update_player_location(message.from_user.id, target.slug)
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
     set_ui_screen(message.from_user.id, "main")
