@@ -323,6 +323,66 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
     }
 
 
+
+
+def render_mini_map(grid: dict) -> str:
+    """
+    Мини-карта 5×5 вокруг текущей позиции.
+    Показывает какие клетки открыты и где ты сейчас.
+    
+    Легенда:
+    📍 — ты здесь
+    🟩 — обычная  🟦 — сбор  🟥 — опасность
+    🟨 — находка  🕳 — подземелье  💀 — босс-зона
+    ⬜ — не исследовано
+    """
+    col_cur, row_cur = grid["current_pos"]
+
+    ICONS = {
+        "normal":    "🟩",
+        "gathering": "🟦",
+        "danger":    "🟥",
+        "discovery": "🟨",
+        "dungeon":   "🕳 ",
+        "boss_zone": "💀",
+    }
+
+    # Показываем 5 строк: текущую + 2 вверх + 2 вниз
+    row_start = max(0, row_cur - 2)
+    row_end   = min(9, row_cur + 2)
+
+    # Показываем 5 колонок: текущую + 2 влево + 2 вправо
+    col_start = max(0, col_cur - 2)
+    col_end   = min(9, col_cur + 2)
+
+    lines = []
+    # Рисуем сверху вниз (большая глубина = вверху)
+    for row in range(row_end, row_start - 1, -1):
+        row_str = ""
+        for col in range(col_start, col_end + 1):
+            key = f"{col},{row}"
+            cell = grid["cells"].get(key, {})
+            if col == col_cur and row == row_cur:
+                row_str += "📍"
+            elif not cell.get("visited"):
+                row_str += "⬜"
+            else:
+                ctype = cell.get("type", "normal")
+                row_str += ICONS.get(ctype, "🟩")
+        # Пометка текущей строки
+        if row == row_cur:
+            row_str += f" ← ты (гл.{row+1})"
+        elif row == 0:
+            row_str += " ← вход"
+        lines.append(row_str)
+
+    # Легенда компактная
+    legend = "⬜ неизвестно  🟩 обычная  🟦 сбор  🟥 опасно  🟨 находка"
+
+    header = f"🗺 Карта [{col_start+1}-{col_end+1} / глубина {row_start+1}-{row_end+1}]"
+
+    return header + "\n" + "\n".join(lines) + "\n" + legend
+
 def render_grid_map(grid: dict) -> str:
     """Рендерит мини-карту 10×10 для отображения."""
     col_cur, row_cur = grid["current_pos"]
@@ -359,14 +419,13 @@ def render_exploration_result(result: dict, location_slug: str) -> str:
 
     lines = []
 
+    depth_bar = "▓" * (result['row'] + 1) + "░" * (9 - result['row'])
     if result["new_cell"]:
-        depth_bar = "▓" * (result['row'] + 1) + "░" * (9 - result['row'])
         lines.append(f"{result['direction']} → {result['cell_icon']} {result['cell_name']}")
-        lines.append(f"Глубина: [{depth_bar}] {result['row']+1}/10")
     else:
-        lines.append(f"Ты обследуешь уже знакомое место.")
-
-    lines.append(f"\n🗺 Исследовано: {result['pct']}%  📐 Картограф {result.get('cart_level', 1)} ур.")
+        lines.append(f"🔄 Знакомое место: {result['cell_icon']} {result['cell_name']}")
+    lines.append(f"Глубина: [{depth_bar}] {result['row']+1}/10")
+    lines.append(f"🗺 Исследовано: {result['pct']}%  📐 Картограф {result.get('cart_level', 1)} ур.")
 
     # Особые события клетки
     if result["cell_type"] == "gathering":
