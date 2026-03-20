@@ -1038,6 +1038,141 @@ async def birth_panel_cmd(message: Message):
         lines.append("\nТекущее место не подходит для ритуала.")
         await message.answer("\n".join(lines))
 
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("explore:dir:"))
+async def explore_direction_callback(callback: CallbackQuery):
+    """Выбор направления исследования на сетке 10x10."""
+    direction = callback.data.split(":", 2)[2]
+    uid = callback.from_user.id
+    await callback.answer()
+
+    from database.repositories import get_player, spend_player_energy
+    from game.grid_exploration_service import (
+        explore_cell, render_exploration_result, render_exploration_panel,
+        get_available_directions, get_grid, is_dungeon_available,
+    )
+    from keyboards.location_menu import location_actions_inline
+    from game.dungeon_service import DUNGEONS
+    from keyboards.main_menu import main_menu
+
+    player = get_player(uid)
+    if not player:
+        await callback.message.answer("Сначала напиши /start")
+        return
+
+    # Тратим энергию
+    if not spend_player_energy(uid, 1):
+        await callback.message.answer("⚡ Недостаточно энергии для исследования.")
+        return
+
+    # Исследуем выбранную клетку
+    result = explore_cell(uid, player.location_slug, direction)
+    expl_text = render_exploration_result(result, player.location_slug)
+
+    # Начисляем эмоции за исследование
+    from game.emotion_service import grant_event_emotions, render_emotion_changes
+    from game.map_service import get_location
+    loc = get_location(player.location_slug)
+    district_mood = loc.mood if loc else "fear"
+    _, changes = grant_event_emotions(uid, "explore", district_mood=district_mood)
+    emotion_text = render_emotion_changes(changes)
+
+    # Формируем ответ
+    lines = [expl_text]
+    if emotion_text:
+        lines.append(emotion_text)
+
+    # Пороговая награда — золото/ресурсы
+    reward = result.get("threshold_reward")
+    if reward:
+        if reward.get("gold"):
+            from database.repositories import add_player_gold
+            add_player_gold(uid, reward["gold"])
+            lines.append("💰 +" + str(reward["gold"]) + " золота")
+        if reward.get("resource"):
+            from database.repositories import add_resource
+            add_resource(uid, reward["resource"], reward.get("amount", 1))
+            lines.append("🎁 " + reward["resource"] + " x" + str(reward.get("amount", 1)))
+        if reward.get("item"):
+            from database.repositories import add_item
+            add_item(uid, reward["item"], 1)
+
+    await callback.message.answer(
+        "\n\n".join(lines),
+        reply_markup=main_menu(player.location_slug, player.current_district_slug)
+    )
+
+    # Обновляем inline-меню — показываем следующие направления или действия
+    dungeon_ok = is_dungeon_available(uid, player.location_slug)
+    has_dungeon = dungeon_ok and player.location_slug in DUNGEONS
+
+    _grid = get_grid(uid, player.location_slug)
+    next_dirs = get_available_directions(_grid)
+
+    if len(next_dirs) > 1:
+        # Есть куда идти — показываем направления
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        dir_rows = [
+            [InlineKeyboardButton(text=d["label"], callback_data="explore:dir:" + d["dir"])]
+            for d in next_dirs
+        ]
+        dir_rows.append([InlineKeyboardButton(text="🏕 Остановиться", callback_data="explore:stop")])
+        await callback.message.answer(
+            "Куда дальше?\n" + render_exploration_panel(uid, player.location_slug),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=dir_rows)
+        )
+    else:
+        # Некуда идти — показываем меню действий
+        await callback.message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+        )
+
+
+@dp.callback_query(lambda c: c.data == "explore:stop")
+async def explore_stop_callback(callback: CallbackQuery):
+    """Остановиться и вернуться к меню локации."""
+    await callback.answer()
+    from database.repositories import get_player
+    from game.grid_exploration_service import render_exploration_panel, is_dungeon_available
+    from keyboards.location_menu import location_actions_inline
+    from game.dungeon_service import DUNGEONS
+    from keyboards.main_menu import main_menu
+
+    player = get_player(callback.from_user.id)
+    if not player:
+        return
+
+    dungeon_ok = is_dungeon_available(callback.from_user.id, player.location_slug)
+    has_dungeon = dungeon_ok and player.location_slug in DUNGEONS
+
+    await callback.message.answer(
+        render_exploration_panel(callback.from_user.id, player.location_slug),
+        reply_markup=main_menu(player.location_slug, player.current_district_slug)
+    )
+    await callback.message.answer(
+        "Что делать:",
+        reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+    )
+
+
+@dp.message(Command("map_grid"))
+async def map_grid_cmd(message: Message):
+    """Показывает визуальную карту 10x10 текущей локации."""
+    from database.repositories import get_player
+    from game.grid_exploration_service import get_grid, render_grid_map, render_exploration_panel
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    if player.location_slug == "silver_city":
+        await message.answer("В городе нет карты исследования.")
+        return
+    grid = get_grid(message.from_user.id, player.location_slug)
+    grid_map = render_grid_map(grid)
+    panel = render_exploration_panel(message.from_user.id, player.location_slug)
+    await message.answer(panel + "\n\n" + grid_map)
+
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
     logger.exception("Unhandled update error: %s", event.exception)
