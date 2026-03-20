@@ -191,35 +191,65 @@ def _save_grid(telegram_id: int, location_slug: str, grid: dict):
 
 def get_available_directions(grid: dict) -> list[dict]:
     """
-    Возвращает до 3 доступных направлений с текущей позиции.
-    Направления: вперёд (row+1), влево (col-1, row+1), вправо (col+1, row+1)
+    Возвращает до 4 направлений с текущей позиции.
+    
+    Логика:
+    - Всегда показываем все возможные направления (новые клетки приоритет)
+    - На дне (row=9): можно идти только влево/вправо/назад
+    - Если все соседи уже посещены: можно ходить по уже открытым клеткам
+    - Всегда есть кнопка "Назад" если row > 0
     """
     col, row = grid["current_pos"]
-    candidates = [
-        {"dir": "forward", "label": "⬆️ Вперёд",  "col": col,     "row": row + 1},
-        {"dir": "left",    "label": "↖️ Влево",    "col": col - 1, "row": row + 1},
-        {"dir": "right",   "label": "↗️ Вправо",   "col": col + 1, "row": row + 1},
-        # Также можно двигаться в стороны на той же глубине
-        {"dir": "side_left",  "label": "⬅️ В сторону", "col": col - 1, "row": row},
-        {"dir": "side_right", "label": "➡️ В сторону", "col": col + 1, "row": row},
+
+    # Приоритет 1: непосещённые клетки вперёд и в стороны
+    forward_candidates = [
+        {"dir": "forward", "label": "⬆️ Вперёд",      "col": col,     "row": row + 1},
+        {"dir": "left",    "label": "↖️ Влево-вперёд", "col": col - 1, "row": row + 1},
+        {"dir": "right",   "label": "↗️ Вправо-вперёд","col": col + 1, "row": row + 1},
+        {"dir": "side_l",  "label": "⬅️ Влево",        "col": col - 1, "row": row},
+        {"dir": "side_r",  "label": "➡️ Вправо",       "col": col + 1, "row": row},
     ]
-    result = []
-    for c in candidates:
+
+    new_cells = []
+    visited_cells = []
+
+    for c in forward_candidates:
         nc, nr = c["col"], c["row"]
-        if 0 <= nc <= 9 and 0 <= nr <= 9:
-            key = f"{nc},{nr}"
-            cell = grid["cells"][key]
-            if not cell["visited"]:
-                c["key"] = key
-                c["new"] = True
-                result.append(c)
-            # Ограничиваем до 3 направлений
-        if len(result) >= 3:
-            break
-    # Если некуда идти вперёд — разрешаем идти назад/в сторону
+        if not (0 <= nc <= 9 and 0 <= nr <= 9):
+            continue
+        key = f"{nc},{nr}"
+        cell = grid["cells"][key]
+        c["key"] = key
+        if not cell["visited"]:
+            c["new"] = True
+            new_cells.append(c)
+        else:
+            c["new"] = False
+            visited_cells.append(c)
+
+    # Приоритет 2: назад (row-1) — всегда доступно если не на старте
+    back = None
+    if row > 0:
+        bkey = f"{col},{row - 1}"
+        back = {"dir": "back", "label": "⬇️ Назад", "col": col, "row": row - 1,
+                "key": bkey, "new": False}
+
+    # Формируем итоговый список: сначала новые, потом посещённые, потом назад
+    result = new_cells[:3]  # до 3 новых направлений
+
+    # Если новых нет — предлагаем посещённые соседи для повторного исследования
     if not result:
-        result.append({"dir": "back", "label": "🔄 Обследовать окрестности",
-                       "col": col, "row": max(0, row - 1), "key": f"{col},{max(0,row-1)}", "new": False})
+        result = visited_cells[:2]
+
+    # Всегда добавляем Назад если есть куда
+    if back and len(result) < 4:
+        result.append(back)
+
+    # Совсем некуда — возврат к старту
+    if not result:
+        result.append({"dir": "back", "label": "🔄 Вернуться к входу",
+                       "col": 5, "row": 0, "key": "5,0", "new": False})
+
     return result
 
 
