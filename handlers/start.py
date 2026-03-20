@@ -63,7 +63,7 @@ async def start_handler(message: Message):
     from game.dungeon_service import DUNGEONS
     from game.location_rules import is_city
 
-    loc_text = render_location_card(_player.location_slug, player=_player)
+    loc_text = render_location_card(_player.location_slug)
 
     if is_city(_player.location_slug):
         # В городе — показываем городское меню
