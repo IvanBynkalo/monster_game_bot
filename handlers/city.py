@@ -43,6 +43,18 @@ except ImportError:
     def remove_player_monster(_telegram_id: int, _monster_id: int) -> bool:
         return False
 
+try:
+    from database.repositories import spend_resource
+except ImportError:
+    def spend_resource(_telegram_id: int, _slug: str, _count: int) -> bool:
+        return False
+
+try:
+    from database.repositories import complete_city_order
+except ImportError:
+    def complete_city_order(_order_id: int):
+        return None
+
 from game.city_service import render_city_menu, render_guild_text, GUILD_QUESTS
 from game.craft_service import render_craft_text
 from game.item_service import ITEMS
@@ -56,8 +68,6 @@ from keyboards.main_menu import main_menu
 from keyboards.shop_menu import bag_shop_menu, monster_shop_menu, sell_menu
 from keyboards.craft_menu import craft_menu
 
-# Используем существующие shop-handler'ы как backend,
-# но в inline-режиме скрываем reply keyboard.
 from handlers.shop import (
     buy_bag_handler,
     buy_monster_handler,
@@ -89,7 +99,7 @@ CITY_BOARD_ORDER_DEFS = {
     },
 }
 
-# Какие товары Мирна готова выкупать
+# Мирна выкупает походные товары
 MIRNA_BUY_PRICES = {
     "small_potion": 6,
     "big_potion": 11,
@@ -108,6 +118,44 @@ RARITY_SELL_BASE = {
     "epic": 90,
     "legendary": 180,
     "mythic": 320,
+}
+
+NPC_QUEST_DEFS = {
+    "mirna_travel_set": {
+        "npc": "mirna",
+        "title": "Походный набор для каравана",
+        "goal_text": "Принеси Мирне 2 🧪 Малое зелье и 1 ⚡ Капсула энергии.",
+        "reward_gold": 35,
+        "reward_exp": 18,
+        "kind": "items",
+        "requirements": {
+            "small_potion": 2,
+            "energy_capsule": 1,
+        },
+    },
+    "varg_first_beast": {
+        "npc": "varg",
+        "title": "Первый зверь для перепродажи",
+        "goal_text": "Отдай Варгу 1 неактивного монстра.",
+        "reward_gold": 55,
+        "reward_exp": 28,
+        "kind": "monster",
+        "requirements": {
+            "count": 1,
+        },
+    },
+    "bort_supply_batch": {
+        "npc": "bort",
+        "title": "Поставка для складов",
+        "goal_text": "Принеси Борту 3 🌿 Лесная трава и 2 🔥 Угольный камень.",
+        "reward_gold": 50,
+        "reward_exp": 24,
+        "kind": "resources",
+        "requirements": {
+            "forest_herb": 3,
+            "ember_stone": 2,
+        },
+    },
 }
 
 
@@ -137,18 +185,12 @@ async def _answer_with_city_image(message: Message, image_name: str, text: str, 
 
 
 class InlineProxyMessage:
-    """
-    Проксируем callback в message-like объект, чтобы использовать существующие handlers.shop,
-    но не менять нижнюю клавиатуру Telegram.
-    """
-
     def __init__(self, callback: CallbackQuery, text: str):
         self._callback = callback
         self.text = text
         self.from_user = callback.from_user
 
     async def answer(self, text: str, reply_markup=None, **kwargs):
-        # reply_markup специально игнорируем, чтобы не прыгало нижнее меню
         return await self._callback.message.answer(text, **kwargs)
 
     async def answer_photo(self, photo, caption=None, reply_markup=None, **kwargs):
@@ -160,15 +202,110 @@ async def _run_existing_handler(callback: CallbackQuery, handler, text: str):
     await handler(proxy)
 
 
+def _get_active_npc_order(player_id: int, npc_slug: str):
+    active_orders = get_active_city_orders(player_id)
+    quest_slugs = [slug for slug, data in NPC_QUEST_DEFS.items() if data["npc"] == npc_slug]
+    for order in active_orders:
+        if order["order_slug"] in quest_slugs:
+            return order
+    return None
+
+
+def _npc_quest_ready(player_id: int, quest_slug: str) -> bool:
+    quest = NPC_QUEST_DEFS[quest_slug]
+    kind = quest["kind"]
+    req = quest["requirements"]
+
+    if kind == "items":
+        inventory = get_inventory(player_id)
+        return all(inventory.get(slug, 0) >= count for slug, count in req.items())
+
+    if kind == "resources":
+        resources = get_resources(player_id)
+        return all(resources.get(slug, 0) >= count for slug, count in req.items())
+
+    if kind == "monster":
+        monsters = get_player_monsters(player_id)
+        non_active = [m for m in monsters if not m.get("is_active")]
+        return len(non_active) >= int(req.get("count", 1))
+
+    return False
+
+
+def _complete_npc_quest_requirements(player_id: int, quest_slug: str) -> bool:
+    quest = NPC_QUEST_DEFS[quest_slug]
+    kind = quest["kind"]
+    req = quest["requirements"]
+
+    if kind == "items":
+        for slug, count in req.items():
+            if not spend_item(player_id, slug, count):
+                return False
+        return True
+
+    if kind == "resources":
+        for slug, count in req.items():
+            if not spend_resource(player_id, slug, count):
+                return False
+        return True
+
+    if kind == "monster":
+        monsters = get_player_monsters(player_id)
+        target = None
+        for monster in monsters:
+            if not monster.get("is_active"):
+                target = monster
+                break
+
+        if not target:
+            return False
+
+        if remove_player_monster(player_id, int(target["id"])):
+            return True
+
+        try:
+            monsters.remove(target)
+            return True
+        except ValueError:
+            return False
+
+    return False
+
+
+def _grant_npc_quest_rewards(player_id: int, quest_slug: str):
+    quest = NPC_QUEST_DEFS[quest_slug]
+    add_player_gold(player_id, quest["reward_gold"])
+    add_player_experience(player_id, quest["reward_exp"])
+
+
+def _npc_has_available_quest(player_id: int, npc_slug: str) -> bool:
+    active = _get_active_npc_order(player_id, npc_slug)
+    return active is None
+
+
+def _npc_has_ready_quest(player_id: int, npc_slug: str) -> bool:
+    active = _get_active_npc_order(player_id, npc_slug)
+    if not active:
+        return False
+    return _npc_quest_ready(player_id, active["order_slug"])
+
+
 # =========================================================
 # INLINE UI: МИРНА / ВАРГ / БОРТ
 # =========================================================
 
-def mirna_main_inline() -> InlineKeyboardMarkup:
+def mirna_main_inline(player_id: int) -> InlineKeyboardMarkup:
+    quest_label = "📜 Квесты"
+    if _npc_has_ready_quest(player_id, "mirna"):
+        quest_label = "❗ Сдать квест"
+    elif _npc_has_available_quest(player_id, "mirna"):
+        quest_label = "📜 Взять квест"
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Купить у Мирны", callback_data="marketnpc:mirna_buy_menu")],
             [InlineKeyboardButton(text="💰 Продать товары Мирне", callback_data="marketnpc:mirna_sell_menu")],
+            [InlineKeyboardButton(text=quest_label, callback_data="marketnpc:mirna_quest_menu")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
         ]
     )
@@ -208,11 +345,32 @@ def mirna_sell_inline(player_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def varg_main_inline() -> InlineKeyboardMarkup:
+def mirna_quest_inline(player_id: int) -> InlineKeyboardMarkup:
+    active = _get_active_npc_order(player_id, "mirna")
+    rows = []
+
+    if not active:
+        rows.append([InlineKeyboardButton(text="📌 Взять квест Мирны", callback_data="marketnpc:mirna_quest_take")])
+    else:
+        if _npc_quest_ready(player_id, active["order_slug"]):
+            rows.append([InlineKeyboardButton(text="✅ Сдать квест Мирне", callback_data="marketnpc:mirna_quest_turnin")])
+
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Мирне", callback_data="marketnpc:mirna_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def varg_main_inline(player_id: int) -> InlineKeyboardMarkup:
+    quest_label = "📜 Квесты"
+    if _npc_has_ready_quest(player_id, "varg"):
+        quest_label = "❗ Сдать квест"
+    elif _npc_has_available_quest(player_id, "varg"):
+        quest_label = "📜 Взять квест"
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Купить у Варга", callback_data="marketnpc:varg_buy_menu")],
             [InlineKeyboardButton(text="💰 Продать Варгу монстра", callback_data="marketnpc:varg_sell_menu")],
+            [InlineKeyboardButton(text=quest_label, callback_data="marketnpc:varg_quest_menu")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
         ]
     )
@@ -262,11 +420,32 @@ def varg_sell_inline(player_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def bort_main_inline() -> InlineKeyboardMarkup:
+def varg_quest_inline(player_id: int) -> InlineKeyboardMarkup:
+    active = _get_active_npc_order(player_id, "varg")
+    rows = []
+
+    if not active:
+        rows.append([InlineKeyboardButton(text="📌 Взять квест Варга", callback_data="marketnpc:varg_quest_take")])
+    else:
+        if _npc_quest_ready(player_id, active["order_slug"]):
+            rows.append([InlineKeyboardButton(text="✅ Сдать квест Варгу", callback_data="marketnpc:varg_quest_turnin")])
+
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Варгу", callback_data="marketnpc:varg_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bort_main_inline(player_id: int) -> InlineKeyboardMarkup:
+    quest_label = "📜 Квесты"
+    if _npc_has_ready_quest(player_id, "bort"):
+        quest_label = "❗ Сдать квест"
+    elif _npc_has_available_quest(player_id, "bort"):
+        quest_label = "📜 Взять квест"
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Купить у Борта", callback_data="marketnpc:bort_buy_menu")],
             [InlineKeyboardButton(text="💰 Продать ресурсы Борту", callback_data="marketnpc:bort_sell_menu")],
+            [InlineKeyboardButton(text=quest_label, callback_data="marketnpc:bort_quest_menu")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
         ]
     )
@@ -315,6 +494,20 @@ def bort_sell_inline(player_id: int, city_slug: str) -> InlineKeyboardMarkup:
                 callback_data=f"marketnpc:bort_sell:{slug}",
             )
         ])
+
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bort_quest_inline(player_id: int) -> InlineKeyboardMarkup:
+    active = _get_active_npc_order(player_id, "bort")
+    rows = []
+
+    if not active:
+        rows.append([InlineKeyboardButton(text="📌 Взять квест Борта", callback_data="marketnpc:bort_quest_take")])
+    else:
+        if _npc_quest_ready(player_id, active["order_slug"]):
+            rows.append([InlineKeyboardButton(text="✅ Сдать квест Борту", callback_data="marketnpc:bort_quest_turnin")])
 
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -404,6 +597,30 @@ def render_mirna_sell_text(player_id: int) -> str:
     return "\n".join(lines)
 
 
+def render_mirna_quest_text(player_id: int) -> str:
+    active = _get_active_npc_order(player_id, "mirna")
+    quest = NPC_QUEST_DEFS["mirna_travel_set"]
+
+    if not active:
+        return (
+            "📜 Квест Мирны\n\n"
+            f"{quest['title']}\n"
+            f"Цель: {quest['goal_text']}\n"
+            f"Награда: {quest['reward_gold']} золота, {quest['reward_exp']} опыта"
+        )
+
+    ready = _npc_quest_ready(player_id, active["order_slug"])
+    status = "✅ Всё готово к сдаче" if ready else "⌛ Материалы ещё не собраны"
+
+    return (
+        "📜 Активный квест Мирны\n\n"
+        f"{active['title']}\n"
+        f"Цель: {active['goal_text']}\n"
+        f"Награда: {active['reward_gold']} золота, {active['reward_exp']} опыта\n\n"
+        f"Статус: {status}"
+    )
+
+
 def render_varg_text(player_id: int) -> str:
     player = get_player(player_id)
     gold = getattr(player, "gold", 0) if player else 0
@@ -473,6 +690,30 @@ def render_varg_sell_text(player_id: int) -> str:
         lines.append("У тебя нет неактивных монстров для продажи Варгу.")
 
     return "\n".join(lines)
+
+
+def render_varg_quest_text(player_id: int) -> str:
+    active = _get_active_npc_order(player_id, "varg")
+    quest = NPC_QUEST_DEFS["varg_first_beast"]
+
+    if not active:
+        return (
+            "📜 Квест Варга\n\n"
+            f"{quest['title']}\n"
+            f"Цель: {quest['goal_text']}\n"
+            f"Награда: {quest['reward_gold']} золота, {quest['reward_exp']} опыта"
+        )
+
+    ready = _npc_quest_ready(player_id, active["order_slug"])
+    status = "✅ Всё готово к сдаче" if ready else "⌛ Подходящий монстр ещё не найден"
+
+    return (
+        "📜 Активный квест Варга\n\n"
+        f"{active['title']}\n"
+        f"Цель: {active['goal_text']}\n"
+        f"Награда: {active['reward_gold']} золота, {active['reward_exp']} опыта\n\n"
+        f"Статус: {status}"
+    )
 
 
 def render_bort_text(city_slug: str, player_id: int) -> str:
@@ -563,6 +804,30 @@ def render_bort_sell_text(city_slug: str, player_id: int) -> str:
         lines.append("У тебя нет подходящих ресурсов для продажи Борту.")
 
     return "\n".join(lines)
+
+
+def render_bort_quest_text(player_id: int) -> str:
+    active = _get_active_npc_order(player_id, "bort")
+    quest = NPC_QUEST_DEFS["bort_supply_batch"]
+
+    if not active:
+        return (
+            "📜 Квест Борта\n\n"
+            f"{quest['title']}\n"
+            f"Цель: {quest['goal_text']}\n"
+            f"Награда: {quest['reward_gold']} золота, {quest['reward_exp']} опыта"
+        )
+
+    ready = _npc_quest_ready(player_id, active["order_slug"])
+    status = "✅ Всё готово к сдаче" if ready else "⌛ Поставка ещё не собрана"
+
+    return (
+        "📜 Активный квест Борта\n\n"
+        f"{active['title']}\n"
+        f"Цель: {active['goal_text']}\n"
+        f"Награда: {active['reward_gold']} золота, {active['reward_exp']} опыта\n\n"
+        f"Статус: {status}"
+    )
 
 
 # =========================================================
@@ -887,7 +1152,7 @@ async def city_bags_handler(message: Message):
         message,
         "bag_market.png",
         render_mirna_text(message.from_user.id),
-        mirna_main_inline(),
+        mirna_main_inline(message.from_user.id),
     )
 
 
@@ -902,7 +1167,7 @@ async def city_monsters_handler(message: Message):
         message,
         "bag_market.png",
         render_varg_text(message.from_user.id),
-        varg_main_inline(),
+        varg_main_inline(message.from_user.id),
     )
 
 
@@ -915,7 +1180,7 @@ async def city_buyer_handler(message: Message):
     set_ui_screen(message.from_user.id, "district")
     await message.answer(
         render_bort_text(player.location_slug, message.from_user.id),
-        reply_markup=bort_main_inline(),
+        reply_markup=bort_main_inline(message.from_user.id),
     )
 
 
@@ -1029,10 +1294,72 @@ async def market_inline_callback(callback: CallbackQuery):
         )
         return
 
+    if data == "marketnpc:mirna_quest_menu":
+        await callback.message.edit_text(
+            render_mirna_quest_text(callback.from_user.id),
+            reply_markup=mirna_quest_inline(callback.from_user.id),
+        )
+        await callback.answer()
+        return
+
+    if data == "marketnpc:mirna_quest_take":
+        quest_slug = "mirna_travel_set"
+        quest = NPC_QUEST_DEFS[quest_slug]
+
+        if _get_active_npc_order(callback.from_user.id, "mirna"):
+            await callback.answer("У Мирны уже есть активный квест.", show_alert=True)
+            return
+
+        add_city_order(
+            telegram_id=callback.from_user.id,
+            order_slug=quest_slug,
+            title=quest["title"],
+            goal_text=quest["goal_text"],
+            reward_gold=quest["reward_gold"],
+            reward_exp=quest["reward_exp"],
+        )
+
+        await callback.message.edit_text(
+            render_mirna_quest_text(callback.from_user.id),
+            reply_markup=mirna_quest_inline(callback.from_user.id),
+        )
+        await callback.answer("Квест Мирны взят.")
+        return
+
+    if data == "marketnpc:mirna_quest_turnin":
+        active = _get_active_npc_order(callback.from_user.id, "mirna")
+        if not active:
+            await callback.answer("Нет активного квеста.", show_alert=True)
+            return
+
+        if not _npc_quest_ready(callback.from_user.id, active["order_slug"]):
+            await callback.answer("Для сдачи ещё не хватает предметов.", show_alert=True)
+            return
+
+        if not _complete_npc_quest_requirements(callback.from_user.id, active["order_slug"]):
+            await callback.answer("Не удалось списать предметы.", show_alert=True)
+            return
+
+        complete_city_order(active["id"])
+        _grant_npc_quest_rewards(callback.from_user.id, active["order_slug"])
+        q = NPC_QUEST_DEFS[active["order_slug"]]
+
+        await callback.message.answer(
+            f"✅ Мирна приняла квест:\n"
+            f"{q['title']}\n"
+            f"Награда: +{q['reward_gold']} золота, +{q['reward_exp']} опыта"
+        )
+        await callback.message.answer(
+            render_mirna_text(callback.from_user.id),
+            reply_markup=mirna_main_inline(callback.from_user.id),
+        )
+        await callback.answer("Квест сдан.")
+        return
+
     if data == "marketnpc:mirna_back":
         await callback.message.edit_text(
             render_mirna_text(callback.from_user.id),
-            reply_markup=mirna_main_inline(),
+            reply_markup=mirna_main_inline(callback.from_user.id),
         )
         await callback.answer()
         return
@@ -1094,11 +1421,16 @@ async def market_inline_callback(callback: CallbackQuery):
             await callback.answer("Нельзя продать последнего монстра.", show_alert=True)
             return
 
-        if not remove_player_monster(callback.from_user.id, monster_id):
-            await callback.answer(
-                "Продажа монстра не сработала. Если у тебя в репозитории другая функция удаления, подстрою под неё.",
-                show_alert=True,
-            )
+        removed = remove_player_monster(callback.from_user.id, monster_id)
+        if not removed:
+            try:
+                monsters.remove(target)
+                removed = True
+            except ValueError:
+                removed = False
+
+        if not removed:
+            await callback.answer("Не удалось продать монстра.", show_alert=True)
             return
 
         price = _get_monster_sell_price(target)
@@ -1117,10 +1449,72 @@ async def market_inline_callback(callback: CallbackQuery):
         )
         return
 
+    if data == "marketnpc:varg_quest_menu":
+        await callback.message.edit_text(
+            render_varg_quest_text(callback.from_user.id),
+            reply_markup=varg_quest_inline(callback.from_user.id),
+        )
+        await callback.answer()
+        return
+
+    if data == "marketnpc:varg_quest_take":
+        quest_slug = "varg_first_beast"
+        quest = NPC_QUEST_DEFS[quest_slug]
+
+        if _get_active_npc_order(callback.from_user.id, "varg"):
+            await callback.answer("У Варга уже есть активный квест.", show_alert=True)
+            return
+
+        add_city_order(
+            telegram_id=callback.from_user.id,
+            order_slug=quest_slug,
+            title=quest["title"],
+            goal_text=quest["goal_text"],
+            reward_gold=quest["reward_gold"],
+            reward_exp=quest["reward_exp"],
+        )
+
+        await callback.message.edit_text(
+            render_varg_quest_text(callback.from_user.id),
+            reply_markup=varg_quest_inline(callback.from_user.id),
+        )
+        await callback.answer("Квест Варга взят.")
+        return
+
+    if data == "marketnpc:varg_quest_turnin":
+        active = _get_active_npc_order(callback.from_user.id, "varg")
+        if not active:
+            await callback.answer("Нет активного квеста.", show_alert=True)
+            return
+
+        if not _npc_quest_ready(callback.from_user.id, active["order_slug"]):
+            await callback.answer("Подходящего монстра пока нет.", show_alert=True)
+            return
+
+        if not _complete_npc_quest_requirements(callback.from_user.id, active["order_slug"]):
+            await callback.answer("Не удалось передать монстра.", show_alert=True)
+            return
+
+        complete_city_order(active["id"])
+        _grant_npc_quest_rewards(callback.from_user.id, active["order_slug"])
+        q = NPC_QUEST_DEFS[active["order_slug"]]
+
+        await callback.message.answer(
+            f"✅ Варг принял квест:\n"
+            f"{q['title']}\n"
+            f"Награда: +{q['reward_gold']} золота, +{q['reward_exp']} опыта"
+        )
+        await callback.message.answer(
+            render_varg_text(callback.from_user.id),
+            reply_markup=varg_main_inline(callback.from_user.id),
+        )
+        await callback.answer("Квест сдан.")
+        return
+
     if data == "marketnpc:varg_back":
         await callback.message.edit_text(
             render_varg_text(callback.from_user.id),
-            reply_markup=varg_main_inline(),
+            reply_markup=varg_main_inline(callback.from_user.id),
         )
         await callback.answer()
         return
@@ -1180,10 +1574,72 @@ async def market_inline_callback(callback: CallbackQuery):
         await _run_existing_handler(callback, sell_resource_item_handler, sell_text)
         return
 
+    if data == "marketnpc:bort_quest_menu":
+        await callback.message.edit_text(
+            render_bort_quest_text(callback.from_user.id),
+            reply_markup=bort_quest_inline(callback.from_user.id),
+        )
+        await callback.answer()
+        return
+
+    if data == "marketnpc:bort_quest_take":
+        quest_slug = "bort_supply_batch"
+        quest = NPC_QUEST_DEFS[quest_slug]
+
+        if _get_active_npc_order(callback.from_user.id, "bort"):
+            await callback.answer("У Борта уже есть активный квест.", show_alert=True)
+            return
+
+        add_city_order(
+            telegram_id=callback.from_user.id,
+            order_slug=quest_slug,
+            title=quest["title"],
+            goal_text=quest["goal_text"],
+            reward_gold=quest["reward_gold"],
+            reward_exp=quest["reward_exp"],
+        )
+
+        await callback.message.edit_text(
+            render_bort_quest_text(callback.from_user.id),
+            reply_markup=bort_quest_inline(callback.from_user.id),
+        )
+        await callback.answer("Квест Борта взят.")
+        return
+
+    if data == "marketnpc:bort_quest_turnin":
+        active = _get_active_npc_order(callback.from_user.id, "bort")
+        if not active:
+            await callback.answer("Нет активного квеста.", show_alert=True)
+            return
+
+        if not _npc_quest_ready(callback.from_user.id, active["order_slug"]):
+            await callback.answer("Для сдачи ещё не хватает ресурсов.", show_alert=True)
+            return
+
+        if not _complete_npc_quest_requirements(callback.from_user.id, active["order_slug"]):
+            await callback.answer("Не удалось списать ресурсы.", show_alert=True)
+            return
+
+        complete_city_order(active["id"])
+        _grant_npc_quest_rewards(callback.from_user.id, active["order_slug"])
+        q = NPC_QUEST_DEFS[active["order_slug"]]
+
+        await callback.message.answer(
+            f"✅ Борт принял квест:\n"
+            f"{q['title']}\n"
+            f"Награда: +{q['reward_gold']} золота, +{q['reward_exp']} опыта"
+        )
+        await callback.message.answer(
+            render_bort_text(player.location_slug, callback.from_user.id),
+            reply_markup=bort_main_inline(callback.from_user.id),
+        )
+        await callback.answer("Квест сдан.")
+        return
+
     if data == "marketnpc:bort_back":
         await callback.message.edit_text(
             render_bort_text(player.location_slug, callback.from_user.id),
-            reply_markup=bort_main_inline(),
+            reply_markup=bort_main_inline(callback.from_user.id),
         )
         await callback.answer()
         return
