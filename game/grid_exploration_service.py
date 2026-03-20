@@ -330,8 +330,9 @@ def render_exploration_result(result: dict, location_slug: str) -> str:
     lines = []
 
     if result["new_cell"]:
+        depth_bar = "▓" * (result['row'] + 1) + "░" * (9 - result['row'])
         lines.append(f"{result['direction']} → {result['cell_icon']} {result['cell_name']}")
-        lines.append(f"Позиция: колонка {result['col']+1}, глубина {result['row']+1}")
+        lines.append(f"Глубина: [{depth_bar}] {result['row']+1}/10")
     else:
         lines.append(f"Ты обследуешь уже знакомое место.")
 
@@ -377,9 +378,10 @@ def render_exploration_panel(telegram_id: int, location_slug: str) -> str:
     from game.exploration_service import get_cartographer_level
     cart_level = get_cartographer_level(telegram_id)
 
+    depth_bar = "▓" * (row + 1) + "░" * (9 - row)
     lines = [
-        f"🗺 Исследование: [{bar}] {pct}%",
-        f"📐 Картограф: {cart_level} ур. | Позиция: {col+1}/{row+1}",
+        f"🗺 Исследовано: [{bar}] {pct}%",
+        f"📐 Картограф {cart_level} ур. | Глубина [{depth_bar}] {row+1}/10",
     ]
 
     if pct >= THRESHOLDS["dungeon_unlocks"]:
