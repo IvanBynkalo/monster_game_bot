@@ -434,6 +434,7 @@ async def flee_handler(message: Message):
         text = _append_progression(message.from_user.id, result["text"], result, _district_mood_from_player(player), "flee_success")
         if damage_text:
             text += "\n\n" + damage_text
+        text += "\n\n🏕 Ты вернулся в безопасную зону."
         await message.answer(text, reply_markup=main_menu(player.location_slug))
         await message.answer(
             "Что делать:",
