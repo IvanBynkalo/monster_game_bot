@@ -294,7 +294,8 @@ async def explore_handler(message: Message):
         _encounter_monster_type = encounter.get("monster_type", "void")
     else:
         event = world_event or encounter
-        text = f"{intro}\n\n---\n\n{event['text']}"
+        event_text = event.get("text") or event.get("title") or "Тишина окутывает местность."
+        text = f"{intro}\n\n---\n\n{event_text}"
 
     _, changes = grant_event_emotions(message.from_user.id, "anomaly", district_mood=district_mood)
     emotion_text = render_emotion_changes(changes)
