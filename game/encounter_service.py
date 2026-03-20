@@ -409,9 +409,10 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
     """
     if encounter["type"] not in ("monster", "wildlife"):
         return {"ok": False, "text": "Здесь не на кого нападать."}
-    # Для зверей нормализуем поле monster_name
-    if encounter["type"] == "wildlife" and "monster_name" not in encounter:
-        encounter["monster_name"] = encounter.get("name", "Зверь")
+    # Нормализуем поля для зверей
+    if encounter["type"] == "wildlife":
+        if "monster_name" not in encounter:
+            encounter["monster_name"] = encounter.get("name", "Зверь")
         if "monster_type" not in encounter:
             encounter["monster_type"] = "nature"
 
@@ -497,7 +498,7 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
     }
 
 def resolve_capture(encounter: dict):
-    if encounter["type"] != "monster":
+    if encounter["type"] not in ("monster", "wildlife"):
         return {"ok": False, "text": "Здесь нечего ловить."}
     base_hp = encounter.get("max_hp", encounter["hp"])
     bonus = 0.15 if encounter["hp"] <= max(1, base_hp // 2) else 0
@@ -513,14 +514,65 @@ def resolve_capture(encounter: dict):
     return {"ok": True, "finished": False, "captured": False, "player_damage": enemy_attack,
             "text": f"🎯 Попытка поимки провалилась. {encounter['monster_name']} вырывается!\nВ ответ монстр атакует на {enemy_attack}."}
 
-def resolve_flee(encounter: dict):
-    if encounter["type"] != "monster":
-        return {"ok": True, "finished": True, "player_damage": 0, "text": "Ты покидаешь это место."}
-    success = random.random() <= 0.8
-    if success:
-        return {"ok": True, "finished": True, "player_damage": 0, "text": f"🏃 Ты успешно сбегаешь от {encounter['monster_name']}."}
+def calculate_flee_chance(player_level: int = 1, agility: int = 0,
+                          enemy_level: int = 1, enemy_type: str = "monster",
+                          has_flee_elixir: bool = False) -> float:
+    """
+    Рассчитывает шанс побега (0.10–0.90).
+    Факторы: уровень героя, ловкость, уровень врага, тип врага, элексир побега.
+    """
+    base = 0.50
+    base += player_level * 0.02        # +2% за уровень героя
+    base += (agility // 5) * 0.05     # +5% за каждые 5 ловкости
+    base -= enemy_level * 0.03        # -3% за уровень врага
+    if enemy_type in ("world_boss", "boss"):
+        base -= 0.25                  # штраф за боссов
+    elif enemy_type == "elite":
+        base -= 0.15                  # штраф за элитных
+
+    if has_flee_elixir:
+        base += 0.25                  # +25% от элексира
+        base = max(0.40, base)        # минимум 40% с элексиром
+    else:
+        base = max(0.10, base)        # минимум 10% без элексира
+
+    return min(0.90, base)
+
+
+def resolve_flee(encounter: dict, player_level: int = 1, agility: int = 0,
+                 has_flee_elixir: bool = False):
+    """Попытка побега с учётом характеристик героя и врага."""
+    if encounter["type"] not in ("monster", "wildlife"):
+        return {"ok": True, "finished": True, "player_damage": 0,
+                "text": "🏕 Ты возвращаешься в безопасную зону."}
+
+    enemy_type = "monster"
+    if encounter.get("type") == "world_boss":
+        enemy_type = "world_boss"
+    elif encounter.get("is_elite"):
+        enemy_type = "elite"
+
+    enemy_level = encounter.get("level", 1)
+    chance = calculate_flee_chance(player_level, agility, enemy_level, enemy_type, has_flee_elixir)
+    chance_pct = int(chance * 100)
+
+    name = encounter.get("monster_name") or encounter.get("name", "существо")
+
+    if random.random() <= chance:
+        return {
+            "ok": True, "finished": True, "player_damage": 0,
+            "flee_success": True,
+            "text": f"🏃 Тебе удалось сбежать от {name}!\n_(Шанс побега был {chance_pct}%)_",
+        }
+
+    # Неудача — враг контратакует
     enemy_attack = random.randint(max(2, encounter["attack"] - 2), encounter["attack"] + 2)
     enemy_attack = max(0, int(enemy_attack * encounter.get("counter_multiplier", 1.0)))
     encounter["counter_multiplier"] = 1.0
-    return {"ok": True, "finished": False, "player_damage": enemy_attack,
-            "text": f"🏃 Побег не удался. {encounter['monster_name']} успевает атаковать на {enemy_attack}."}
+    return {
+        "ok": True, "finished": False, "player_damage": enemy_attack,
+        "flee_success": False,
+        "text": f"❌ Побег не удался! {name} оказался быстрее...\n_(Шанс побега был {chance_pct}%)_",
+    }
+
+
