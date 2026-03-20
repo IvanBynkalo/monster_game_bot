@@ -4,7 +4,7 @@ from game.infection_service import render_monster_infection
 from game.type_service import get_type_label
 from game.monster_abilities import render_abilities
 from keyboards.main_menu import main_menu
-from keyboards.monsters_menu import monsters_menu
+from keyboards.monsters_menu import monsters_menu, monsters_inline_menu
 from utils.logger import log_event
 
 RARITY_LABELS = {"common": "Обычный", "rare": "Редкий", "epic": "Эпический", "legendary": "Легендарный", "mythic": "Мифический"}
@@ -52,7 +52,7 @@ async def monsters_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     monsters = get_player_monsters(message.from_user.id)
-    await message.answer(_render_monster_list(monsters), reply_markup=monsters_menu(monsters))
+    await message.answer(_render_monster_list(monsters), reply_markup=monsters_inline_menu(monsters))
 
 async def set_active_monster_handler(message: Message):
     player = get_player(message.from_user.id)
@@ -74,7 +74,7 @@ async def set_active_monster_handler(message: Message):
     monsters = get_player_monsters(message.from_user.id)
     await message.answer(
         f"✅ Активный монстр изменён: {active['name']}\n\n{_render_monster_list(monsters)}",
-        reply_markup=monsters_menu(monsters),
+        reply_markup=monsters_inline_menu(monsters),
     )
 
 async def heal_monster_handler(message: Message):

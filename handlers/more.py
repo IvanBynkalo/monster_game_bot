@@ -6,6 +6,7 @@ from game.location_rules import is_city
 from keyboards.city_menu import city_menu
 from keyboards.main_menu import main_menu
 from keyboards.more_menu import more_menu
+from keyboards.healing_menu import healing_menu
 from keyboards.shop_menu import shop_menu
 
 
@@ -19,7 +20,23 @@ async def more_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     set_ui_screen(message.from_user.id, "more")
-    await message.answer("Выбери дополнительное действие.", reply_markup=more_menu(is_admin=_is_admin(message.from_user.id)))
+    await message.answer(
+        "📂 Меню:",
+        reply_markup=more_menu(is_admin=_is_admin(message.from_user.id))
+    )
+
+
+async def healing_menu_handler(message: Message):
+    """Открывает подменю лечения (3-й уровень)."""
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    set_ui_screen(message.from_user.id, "healing")
+    await message.answer(
+        "❤️ Лечение и восстановление:",
+        reply_markup=healing_menu()
+    )
 
 
 async def back_handler(message: Message):
@@ -35,7 +52,18 @@ async def back_handler(message: Message):
         await message.answer("Возврат в магазин.", reply_markup=shop_menu())
         return
 
-    if screen in {"board", "district", "shop", "craft", "progression", "inventory", "more", "navigation", "city", "guilds"}:
+    # Из подменю лечения → в «Ещё»
+    if screen == "healing":
+        set_ui_screen(message.from_user.id, "more")
+        await message.answer(
+            "📂 Меню:",
+            reply_markup=more_menu(is_admin=_is_admin(message.from_user.id))
+        )
+        return
+
+    # Из «Ещё» и других подменю → в главное меню
+    if screen in {"board", "district", "shop", "craft", "progression",
+                  "inventory", "more", "navigation", "city", "guilds"}:
         set_ui_screen(message.from_user.id, "main")
         if is_city(player.location_slug):
             await message.answer("Главное меню города", reply_markup=city_menu(player.current_district_slug))

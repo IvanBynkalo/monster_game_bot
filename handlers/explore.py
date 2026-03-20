@@ -34,7 +34,7 @@ from game.dungeon_keys_service import roll_dungeon_key, get_key_name
 from game.world_boss_service import get_world_event, roll_world_boss
 from game.world_state_service import get_elite_expedition, roll_weather
 from game.player_survival_service import render_injury_warning
-from keyboards.encounter_menu import encounter_menu
+from keyboards.encounter_menu import encounter_inline_menu, encounter_menu
 from keyboards.main_menu import main_menu
 from utils.logger import log_event
 from utils.cooldown import cooldown_guard
@@ -223,7 +223,10 @@ async def explore_handler(message: Message):
             extras.append(expired_text)
         if extras:
             text += "\n\n" + "\n\n".join(extras)
-        await message.answer(text, reply_markup=encounter_menu())
+        await message.answer(text, reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ))
         return
 
     encounter_slug = player.current_district_slug
@@ -282,5 +285,8 @@ async def explore_handler(message: Message):
 
     await message.answer(
         text + ("\n\n" + "\n\n".join(extras) if extras else ""),
-        reply_markup=encounter_menu() if encounter["type"] == "monster" else main_menu(player.location_slug),
+        reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        ) if encounter["type"] == "monster" else main_menu(player.location_slug),
     )
