@@ -44,7 +44,7 @@ from handlers.inventory import (
 from handlers.craft import craft_handler, resources_handler, craft_item_handler
 from handlers.profile import profile_handler, restore_energy_handler, profile_tab_callback, profile_stat_callback
 from handlers.healing import heal_hero_handler, rest_hero_handler
-from handlers.codex import codex_handler
+from handlers.codex import codex_handler, bestiary_callback
 from handlers.relics import relics_handler
 from handlers.progression import (
     progression_handler,
@@ -322,6 +322,10 @@ dp.callback_query.register(
 dp.callback_query.register(
     profile_stat_callback,
     lambda c: c.data and c.data.startswith("profile:stat:"),
+)
+dp.callback_query.register(
+    bestiary_callback,
+    lambda c: c.data and c.data.startswith("bestiary:"),
 )
 
 dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
@@ -723,6 +727,45 @@ async def fight_inline_callback(callback: CallbackQuery):
             for lu in lvlups:
                 lines.append(f"⬆️ Монстр достиг уровня {lu['level']}!")
 
+            # Лут с зверя + бестиарий + трофей + недельный квест
+            if enc.get("type") == "wildlife":
+                from game.bestiary_service import register_bestiary_seen, check_trophy_drop
+                from game.weekly_quest_service import progress_weekly_quest, claim_weekly_reward
+                register_bestiary_seen(uid, enc["name"], "wildlife")
+
+                # Лут-ресурс
+                if enc.get("loot_slug"):
+                    from database.repositories import add_resource
+                    add_resource(uid, enc["loot_slug"], 1)
+                    from game.gather_service import RESOURCES_BY_LOCATION
+                    loot_name = enc["loot_slug"]
+                    for loc_pool in RESOURCES_BY_LOCATION.values():
+                        for r in loc_pool:
+                            if r["slug"] == enc["loot_slug"]:
+                                loot_name = r["name"]
+                                break
+                    lines.append(f"🎒 Добыча: {loot_name} x1")
+
+                # Трофей (15% шанс с редких зверей)
+                trophy = check_trophy_drop(enc["name"])
+                if trophy:
+                    from database.repositories import add_resource
+                    add_resource(uid, trophy, 1)
+                    from game.bestiary_service import TROPHY_ITEMS
+                    trophy_name = TROPHY_ITEMS.get(trophy, {}).get("name", trophy)
+                    lines.append(f"🏆 Трофей: {trophy_name}!")
+
+                # Прогресс недельного квеста
+                player_now = get_player(uid)
+                if player_now:
+                    wq_done = progress_weekly_quest(
+                        uid, player_now.location_slug,
+                        action="defeat_wildlife", name=enc["name"]
+                    )
+                    if wq_done:
+                        reward_text = claim_weekly_reward(uid, wq_done)
+                        lines.append(f"\n🎉 Недельный квест выполнен!\n{reward_text}")
+
             if result.get("captured"):
                 from database.repositories import add_captured_monster
                 add_captured_monster(uid, enc["monster_name"], enc.get("rarity","common"),
@@ -840,6 +883,37 @@ async def monster_inline_callback(callback: CallbackQuery):
     elif action == "back":
         await monsters_handler(callback.message)
 
+
+
+@dp.message(Command("wildlife_raid"))
+async def wildlife_raid_cmd(message: Message):
+    from database.repositories import get_player_guild
+    from game.guild_service import simulate_wildlife_raid, RARE_WILDLIFE_BOSSES
+    guild = get_player_guild(message.from_user.id)
+    if not guild:
+        await message.answer("Ты не в гильдии. /guild")
+        return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        boss_list = "\n".join(
+            f"  {b['slug']} — {b['name']} (HP {b['hp']}, исслед. {b['min_exploration']}%+)"
+            for b in RARE_WILDLIFE_BOSSES
+        )
+        await message.answer(f"🐾 Рейд на редкого зверя:\n{boss_list}\n\n/wildlife_raid <slug>")
+        return
+    result = simulate_wildlife_raid(guild["id"], parts[1].strip())
+    if "error" in result:
+        await message.answer(f"❌ {result['error']}")
+        return
+    lines = [f"🐾 Рейд гильдии на {result['boss_name']}", f"Участников: {result['participants']}", ""]
+    lines.extend(result["log"][:8])
+    lines.append("")
+    if result["victory"]:
+        lines.append(f"🏆 ПОБЕДА! +{result['split_gold']}з, +{result['split_exp']} опыта каждому")
+        lines.append(f"🏅 Трофей получает победитель рейда!")
+    else:
+        lines.append(f"💀 Провал. Осталось HP: {result['boss_hp_left']} | Частичная: +{result['split_gold']}з")
+    await message.answer("\n".join(lines))
 
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
