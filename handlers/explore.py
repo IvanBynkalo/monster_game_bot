@@ -299,56 +299,89 @@ async def explore_handler(message: Message):
 
     _, changes = grant_event_emotions(message.from_user.id, "anomaly", district_mood=district_mood)
     emotion_text = render_emotion_changes(changes)
+
+    # ── Опасность местности ──────────────────────────────────────────────────
     if hazard_text:
         extras.append(hazard_text + (f"\nПотеря HP монстра: {hazard_damage}" if hazard_damage > 0 else ""))
         if hazard_damage >= 4:
             damage_player_hp(message.from_user.id, 2)
             current_player = get_player(message.from_user.id)
-            extras.append(f"❤️ Герой тоже получает 2 урона. HP героя: {current_player.hp}/{current_player.max_hp}")
-    if emotion_text:
-        extras.append(emotion_text)
+            extras.append(f"❤️ HP героя: {current_player.hp}/{current_player.max_hp}")
+
+    # ── Квесты и сюжет ───────────────────────────────────────────────────────
+    quest_texts = _render_completed_quests(message.from_user.id, completed_now)
+    if quest_texts:
+        extras.extend(quest_texts)
+    if story_done:
+        extras.append(apply_story_reward(message.from_user.id, story_done))
+
+    # ── Эмоции и мутация ─────────────────────────────────────────────────────
     infection_update = render_infection_update(apply_dominant_emotion_infection(message.from_user.id))
+    emo_parts = []
+    if emotion_text:
+        emo_parts.append(emotion_text)
     if infection_update:
-        extras.append(infection_update)
+        emo_parts.append(infection_update)
+    if emo_parts:
+        extras.append("\n".join(emo_parts))
+
+    # ── Рождение монстра ─────────────────────────────────────────────────────
     _born_monster = try_birth_emotional_monster(message.from_user.id)
     born = render_birth_text(_born_monster)
     if born:
         log_event("emotion_birth", message.from_user.id, "explore_birth")
         extras.append(born)
     _born_emotion = _born_monster.get("mood") if _born_monster else None
-    extras.extend(_render_completed_quests(message.from_user.id, completed_now))
-    if story_done:
-        extras.append(apply_story_reward(message.from_user.id, story_done))
+
+    # ── Исследование и эффекты ───────────────────────────────────────────────
     if _expl_text:
         extras.append(_expl_text)
-    extras.append(effect_text)
+    if effect_text and "нет" not in effect_text.lower():
+        extras.append(effect_text)
     if expired_text:
         extras.append(expired_text)
 
-    full_text = text + ("\n\n" + "\n\n".join(extras) if extras else "")
-    # Если было рождение монстра — показываем отдельное изображение
+    # Разбиваем текст на основной и extras для красивого отображения
+    extras_clean = [e for e in extras if e and e.strip()]
+    full_text = text
+    if extras_clean:
+        full_text += "\n\n" + "\n\n".join(extras_clean)
+
+    # Рождение монстра — отдельное красивое сообщение
     _born_emotion_local = locals().get("_born_emotion")
     if _born_emotion_local and born:
         from utils.images import send_birth_image
         await send_birth_image(message, _born_emotion_local, born)
 
     if encounter["type"] in ("monster", "wildlife"):
-        kb = encounter_inline_menu(
-            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
-            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+        # ── БОЙ: inline кнопки НА сообщении, reply-меню внизу НЕ меняем ──
+        has_any_trap = (
+            get_item_count(message.from_user.id, 'basic_trap') > 0 or
+            get_item_count(message.from_user.id, 'frost_trap') > 0 or
+            get_item_count(message.from_user.id, 'blast_trap') > 0
         )
-        if encounter["type"] == "wildlife":
-            # Зверей нельзя поймать — используем боевое меню без кнопки поимки
-            from keyboards.encounter_menu import encounter_inline_menu as _wkb
-            kb = _wkb(has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
-                      has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0)
-            await message.answer(full_text, reply_markup=kb)
-        else:
+        has_ptrap = get_item_count(message.from_user.id, 'poison_trap') > 0
+
+        if encounter["type"] == "monster":
+            kb = encounter_inline_menu(has_trap=has_any_trap, has_poison_trap=has_ptrap)
             from utils.images import send_monster_image
             mtype = locals().get("_encounter_monster_type", encounter.get("monster_type", "void"))
             await send_monster_image(message, mtype, full_text, reply_markup=kb)
+        else:
+            # Зверь — поймать нельзя, только бой
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            wildlife_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
+                    InlineKeyboardButton(text="✨ Навык",      callback_data="fight:skill"),
+                ],
+                [InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")] if has_any_trap else [],
+                [InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")],
+            ])
+            # Убираем пустые ряды
+            wildlife_kb.inline_keyboard = [r for r in wildlife_kb.inline_keyboard if r]
+            await message.answer(full_text, reply_markup=wildlife_kb)
     else:
-        # Для событий без монстра — показываем картинку локации
-        from utils.images import send_location_image
-        await send_location_image(message, player.location_slug, full_text,
-                                   reply_markup=main_menu(player.location_slug))
+        # ── СОБЫТИЕ: просто текст, reply-меню внизу остаётся прежним ──
+        # Никаких кнопок на сообщении, никаких изменений reply-меню
+        await message.answer(full_text)
