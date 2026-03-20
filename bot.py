@@ -635,13 +635,35 @@ async def fight_inline_callback(callback: CallbackQuery):
     await callback.answer()
 
     enc = get_pending_encounter(uid)
-    if not enc or enc.get("type") != "monster":
+    if not enc:
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
+        # Показываем меню локации
+        _p0 = get_player(uid)
+        if _p0:
+            from game.dungeon_service import DUNGEONS
+            from game.grid_exploration_service import is_dungeon_available
+            from keyboards.location_menu import location_actions_inline as _lai
+            try:
+                _hd = _p0.location_slug in DUNGEONS and is_dungeon_available(uid, _p0.location_slug)
+            except Exception:
+                _hd = False
+            await callback.message.answer(
+                "🏕 Ты вернулся в безопасную зону.\n\nЧто делать дальше?",
+                reply_markup=_lai(_p0.location_slug, has_dungeon=_hd)
+            )
+        return
+    # Разрешаем бой как с монстрами так и со зверями
+    if enc.get("type") not in ("monster", "wildlife"):
         await callback.message.answer("Встреча завершена.")
         return
+    # Для зверей нормализуем поля
+    if enc.get("type") == "wildlife" and "monster_name" not in enc:
+        enc["monster_name"] = enc.get("name", "Зверь")
+        if "monster_type" not in enc:
+            enc["monster_type"] = "nature"
 
     player = get_player(uid)
     active = get_active_monster(uid)
@@ -1159,19 +1181,36 @@ async def explore_direction_callback(callback: CallbackQuery):
     if encounter["type"] == "monster":
         save_pending_encounter(uid, encounter)
         parts.append(render_encounter_text(encounter))
+        # В бою — только эмоции, без навигации по сетке
+        if emotion_text:
+            parts.append(emotion_text)
+        if infection_update:
+            parts.append(infection_update)
     elif encounter["type"] == "wildlife":
         save_pending_encounter(uid, encounter)
         parts.append(render_wildlife_encounter(encounter))
+        # В бою — только эмоции, без навигации по сетке
+        if emotion_text:
+            parts.append(emotion_text)
+        if infection_update:
+            parts.append(infection_update)
     else:
+        # Событие — показываем всё включая мини-карту
         event_text = encounter.get("text") or encounter.get("title") or "Тишина..."
         parts.append(event_text)
-
-    if expl_text:
-        parts.append(expl_text)
-    if emotion_text:
-        parts.append(emotion_text)
-    if infection_update:
-        parts.append(infection_update)
+        if emotion_text:
+            parts.append(emotion_text)
+        if infection_update:
+            parts.append(infection_update)
+        if expl_text:
+            parts.append(expl_text)
+        # Мини-карта 5×5 вокруг текущей позиции
+        try:
+            from game.grid_exploration_service import render_mini_map
+            _mini = render_mini_map(get_grid(uid, player.location_slug))
+            parts.append(_mini)
+        except Exception:
+            pass
 
     full_text = "\n\n".join(p for p in parts if p and p.strip())
 
@@ -1247,8 +1286,12 @@ async def explore_stop_callback(callback: CallbackQuery):
     dungeon_ok = is_dungeon_available(callback.from_user.id, player.location_slug)
     has_dungeon = dungeon_ok and player.location_slug in DUNGEONS
 
+    from game.grid_exploration_service import render_mini_map
+    _grid_stop = get_grid(callback.from_user.id, player.location_slug)
+    _panel_stop = render_exploration_panel(callback.from_user.id, player.location_slug)
+    _mini_stop = render_mini_map(_grid_stop)
     await callback.message.answer(
-        render_exploration_panel(callback.from_user.id, player.location_slug),
+        _panel_stop + "\n\n" + _mini_stop,
         reply_markup=main_menu(player.location_slug, player.current_district_slug)
     )
     await callback.message.answer(
@@ -1270,9 +1313,10 @@ async def map_grid_cmd(message: Message):
         await message.answer("В городе нет карты исследования.")
         return
     grid = get_grid(message.from_user.id, player.location_slug)
-    grid_map = render_grid_map(grid)
+    from game.grid_exploration_service import render_mini_map
+    mini = render_mini_map(grid)
     panel = render_exploration_panel(message.from_user.id, player.location_slug)
-    await message.answer(panel + "\n\n" + grid_map)
+    await message.answer(panel + "\n\n" + mini)
 
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
