@@ -20,9 +20,12 @@ from keyboards.navigation_menu import navigation_menu
 
 
 def _normalize_move_text(text: str) -> str:
+    import re
     text = (text or "").strip()
     if text.startswith("Перейти: "):
-        return "🚶 " + text.replace("Перейти: ", "", 1)
+        text = "🚶 " + text.replace("Перейти: ", "", 1)
+    # Убираем суффикс уровня "(ур.X+)" если есть
+    text = re.sub(r"\s*\(ур\.\d+\+\)\s*$", "", text).strip()
     return text
 
 
