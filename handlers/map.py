@@ -61,7 +61,7 @@ async def location_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     set_ui_screen(message.from_user.id, "main")
-    loc_text = render_location_card(player.location_slug)
+    loc_text = render_location_card(player.location_slug, player=player)
     # Добавляем панель рождения если в нужном месте
     from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
     if player.location_slug in BIRTH_LOCATIONS:
@@ -101,6 +101,15 @@ async def move_handler(message: Message):
         await message.answer("Из текущей локации туда пройти нельзя.")
         return
 
+    # Проверка уровня и требований локации
+    from database.repositories import get_player_story
+    story = get_player_story(message.from_user.id)
+    completed_ids = story.get("completed_ids", []) if story else []
+    allowed, reason = check_location_access(player, target.slug, completed_ids)
+    if not allowed:
+        await message.answer(reason)
+        return
+
     update_player_location(message.from_user.id, target.slug)
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
     set_ui_screen(message.from_user.id, "main")
@@ -114,7 +123,7 @@ async def move_handler(message: Message):
         _wq_text = f"\n\n🎉 Новый недельный квест!\n{render_weekly_quest(_new_wq)}"
     elif _active_wq and not _active_wq["completed"]:
         _wq_text = f"\n\n{render_weekly_quest(_active_wq)}"
-    text = f"🚶 Ты переместился в новую область.\n\n{render_location_card(target.slug)}\n\n{_expl_panel}{_wq_text}"
+    text = f"🚶 Ты переместился в новую область.\n\n{render_location_card(target.slug, player=player)}\n\n{_expl_panel}{_wq_text}"
     if story_done:
         text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
 
