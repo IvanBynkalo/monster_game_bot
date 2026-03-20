@@ -1050,92 +1050,184 @@ async def birth_panel_cmd(message: Message):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("explore:dir:"))
 async def explore_direction_callback(callback: CallbackQuery):
-    """Выбор направления исследования на сетке 10x10."""
+    """Выбор направления — движение по сетке + генерация встречи."""
+    import random as _random
     direction = callback.data.split(":", 2)[2]
     uid = callback.from_user.id
     await callback.answer()
 
-    from database.repositories import get_player, spend_player_energy
+    from database.repositories import (
+        get_player, spend_player_energy, get_item_count,
+        save_pending_encounter, clear_pending_encounter,
+        add_player_gold, has_living_monster,
+    )
     from game.grid_exploration_service import (
         explore_cell, render_exploration_result, render_exploration_panel,
         get_available_directions, get_grid, is_dungeon_available,
+        get_current_cell_bonuses,
     )
+    from game.wildlife_service import has_wildlife, roll_wildlife, render_wildlife_encounter
+    from game.encounter_service import generate_district_encounter, render_encounter_text
+    from game.emotion_service import grant_event_emotions, render_emotion_changes
+    from game.infection_service import apply_dominant_emotion_infection, render_infection_update
+    from game.map_service import get_location
     from keyboards.location_menu import location_actions_inline
-    from game.dungeon_service import DUNGEONS
+    from keyboards.encounter_menu import encounter_inline_menu
     from keyboards.main_menu import main_menu
+    from game.dungeon_service import DUNGEONS
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     player = get_player(uid)
     if not player:
         await callback.message.answer("Сначала напиши /start")
         return
 
-    # Тратим энергию
+    if player.is_defeated:
+        await callback.message.answer("☠️ Герой повержен. Сначала вылечи его.")
+        return
+
+    # Проверяем наличие живого монстра
+    if not has_living_monster(uid):
+        await callback.message.answer(
+            "⚠️ Твой монстр пал в бою.\n"
+            "Без боеспособного монстра нельзя исследовать.\n"
+            "Отправляйся в 🏙 Сереброград."
+        )
+        return
+
     if not spend_player_energy(uid, 1):
         await callback.message.answer("⚡ Недостаточно энергии для исследования.")
         return
 
-    # Исследуем выбранную клетку
-    result = explore_cell(uid, player.location_slug, direction)
-    expl_text = render_exploration_result(result, player.location_slug)
+    # Сбрасываем старую встречу
+    clear_pending_encounter(uid)
 
-    # Начисляем эмоции за исследование
-    from game.emotion_service import grant_event_emotions, render_emotion_changes
-    from game.map_service import get_location
+    # Двигаемся на сетке
+    cell_result = explore_cell(uid, player.location_slug, direction)
+    expl_text = render_exploration_result(cell_result, player.location_slug)
+    cell_bonuses = get_current_cell_bonuses(uid, player.location_slug)
+
+    # Пороговые награды
+    reward = cell_result.get("threshold_reward")
+    if reward and reward.get("gold"):
+        add_player_gold(uid, reward["gold"])
+
+    # Эмоции за исследование
     loc = get_location(player.location_slug)
     district_mood = loc.mood if loc else "fear"
-    _, changes = grant_event_emotions(uid, "explore", district_mood=district_mood)
-    emotion_text = render_emotion_changes(changes)
+    _, emotion_changes = grant_event_emotions(uid, "explore", district_mood=district_mood)
+    emotion_text = render_emotion_changes(emotion_changes)
 
-    # Формируем ответ
-    lines = [expl_text]
-    if emotion_text:
-        lines.append(emotion_text)
+    # Мутация монстра
+    infection_update = render_infection_update(apply_dominant_emotion_infection(uid))
 
-    # Пороговая награда — золото/ресурсы
-    reward = result.get("threshold_reward")
-    if reward:
-        if reward.get("gold"):
-            from database.repositories import add_player_gold
-            add_player_gold(uid, reward["gold"])
-            lines.append("💰 +" + str(reward["gold"]) + " золота")
-        if reward.get("resource"):
-            from database.repositories import add_resource
-            add_resource(uid, reward["resource"], reward.get("amount", 1))
-            lines.append("🎁 " + reward["resource"] + " x" + str(reward.get("amount", 1)))
-        if reward.get("item"):
-            from database.repositories import add_item
-            add_item(uid, reward["item"], 1)
+    # ── Генерация встречи ────────────────────────────────────────────────────
+    _monster_chance = max(8, 12 + int(cell_bonuses.get("rare_bonus", 0) * 100))
+    _wildlife_chance = 62
+    _roll = _random.randint(1, 100)
 
-    await callback.message.answer(
-        "\n\n".join(lines),
-        reply_markup=main_menu(player.location_slug, player.current_district_slug)
-    )
+    encounter_slug = player.current_district_slug
+    encounter = None
 
-    # Обновляем inline-меню — показываем следующие направления или действия
-    dungeon_ok = is_dungeon_available(uid, player.location_slug)
-    has_dungeon = dungeon_ok and player.location_slug in DUNGEONS
+    if _roll <= _monster_chance and encounter_slug:
+        _try = generate_district_encounter(encounter_slug)
+        if _try.get("type") == "monster":
+            encounter = _try
 
-    _grid = get_grid(uid, player.location_slug)
-    next_dirs = get_available_directions(_grid)
+    if encounter is None and _roll <= _monster_chance + _wildlife_chance:
+        if has_wildlife(player.location_slug):
+            _animal = roll_wildlife(player.location_slug)
+            if _animal:
+                encounter = _animal
 
-    if len(next_dirs) > 1:
-        # Есть куда идти — показываем направления
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        dir_rows = [
-            [InlineKeyboardButton(text=d["label"], callback_data="explore:dir:" + d["dir"])]
-            for d in next_dirs
-        ]
-        dir_rows.append([InlineKeyboardButton(text="🏕 Остановиться", callback_data="explore:stop")])
-        await callback.message.answer(
-            "Куда дальше?\n" + render_exploration_panel(uid, player.location_slug),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=dir_rows)
-        )
+    if encounter is None:
+        # Событие
+        if encounter_slug:
+            _try = generate_district_encounter(encounter_slug)
+            if _try.get("type") != "monster":
+                encounter = _try
+        if encounter is None:
+            encounter = {"type": "event", "text": "Тишина окутывает местность."}
+
+    # ── Формируем текст ──────────────────────────────────────────────────────
+    cell_icon = cell_result.get("cell_icon", "🌿")
+    cell_name = cell_result.get("cell_name", "")
+    intro = f"Ты исследуешь {cell_icon} {cell_name}."
+
+    parts = [intro, "---"]
+
+    if encounter["type"] == "monster":
+        save_pending_encounter(uid, encounter)
+        parts.append(render_encounter_text(encounter))
+    elif encounter["type"] == "wildlife":
+        save_pending_encounter(uid, encounter)
+        parts.append(render_wildlife_encounter(encounter))
     else:
-        # Некуда идти — показываем меню действий
+        event_text = encounter.get("text") or encounter.get("title") or "Тишина..."
+        parts.append(event_text)
+
+    if expl_text:
+        parts.append(expl_text)
+    if emotion_text:
+        parts.append(emotion_text)
+    if infection_update:
+        parts.append(infection_update)
+
+    full_text = "\n\n".join(p for p in parts if p and p.strip())
+
+    # ── Отправляем ───────────────────────────────────────────────────────────
+    if encounter["type"] in ("monster", "wildlife"):
+        _fresh = get_player(uid)
         await callback.message.answer(
-            "Что делать:",
-            reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+            "⚔️ Встреча!",
+            reply_markup=main_menu(_fresh.location_slug, _fresh.current_district_slug)
         )
+        has_any_trap = any(get_item_count(uid, t) > 0 for t in ["basic_trap","frost_trap","blast_trap"])
+        has_ptrap = get_item_count(uid, "poison_trap") > 0
+
+        if encounter["type"] == "monster":
+            from keyboards.encounter_menu import encounter_inline_menu
+            kb = encounter_inline_menu(has_trap=has_any_trap, has_poison_trap=has_ptrap)
+            from utils.images import send_monster_image
+            await send_monster_image(callback.message, encounter.get("monster_type","void"), full_text, reply_markup=kb)
+        else:
+            wildlife_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
+                 InlineKeyboardButton(text="✨ Навык", callback_data="fight:skill")],
+                *([[InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")]] if has_any_trap else []),
+                [InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")],
+            ])
+            await callback.message.answer(full_text, reply_markup=wildlife_kb)
+    else:
+        # Событие — показываем текст + следующие направления
+        _fresh = get_player(uid)
+        await callback.message.answer(
+            full_text,
+            reply_markup=main_menu(_fresh.location_slug, _fresh.current_district_slug)
+        )
+        # Inline меню — следующие направления или действия
+        _grid = get_grid(uid, player.location_slug)
+        next_dirs = get_available_directions(_grid)
+        try:
+            _has_dng = player.location_slug in DUNGEONS and is_dungeon_available(uid, player.location_slug)
+        except Exception:
+            _has_dng = False
+
+        if len(next_dirs) > 1:
+            dir_rows = [
+                [InlineKeyboardButton(text=d["label"], callback_data="explore:dir:" + d["dir"])]
+                for d in next_dirs
+            ]
+            dir_rows.append([InlineKeyboardButton(text="🏕 Остановиться", callback_data="explore:stop")])
+            await callback.message.answer(
+                "Куда дальше?\n" + render_exploration_panel(uid, player.location_slug),
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=dir_rows)
+            )
+        else:
+            await callback.message.answer(
+                "Что делать:",
+                reply_markup=location_actions_inline(player.location_slug, has_dungeon=_has_dng)
+            )
 
 
 @dp.callback_query(lambda c: c.data == "explore:stop")
