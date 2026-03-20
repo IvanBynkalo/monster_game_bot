@@ -1349,7 +1349,7 @@ async def hunt_craft_cmd(message: Message):
     await message.answer("\n\n".join(lines))
 
 
-@dp.message(filters.Text(startswith="/craft_"))
+@dp.message(lambda m: m.text and m.text.startswith("/craft_"))
 async def do_hunt_craft(message: Message):
     """Выполняет крафт по ID рецепта."""
     from database.repositories import get_player, get_resources, add_resource, get_connection
@@ -1461,36 +1461,36 @@ async def _notification_loop(bot_instance):
                     log.warning(f"Travel notification failed for {uid}: {e}")
 
             # 2. Уведомления о восполнении энергии
-            from database.repositories import get_connection
-            now = int(time.time())
             try:
+                from database.repositories import (
+                    get_connection, tick_energy_regen,
+                    mark_energy_notification_sent, get_max_energy,
+                )
+                now = int(time.time())
                 with get_connection() as conn:
-                    # Игроки у которых энергия была 0 и уже должна восполниться
-                    # Энергия восполняется по 1 каждые 10 минут
                     rows = conn.execute("""
-                        SELECT telegram_id, energy, max_energy, last_energy_time, energy_notified
+                        SELECT telegram_id, energy, last_energy_time, energy_notified
                         FROM players
-                        WHERE energy < max_energy
+                        WHERE last_energy_time IS NOT NULL
                         AND energy_notified = 0
-                        AND last_energy_time IS NOT NULL
-                        AND (last_energy_time + (max_energy - energy) * 600) <= ?
-                    """, (now,)).fetchall()
-                    for row in rows:
-                        uid = row["telegram_id"]
-                        try:
+                    """).fetchall()
+
+                for row in rows:
+                    uid = row["telegram_id"]
+                    try:
+                        new_e, became_full = tick_energy_regen(uid)
+                        if became_full:
+                            max_e = get_max_energy(uid)
                             await bot_instance.send_message(
                                 uid,
-                                "⚡ Энергия полностью восстановлена! Можно исследовать."
+                                f"⚡ Энергия полностью восстановлена! ({max_e}/{max_e})\n"
+                                f"Можно снова исследовать локации."
                             )
-                            conn.execute(
-                                "UPDATE players SET energy_notified=1 WHERE telegram_id=?",
-                                (uid,)
-                            )
-                            conn.commit()
-                        except Exception:
-                            pass
+                            mark_energy_notification_sent(uid)
+                    except Exception:
+                        pass
             except Exception:
-                pass  # Колонки могут не существовать пока
+                pass
 
         except Exception as e:
             log.error(f"Notification loop error: {e}")
