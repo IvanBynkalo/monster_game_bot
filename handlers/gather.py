@@ -1,7 +1,13 @@
 from aiogram.types import Message
-from database.repositories import get_player, progress_extra_quests, progress_guild_quests, add_player_gold, add_player_experience
+from database.repositories import (
+    get_player, progress_extra_quests, progress_guild_quests,
+    add_player_gold, add_player_experience,
+)
 from game.gather_service import gather_resource
 from keyboards.main_menu import main_menu
+from utils.cooldown import cooldown_guard
+from game.daily_service import progress_daily_tasks as _pdt_gather
+from game.season_pass_service import progress_season as _ps_gather
 
 
 PROFESSION_TITLES = {
