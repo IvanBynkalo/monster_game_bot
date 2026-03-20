@@ -1117,9 +1117,22 @@ async def leave_city_handler(message: Message):
     update_player_district(message.from_user.id, "mushroom_path")
     set_ui_screen(message.from_user.id, "main")
 
+    from game.map_service import render_location_card
+    from game.exploration_service import render_exploration_panel
+    from game.dungeon_service import DUNGEONS
+    from keyboards.location_menu import location_actions_inline
+
+    loc_text = (
+        "🚶 Ты покидаешь Сереброград и выходишь в Тёмный лес.\n\n"
+        + render_location_card("dark_forest")
+        + "\n\n"
+        + render_exploration_panel(message.from_user.id, "dark_forest")
+    )
+
+    await message.answer(loc_text, reply_markup=main_menu("dark_forest", "mushroom_path"))
     await message.answer(
-        "🚶 Ты покидаешь Сереброград и выходишь в Тёмный лес.",
-        reply_markup=main_menu("dark_forest", "mushroom_path"),
+        "Что делать:",
+        reply_markup=location_actions_inline("dark_forest", has_dungeon="dark_forest" in DUNGEONS)
     )
 
 
