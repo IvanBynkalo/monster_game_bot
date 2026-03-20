@@ -15,7 +15,7 @@ from handlers.start import start_handler
 from handlers.map import map_handler, location_handler, move_handler, navigation_handler
 from handlers.world import world_handler
 from handlers.story import story_handler
-from handlers.more import more_handler, back_handler
+from handlers.more import more_handler, back_handler, healing_menu_handler
 from handlers.district import district_handler, district_move_handler
 from handlers.explore import explore_handler, elite_expedition_handler
 from handlers.dungeon import dungeon_handler, dungeon_next_room_handler, dungeon_fight_handler, dungeon_leave_handler
@@ -210,6 +210,7 @@ dp.message.register(
     text_is("🧭 Перемещение", "Перемещение", "🧭 Навигация", "Навигация"),
 )
 dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
+dp.message.register(healing_menu_handler, text_is("❤️ Лечение", "Лечение"))
 
 dp.message.register(city_handler, text_is("🏙 Город", "Город"))
 dp.message.register(progression_handler, text_is("📈 Развитие", "Развитие"))
@@ -585,6 +586,128 @@ async def analytics_cmd(message: Message):
         return
     from utils.analytics import render_analytics_report
     await message.answer(render_analytics_report())
+
+
+
+# ── Inline-бой (рек. от GPT: бой через Callback вместо Reply) ────────────────
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("fight:"))
+async def fight_inline_callback(callback: CallbackQuery):
+    """
+    Единый обработчик всех inline-кнопок боя.
+    Вызывает соответствующий reply-хендлер через эмуляцию message.
+    """
+    action = callback.data.split(":")[1]
+    uid = callback.from_user.id
+
+    from database.repositories import get_pending_encounter, get_player
+    enc = get_pending_encounter(uid)
+    if not enc or enc.get("type") != "monster":
+        await callback.answer("Встреча уже завершена.", show_alert=True)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+
+    # Маршрутизируем на соответствующий хендлер
+    handler_map = {
+        "attack":      attack_handler,
+        "skill":       skill_handler,
+        "capture":     capture_handler,
+        "trap":        trap_handler,
+        "poison_trap": poison_trap_handler,
+        "flee":        flee_handler,
+    }
+    handler = handler_map.get(action)
+    if not handler:
+        await callback.answer("Неизвестное действие.")
+        return
+
+    await callback.answer()  # убираем loading spinner
+    await handler(callback.message)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("loc:"))
+async def location_inline_callback(callback: CallbackQuery):
+    """Inline-действия в локации (исследовать, собирать, навигация)."""
+    action = callback.data.split(":")[1]
+    await callback.answer()
+    if action == "explore":
+        await explore_handler(callback.message)
+    elif action == "gather":
+        await gather_handler(callback.message)
+    elif action == "dungeon":
+        await dungeon_handler(callback.message)
+    elif action == "navigate":
+        await navigation_handler(callback.message)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("monster:"))
+async def monster_inline_callback(callback: CallbackQuery):
+    """Inline-действия с монстрами (выбор активного, лечение, листинг)."""
+    parts = callback.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+    mid_str = parts[2] if len(parts) > 2 else ""
+    uid = callback.from_user.id
+
+    await callback.answer()
+
+    if action == "select" and mid_str.isdigit():
+        # Показываем карточку монстра с inline-кнопками действий
+        from database.repositories import get_monster_by_id
+        from keyboards.monsters_menu import monster_actions_inline
+        from game.infection_service import render_monster_infection
+        from game.monster_abilities import render_abilities
+        from game.type_service import get_type_label
+        m = get_monster_by_id(uid, int(mid_str))
+        if not m:
+            await callback.message.answer("Монстр не найден.")
+            return
+        RARITY = {"common":"Обычный","rare":"Редкий","epic":"Эпический",
+                  "legendary":"Легендарный","mythic":"Мифический"}
+        text = (
+            f"{'✅ Активный — ' if m.get('is_active') else ''}{m['name']}\n"
+            f"Редкость: {RARITY.get(m['rarity'], m['rarity'])}\n"
+            f"Уровень: {m.get('level',1)} | XP: {m.get('experience',0)}/{m.get('level',1)*5}\n"
+            f"HP: {m.get('current_hp',m['hp'])}/{m.get('max_hp',m['hp'])} | ATK: {m['attack']}\n"
+            f"Тип: {get_type_label(m.get('monster_type'))}\n"
+            f"{render_abilities(m)}\n"
+            f"{render_monster_infection(m)}"
+        )
+        if m.get("combo_mutation"):
+            text += f"\n⚡ Комбо: {m['combo_mutation']}"
+        await callback.message.answer(text, reply_markup=monster_actions_inline(m))
+
+    elif action == "activate" and mid_str.isdigit():
+        from database.repositories import set_active_monster
+        m = set_active_monster(uid, int(mid_str))
+        if m:
+            await callback.message.answer(f"✅ {m['name']} теперь активный монстр.")
+        else:
+            await callback.message.answer("Не удалось сменить монстра.")
+
+    elif action == "heal" and mid_str.isdigit():
+        from database.repositories import get_monster_by_id, save_monster
+        m = get_monster_by_id(uid, int(mid_str))
+        if m:
+            m["current_hp"] = m.get("max_hp", m["hp"])
+            save_monster(m)
+            await callback.message.answer(f"❤️ {m['name']} вылечен! HP: {m['current_hp']}/{m['max_hp']}")
+
+    elif action == "list" and mid_str.isdigit():
+        await callback.message.answer(
+            f"Укажи цену: /sell_monster {mid_str} <цена>\n"
+            f"Пример: /sell_monster {mid_str} 150"
+        )
+
+    elif action == "delist" and mid_str.isdigit():
+        from game.p2p_market_service import try_delist_monster
+        ok, err = try_delist_monster(uid, int(mid_str))
+        await callback.message.answer("✅ Снят с продажи." if ok else f"❌ {err}")
+
+    elif action == "back":
+        await monsters_handler(callback.message)
 
 
 @dp.errors()
