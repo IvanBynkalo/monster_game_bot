@@ -6,6 +6,8 @@ from database.repositories import (
     get_temp_effects,
     restore_player_energy,
     get_player_emotions,
+    get_max_energy,
+    tick_energy_regen,
 )
 from game.emotion_service import EMOTION_LABELS
 from game.infection_service import render_monster_infection
