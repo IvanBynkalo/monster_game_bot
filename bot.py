@@ -42,7 +42,7 @@ from handlers.inventory import (
     back_to_menu_handler,
 )
 from handlers.craft import craft_handler, resources_handler, craft_item_handler
-from handlers.profile import profile_handler, restore_energy_handler
+from handlers.profile import profile_handler, restore_energy_handler, profile_tab_callback, profile_stat_callback
 from handlers.healing import heal_hero_handler, rest_hero_handler
 from handlers.codex import codex_handler
 from handlers.relics import relics_handler
@@ -80,6 +80,7 @@ from handlers.city import (
     city_bags_handler,
     city_monsters_handler,
     city_buyer_handler,
+    city_craft_quarter_handler,
     city_alchemy_handler,
     city_traps_handler,
     take_herbalist_order_handler,
@@ -168,7 +169,7 @@ dp.message.register(reset_player_handler, Command("reset_player"))
 
 dp.message.register(codex_handler, text_is("📖 Кодекс", "Кодекс"))
 dp.message.register(relics_handler, text_is("🔮 Реликвии", "Реликвии"))
-dp.message.register(profile_handler, text_is("Профиль", "🧭 Профиль", "🧭 Профіль", "🧭 профиль"))
+dp.message.register(profile_handler, text_is("Профиль", "🧭 Профиль", "🧭 Профіль", "🧭 профиль", "👤 Персонаж", "Персонаж"))
 dp.message.register(monsters_handler, text_is("Мои монстры", "🐲 Мои монстры", "🐉 Мои монстры"))
 
 dp.message.register(set_active_monster_handler, text_startswith("✅ "))
@@ -207,7 +208,8 @@ dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
 dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
 dp.message.register(
     navigation_handler,
-    text_is("🧭 Перемещение", "Перемещение", "🧭 Навигация", "Навигация"),
+    text_is("🧭 Перемещение", "Перемещение", "🧭 Навигация", "Навигация",
+            "🧭 Переместиться", "Переместиться"),
 )
 dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
 dp.message.register(healing_menu_handler, text_is("❤️ Лечение", "Лечение"))
@@ -234,6 +236,7 @@ dp.message.register(city_monsters_handler, text_is("🐲 Рынок монстр
 dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов"))
 dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов"))
 dp.message.register(city_guilds_handler, text_is("🏛 Гильдии", "Гильдии"))
+dp.message.register(city_craft_quarter_handler, text_is("⚒ Ремесленный квартал", "Ремесленный квартал"))
 dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
 dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
 dp.message.register(my_board_orders_handler, text_is("📒 Мои заказы"))
@@ -311,6 +314,14 @@ dp.message.register(
 dp.callback_query.register(
     market_inline_callback,
     lambda c: c.data and c.data.startswith("marketnpc:"),
+)
+dp.callback_query.register(
+    profile_tab_callback,
+    lambda c: c.data and c.data.startswith("profile:tab:"),
+)
+dp.callback_query.register(
+    profile_stat_callback,
+    lambda c: c.data and c.data.startswith("profile:stat:"),
 )
 
 dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
@@ -594,38 +605,158 @@ async def analytics_cmd(message: Message):
 @dp.callback_query(lambda c: c.data and c.data.startswith("fight:"))
 async def fight_inline_callback(callback: CallbackQuery):
     """
-    Единый обработчик всех inline-кнопок боя.
-    Вызывает соответствующий reply-хендлер через эмуляцию message.
+    Inline-кнопки боя. Напрямую вызывает игровую логику
+    (НЕ через handler(message) — там from_user был бы бот, а не игрок).
     """
     action = callback.data.split(":")[1]
     uid = callback.from_user.id
 
-    from database.repositories import get_pending_encounter, get_player
+    from database.repositories import (
+        get_pending_encounter, save_pending_encounter, clear_pending_encounter,
+        get_player, get_active_monster, damage_active_monster, damage_player_hp,
+        add_player_gold, add_player_experience, add_active_monster_experience,
+    )
+    from game.encounter_service import resolve_attack, resolve_capture, resolve_flee
+    from game.monster_abilities import get_capture_bonus
+    from game.skill_service import apply_skill
+    from keyboards.main_menu import main_menu
+    from keyboards.encounter_menu import encounter_inline_menu
+
+    await callback.answer()
+
     enc = get_pending_encounter(uid)
     if not enc or enc.get("type") != "monster":
-        await callback.answer("Встреча уже завершена.", show_alert=True)
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
+        await callback.message.answer("Встреча завершена.")
         return
 
-    # Маршрутизируем на соответствующий хендлер
-    handler_map = {
-        "attack":      attack_handler,
-        "skill":       skill_handler,
-        "capture":     capture_handler,
-        "trap":        trap_handler,
-        "poison_trap": poison_trap_handler,
-        "flee":        flee_handler,
-    }
-    handler = handler_map.get(action)
-    if not handler:
-        await callback.answer("Неизвестное действие.")
+    player = get_player(uid)
+    active = get_active_monster(uid)
+    if not player or not active:
+        await callback.message.answer("Ошибка: нет игрока или монстра.", reply_markup=main_menu(player.location_slug if player else "silver_city"))
         return
 
-    await callback.answer()  # убираем loading spinner
-    await handler(callback.message)
+    result = None
+
+    if action == "attack":
+        result = resolve_attack(enc,
+            active_monster_attack=active.get("attack", 3) + player.strength,
+            attacker_type=active.get("monster_type"),
+            active_monster=active)
+
+    elif action == "skill":
+        result = apply_skill(enc, active, player)
+        if result is None:
+            result = resolve_attack(enc,
+                active_monster_attack=active.get("attack", 3) + player.strength,
+                attacker_type=active.get("monster_type"),
+                active_monster=active)
+
+    elif action == "capture":
+        capture_bon = get_capture_bonus(active)
+        enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
+        result = resolve_capture(enc)
+
+    elif action == "trap":
+        from database.repositories import spend_item, get_item_count
+        if get_item_count(uid, "basic_trap") <= 0:
+            await callback.message.answer("У тебя нет ловушек.")
+            return
+        spend_item(uid, "basic_trap", 1)
+        enc["hp"] = max(0, enc["hp"] - 8)
+        enc["counter_multiplier"] = 0.5
+        save_pending_encounter(uid, enc)
+        result = {"ok": True, "finished": enc["hp"] <= 0, "victory": enc["hp"] <= 0,
+                  "monster_defeated": enc["hp"] <= 0, "player_damage": 0,
+                  "text": f"🪤 Ловушка сработала! {enc['monster_name']} получает 8 урона. HP: {max(0,enc['hp'])}",
+                  "gold": enc.get("reward_gold", 0), "exp": enc.get("reward_exp", 0)}
+
+    elif action == "poison_trap":
+        from database.repositories import spend_item, get_item_count
+        if get_item_count(uid, "poison_trap") <= 0:
+            await callback.message.answer("У тебя нет ядовитых ловушек.")
+            return
+        spend_item(uid, "poison_trap", 1)
+        enc["hp"] = max(0, enc["hp"] - 14)
+        enc["counter_multiplier"] = 0.3
+        save_pending_encounter(uid, enc)
+        result = {"ok": True, "finished": enc["hp"] <= 0, "victory": enc["hp"] <= 0,
+                  "monster_defeated": enc["hp"] <= 0, "player_damage": 0,
+                  "text": f"☠️ Ядовитая ловушка! {enc['monster_name']} получает 14 урона. HP: {max(0,enc['hp'])}",
+                  "gold": enc.get("reward_gold", 0), "exp": enc.get("reward_exp", 0)}
+
+    elif action == "flee":
+        result = resolve_flee(enc)
+
+    if not result:
+        await callback.message.answer("Неизвестное действие.")
+        return
+
+    # Apply damage to player's monster from enemy counter-attack
+    if result.get("player_damage", 0) > 0:
+        damage_active_monster(uid, result["player_damage"])
+        active = get_active_monster(uid)
+
+    lines = [result["text"]]
+
+    # Monster HP after player's hit
+    if not result.get("finished") and active:
+        lines.append(f"❤️ Твой монстр: {active.get('current_hp',active['hp'])}/{active.get('max_hp',active['hp'])} HP")
+
+    if result.get("finished"):
+        clear_pending_encounter(uid)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+        if result.get("victory") or result.get("captured"):
+            gold = result.get("gold", 0)
+            exp  = result.get("exp", 0)
+            add_player_gold(uid, gold)
+            add_player_experience(uid, exp)
+            m, lvlups = add_active_monster_experience(uid, exp)
+            lines.append(f"💰 +{gold} золота  ✨ +{exp} опыта")
+            for lu in lvlups:
+                lines.append(f"⬆️ Монстр достиг уровня {lu['level']}!")
+
+            if result.get("captured"):
+                from database.repositories import add_captured_monster
+                add_captured_monster(uid, enc["monster_name"], enc.get("rarity","common"),
+                    enc.get("mood","instinct"), enc.get("max_hp", enc.get("hp",10)),
+                    enc.get("attack",3), source_type="wild")
+                lines.append(f"🎯 {enc['monster_name']} пойман и добавлен в команду!")
+
+            # Infection & birth
+            from game.infection_service import apply_dominant_emotion_infection, render_infection_update
+            from game.emotion_birth_service import try_birth_emotional_monster, render_birth_text
+            from game.emotion_service import grant_event_emotions, render_emotion_changes
+            district_mood = None
+            _, changes = grant_event_emotions(uid, "battle_win", district_mood=district_mood)
+            ec = render_emotion_changes(changes)
+            if ec: lines.append(ec)
+            inf = render_infection_update(apply_dominant_emotion_infection(uid))
+            if inf: lines.append(inf)
+            born = render_birth_text(try_birth_emotional_monster(uid))
+            if born: lines.append(born)
+
+        player = get_player(uid)
+        await callback.message.answer("\n".join(lines),
+            reply_markup=main_menu(player.location_slug if player else "silver_city"))
+    else:
+        # Battle continues - update encounter and show inline buttons again
+        save_pending_encounter(uid, enc)
+        active = get_active_monster(uid)
+        has_trap = False
+        has_ptrap = False
+        from database.repositories import get_item_count
+        has_trap  = get_item_count(uid, "basic_trap") > 0
+        has_ptrap = get_item_count(uid, "poison_trap") > 0
+        await callback.message.answer("\n".join(lines),
+            reply_markup=encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap))
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("loc:"))
