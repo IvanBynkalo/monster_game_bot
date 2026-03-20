@@ -28,7 +28,7 @@ def _tab_main(player, monsters) -> str:
         f"📊 *Основное*\n\n"
         f"👤 {player.name} | Ур. {player.level}\n"
         f"✨ Опыт: {player.experience}/{player.level * 10}\n"
-        f"⚡ Энергия: {player.energy}/12\n"
+        f"⚡ Энергия: {player.energy}/{get_max_energy(player.telegram_id)}\n"
         f"💰 Золото: {player.gold}\n"
         f"{render_player_status(player)}\n\n"
         f"🐲 Монстров: {len(monsters)}\n"
@@ -107,6 +107,8 @@ def _tab_effects(uid) -> str:
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
 async def profile_handler(message: Message):
+    # Регенерация энергии при открытии профиля
+    tick_energy_regen(message.from_user.id)
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start")
@@ -189,7 +191,7 @@ async def restore_energy_handler(message: Message):
     player = get_player(message.from_user.id)
     log_event("energy_restored", message.from_user.id, "gold_spent=3")
     await message.answer(
-        f"⚡ Энергия восстановлена: {player.energy}/12\n💰 Потрачено: 3 золота",
+        f"⚡ Энергия восстановлена: {player.energy}/{get_max_energy(player.telegram_id)}\n💰 Потрачено: 3 золота",
         reply_markup=main_menu(player.location_slug, player.current_district_slug),
     )
 
