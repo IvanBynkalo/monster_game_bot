@@ -303,6 +303,13 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_monsters_user ON player_monsters(telegram_id);
         CREATE INDEX IF NOT EXISTS idx_monsters_listed ON player_monsters(is_listed);
         CREATE INDEX IF NOT EXISTS idx_quests_user ON player_quests(telegram_id);
+        CREATE TABLE IF NOT EXISTS player_grid_exploration (
+            telegram_id   INTEGER NOT NULL,
+            location_slug TEXT    NOT NULL,
+            grid_data     TEXT    NOT NULL DEFAULT '{}',
+            PRIMARY KEY (telegram_id, location_slug)
+        );
+
         CREATE TABLE IF NOT EXISTS player_exploration (
             telegram_id   INTEGER NOT NULL,
             location_slug TEXT    NOT NULL,
