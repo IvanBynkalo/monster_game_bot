@@ -14,6 +14,7 @@ from game.map_service import (
     resolve_location_by_move_text,
 )
 from game.story_service import apply_story_reward
+from game.travel_service import start_travel, get_travel, get_travel_seconds, format_travel_time, is_traveling, check_arrival, render_travel_status, LOCATION_NAMES
 from keyboards.main_menu import main_menu
 from keyboards.location_menu import location_actions_inline
 from keyboards.navigation_menu import navigation_menu
@@ -89,6 +90,13 @@ async def move_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
 
+    # Проверяем не в пути ли уже герой
+    if is_traveling(message.from_user.id):
+        travel_data = get_travel(message.from_user.id)
+        if travel_data:
+            await message.answer(render_travel_status(travel_data))
+            return
+
     if (message.text or "").strip() == "⬅️ Назад":
         set_ui_screen(message.from_user.id, "main")
         await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))
@@ -114,7 +122,34 @@ async def move_handler(message: Message):
         await message.answer(reason)
         return
 
-    update_player_location(message.from_user.id, target.slug)
+    # Начинаем путешествие с учётом ловкости
+    travel = start_travel(
+        message.from_user.id,
+        player.location_slug,
+        target.slug,
+        agility=player.agility
+    )
+
+    from_name = LOCATION_NAMES.get(player.location_slug, player.location_slug)
+    to_name   = LOCATION_NAMES.get(target.slug, target.slug)
+
+    if travel["seconds"] <= 15:
+        # Короткий переход — мгновенно
+        update_player_location(message.from_user.id, target.slug)
+        story_done = update_story_progress(message.from_user.id, "move", target.slug)
+        set_ui_screen(message.from_user.id, "main")
+    else:
+        # Длинный переход — герой в пути
+        await message.answer(
+            f"🚶 Ты отправляешься в путь.\n"
+            f"{from_name} → {to_name}\n"
+            f"⏱ Время в пути: {travel['time_text']}\n\n"
+            f"Во время перехода нельзя исследовать и сражаться.\n"
+            f"Ты получишь уведомление по прибытии.",
+            reply_markup=main_menu(player.location_slug, player.current_district_slug)
+        )
+        return
+
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
     set_ui_screen(message.from_user.id, "main")
 

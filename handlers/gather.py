@@ -5,6 +5,8 @@ from database.repositories import (
 )
 from game.gather_service import gather_resource
 from keyboards.main_menu import main_menu
+from keyboards.location_menu import location_actions_inline
+from game.dungeon_service import DUNGEONS
 from utils.cooldown import cooldown_guard
 from game.daily_service import progress_daily_tasks as _pdt_gather
 from game.season_pass_service import progress_season as _ps_gather
@@ -87,8 +89,29 @@ async def gather_handler(message: Message):
     rare_text = "\nРедкость: редкий ресурс!" if result.get("rare") else ""
     profession_text = _render_profession_gain(result.get("profession_gain"))
 
+    # Показатель заполненности сумки
+    from database.repositories import get_resources, get_player as _gp2
+    _fresh = _gp2(message.from_user.id)
+    _resources = get_resources(message.from_user.id)
+    _total_items = sum(_resources.values())
+    _cap = _fresh.bag_capacity if _fresh else 12
+    _bag_pct = min(100, int(_total_items / _cap * 100))
+    _bag_filled = _bag_pct // 10
+    _bag_bar = "█" * _bag_filled + "░" * (10 - _bag_filled)
+    _bag_text = f"\n🎒 Сумка: [{_bag_bar}] {_total_items}/{_cap}"
+
     await message.answer(
         f"🧺 Ты нашёл ресурс: {result['name']} x{result.get('amount', 1)}"
-        f"{rare_text}{profession_text}{extra}",
+        f"{rare_text}{profession_text}{extra}{_bag_text}",
         reply_markup=main_menu(player.location_slug)
+    )
+    # Inline-меню после сбора
+    try:
+        from game.grid_exploration_service import is_dungeon_available
+        _has_dng = player.location_slug in DUNGEONS and is_dungeon_available(message.from_user.id, player.location_slug)
+    except Exception:
+        _has_dng = False
+    await message.answer(
+        "Что делать:",
+        reply_markup=location_actions_inline(player.location_slug, has_dungeon=_has_dng)
     )
