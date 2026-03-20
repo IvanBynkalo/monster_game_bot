@@ -49,14 +49,35 @@ async def map_handler(message: Message):
         return
     set_ui_screen(message.from_user.id, "main")
     caption = build_map_caption(player.location_slug)
+
+    from game.location_rules import is_city
+    from game.dungeon_service import DUNGEONS
+    from game.grid_exploration_service import is_dungeon_available
+
     if WORLD_MAP_PATH.exists():
         await message.answer_photo(
             photo=FSInputFile(str(WORLD_MAP_PATH)),
             caption=caption,
             reply_markup=main_menu(player.location_slug, player.current_district_slug),
         )
-        return
-    await message.answer(render_map_overview(player.location_slug), reply_markup=main_menu(player.location_slug, player.current_district_slug))
+    else:
+        await message.answer(
+            render_map_overview(player.location_slug),
+            reply_markup=main_menu(player.location_slug, player.current_district_slug)
+        )
+
+    # Inline-меню действий — только вне города
+    if not is_city(player.location_slug):
+        try:
+            has_dungeon = player.location_slug in DUNGEONS and is_dungeon_available(
+                message.from_user.id, player.location_slug
+            )
+        except Exception:
+            has_dungeon = False
+        await message.answer(
+            "Что делать:",
+            reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+        )
 
 
 async def location_handler(message: Message):
