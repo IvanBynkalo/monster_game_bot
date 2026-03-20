@@ -101,6 +101,8 @@ def _week_key() -> str:
 # ── БД ────────────────────────────────────────────────────────────────────────
 
 def get_active_weekly_quest(telegram_id: int, location_slug: str) -> dict | None:
+    from game.exploration_service import _lazy_ensure
+    _lazy_ensure()
     week = _week_key()
     with get_connection() as conn:
         row = conn.execute("""

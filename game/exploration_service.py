@@ -55,8 +55,44 @@ REGION_COMPLETION_BONUSES = {
 
 # ── Работа с БД ───────────────────────────────────────────────────────────────
 
+def _ensure_tables():
+    """Создаёт таблицы если их нет (lazy migration для уже запущенных БД)."""
+    with get_connection() as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS player_exploration (
+            telegram_id INTEGER NOT NULL, location_slug TEXT NOT NULL,
+            pct INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (telegram_id, location_slug))""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS player_bestiary (
+            telegram_id INTEGER NOT NULL, creature_name TEXT NOT NULL,
+            creature_type TEXT NOT NULL DEFAULT 'wildlife',
+            encounter_count INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (telegram_id, creature_name))""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS player_weekly_quests (
+            telegram_id INTEGER NOT NULL, location_slug TEXT NOT NULL,
+            week_key TEXT NOT NULL, quest_slug TEXT NOT NULL,
+            progress INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (telegram_id, location_slug, week_key))""")
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN cartographer_level INTEGER DEFAULT 1")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN cartographer_exp INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        conn.commit()
+
+_tables_ensured = False
+
+def _lazy_ensure():
+    global _tables_ensured
+    if not _tables_ensured:
+        _ensure_tables()
+        _tables_ensured = True
+
+
 def get_exploration(telegram_id: int, location_slug: str) -> int:
     """Возвращает % исследования региона (0-100)."""
+    _lazy_ensure()
     with get_connection() as conn:
         row = conn.execute(
             "SELECT pct FROM player_exploration WHERE telegram_id=? AND location_slug=?",

@@ -52,6 +52,9 @@ WILDLIFE_TROPHIES: dict[str, str] = {
 
 def register_bestiary_seen(telegram_id: int, name: str, creature_type: str = "wildlife"):
     """Записывает встречу с существом. creature_type: wildlife | monster | boss"""
+    # Ленивая миграция — таблица создаётся при первом обращении
+    from game.exploration_service import _lazy_ensure
+    _lazy_ensure()
     with get_connection() as conn:
         conn.execute("""
             INSERT INTO player_bestiary (telegram_id, creature_name, creature_type, encounter_count)
