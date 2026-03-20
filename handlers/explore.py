@@ -358,7 +358,14 @@ async def explore_handler(message: Message):
         await send_birth_image(message, _born_emotion_local, born)
 
     if encounter["type"] in ("monster", "wildlife"):
-        # ── БОЙ: inline кнопки НА сообщении, reply-меню внизу НЕ меняем ──
+        # ── БОЙ: сначала сбрасываем reply-меню, потом показываем inline на сообщении ──
+        # Это гарантирует что боевые reply-кнопки от прошлых боёв исчезнут
+        _cur_player = get_player(message.from_user.id)
+        from aiogram.types import ReplyKeyboardRemove
+        await message.answer(
+            "⚔️ Встреча!",
+            reply_markup=main_menu(_cur_player.location_slug, _cur_player.current_district_slug)
+        )
         has_any_trap = (
             get_item_count(message.from_user.id, 'basic_trap') > 0 or
             get_item_count(message.from_user.id, 'frost_trap') > 0 or
