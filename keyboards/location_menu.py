@@ -7,6 +7,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from game.gather_service import has_gathering_in_location
 
 
+BIRTH_LOCATION_SLUGS = {"silver_city", "emotion_rift"}
+
 def location_actions_inline(location_slug: str, has_dungeon: bool = False) -> InlineKeyboardMarkup:
     """
     Компактное inline-меню действий в текущей локации.
@@ -28,6 +30,10 @@ def location_actions_inline(location_slug: str, has_dungeon: bool = False) -> In
 
     # Навигация
     rows.append([InlineKeyboardButton(text="🗺 Карта / Перемещение", callback_data="loc:navigate")])
+
+    # Ритуал рождения — только в специальных локациях
+    if location_slug in BIRTH_LOCATION_SLUGS:
+        rows.append([InlineKeyboardButton(text="🌌 Ритуал рождения", callback_data="loc:birth")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
