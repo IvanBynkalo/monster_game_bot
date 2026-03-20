@@ -407,8 +407,13 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
     - Применяет комбо-бонусы к атаке (рек. #6)
     - Учитывает lifesteal из комбо-мутации
     """
-    if encounter["type"] != "monster":
+    if encounter["type"] not in ("monster", "wildlife"):
         return {"ok": False, "text": "Здесь не на кого нападать."}
+    # Для зверей нормализуем поле monster_name
+    if encounter["type"] == "wildlife" and "monster_name" not in encounter:
+        encounter["monster_name"] = encounter.get("name", "Зверь")
+        if "monster_type" not in encounter:
+            encounter["monster_type"] = "nature"
 
     # ── Тип-множитель (рек. #3) ──────────────────────────────────────────────
     multiplier = get_damage_multiplier(attacker_type, encounter.get("monster_type"))
