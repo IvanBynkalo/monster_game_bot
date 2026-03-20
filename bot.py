@@ -82,6 +82,7 @@ from handlers.city import (
     city_buyer_handler,
     city_craft_quarter_handler,
     city_alchemy_handler,
+    trap_inline_callback,
     city_traps_handler,
     take_herbalist_order_handler,
     take_ore_order_handler,
@@ -314,6 +315,10 @@ dp.message.register(
 dp.callback_query.register(
     market_inline_callback,
     lambda c: c.data and c.data.startswith("marketnpc:"),
+)
+dp.callback_query.register(
+    trap_inline_callback,
+    lambda c: c.data and c.data.startswith("trap:"),
 )
 dp.callback_query.register(
     profile_tab_callback,
@@ -666,16 +671,31 @@ async def fight_inline_callback(callback: CallbackQuery):
 
     elif action == "trap":
         from database.repositories import spend_item, get_item_count
-        if get_item_count(uid, "basic_trap") <= 0:
+        from game.trap_service import ITEM_EFFECTS
+        # Проверяем ловушки по приоритету силы
+        trap_slug = None
+        for t in ["blast_trap", "frost_trap", "poison_trap", "basic_trap"]:
+            if get_item_count(uid, t) > 0:
+                trap_slug = t
+                break
+        if not trap_slug:
             await callback.message.answer("У тебя нет ловушек.")
             return
-        spend_item(uid, "basic_trap", 1)
-        enc["hp"] = max(0, enc["hp"] - 8)
-        enc["counter_multiplier"] = 0.5
+        spend_item(uid, trap_slug, 1)
+        effects = ITEM_EFFECTS.get(trap_slug, {})
+        dmg = effects.get("hp_damage", 8)
+        enc["hp"] = max(0, enc["hp"] - dmg)
+        if effects.get("skip_counter"):
+            enc["counter_multiplier"] = 0.0
+        else:
+            enc["counter_multiplier"] = 0.5
         save_pending_encounter(uid, enc)
+        trap_names = {"blast_trap":"💥 Взрывная","frost_trap":"❄️ Морозная",
+                      "poison_trap":"☠️ Ядовитая","basic_trap":"🪤 Простая"}
+        trap_label = trap_names.get(trap_slug, "🪤")
         result = {"ok": True, "finished": enc["hp"] <= 0, "victory": enc["hp"] <= 0,
                   "monster_defeated": enc["hp"] <= 0, "player_damage": 0,
-                  "text": f"🪤 Ловушка сработала! {enc['monster_name']} получает 8 урона. HP: {max(0,enc['hp'])}",
+                  "text": f"{trap_label} ловушка! {enc.get('monster_name', enc.get('name','Существо'))} получает {dmg} урона. HP: {max(0,enc['hp'])}",
                   "gold": enc.get("reward_gold", 0), "exp": enc.get("reward_exp", 0)}
 
     elif action == "poison_trap":
