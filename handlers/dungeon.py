@@ -50,12 +50,13 @@ async def dungeon_handler(message: Message):
         return
     state = start_dungeon_state(player.location_slug)
     _set_dungeon_state(player, state)
-    await message.answer(
+    entry_text = (
         f"🕳 Ты входишь в подземелье: {state['name']}\n"
         f"Потрачено энергии: 2\n"
-        f"Внутри тебя ждут {state['rooms_total']} комнаты.",
-        reply_markup=dungeon_menu(),
+        f"Внутри тебя ждут {state['rooms_total']} комнаты."
     )
+    await send_dungeon_image(message, player.location_slug, entry_text,
+                              reply_markup=dungeon_menu())
 
 async def dungeon_next_room_handler(message: Message):
     player = get_player(message.from_user.id)

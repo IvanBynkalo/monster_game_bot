@@ -9,6 +9,7 @@ from database.repositories import (
     begin_action_scope,
     clear_temp_effect,
     get_active_monster,
+    get_item_count,
     get_player,
     get_temp_effects,
     has_relic,
@@ -255,6 +256,8 @@ async def explore_handler(message: Message):
             encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + capture_bonus
         save_pending_encounter(message.from_user.id, encounter)
         text = f"{intro}\n\n---\n\n{render_encounter_text(encounter, attacker_type=attacker_type)}"
+        # Показываем изображение типа монстра
+        _encounter_monster_type = encounter.get("monster_type", "void")
     else:
         event = world_event or encounter
         text = f"{intro}\n\n---\n\n{event['text']}"
@@ -272,10 +275,12 @@ async def explore_handler(message: Message):
     infection_update = render_infection_update(apply_dominant_emotion_infection(message.from_user.id))
     if infection_update:
         extras.append(infection_update)
-    born = render_birth_text(try_birth_emotional_monster(message.from_user.id))
+    _born_monster = try_birth_emotional_monster(message.from_user.id)
+    born = render_birth_text(_born_monster)
     if born:
         log_event("emotion_birth", message.from_user.id, "explore_birth")
         extras.append(born)
+    _born_emotion = _born_monster.get("mood") if _born_monster else None
     extras.extend(_render_completed_quests(message.from_user.id, completed_now))
     if story_done:
         extras.append(apply_story_reward(message.from_user.id, story_done))
@@ -283,10 +288,23 @@ async def explore_handler(message: Message):
     if expired_text:
         extras.append(expired_text)
 
-    await message.answer(
-        text + ("\n\n" + "\n\n".join(extras) if extras else ""),
-        reply_markup=encounter_inline_menu(
+    full_text = text + ("\n\n" + "\n\n".join(extras) if extras else "")
+    # Если было рождение монстра — показываем отдельное изображение
+    _born_emotion_local = locals().get("_born_emotion")
+    if _born_emotion_local and born:
+        from utils.images import send_birth_image
+        await send_birth_image(message, _born_emotion_local, born)
+
+    if encounter["type"] == "monster":
+        kb = encounter_inline_menu(
             has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
             has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
-        ) if encounter["type"] == "monster" else main_menu(player.location_slug),
-    )
+        )
+        from utils.images import send_monster_image
+        mtype = locals().get("_encounter_monster_type", encounter.get("monster_type", "void"))
+        await send_monster_image(message, mtype, full_text, reply_markup=kb)
+    else:
+        # Для событий без монстра — показываем картинку локации
+        from utils.images import send_location_image
+        await send_location_image(message, player.location_slug, full_text,
+                                   reply_markup=main_menu(player.location_slug))

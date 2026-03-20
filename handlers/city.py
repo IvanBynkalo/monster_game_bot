@@ -84,7 +84,7 @@ except ImportError:
     buy_resource_item_handler = None
 
 
-ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "city"
+# Images handled via utils.images — see utils/images.py
 
 CITY_ORDER_LIMIT = 2
 
@@ -177,7 +177,15 @@ def _reward_text(player_id: int, quests: list[dict]) -> str:
 
 
 async def _answer_with_city_image(message: Message, image_name: str, text: str, reply_markup):
-    image_path = ASSETS_DIR / image_name
+    """Отправляет изображение города. image_name = ключ из CITY_IMAGES или имя файла."""
+    from utils.images import send_city_image, CITY_DIR
+    from aiogram.types import FSInputFile
+    # Поддерживаем старый формат (filename.png) и новый (ключ из CITY_IMAGES)
+    from utils.images import CITY_IMAGES
+    # Если передан ключ контекста — используем маппинг
+    context = image_name.replace(".png", "")
+    mapped = CITY_IMAGES.get(context, image_name)
+    image_path = CITY_DIR / mapped
     if image_path.exists():
         await message.answer_photo(
             photo=FSInputFile(str(image_path)),

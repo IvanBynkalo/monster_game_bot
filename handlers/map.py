@@ -1,4 +1,5 @@
 from aiogram.types import Message, FSInputFile
+from utils.images import send_location_image
 
 from database.repositories import get_player, set_ui_screen, update_player_location, update_story_progress
 from game.location_rules import check_location_access
@@ -57,7 +58,9 @@ async def location_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
     set_ui_screen(message.from_user.id, "main")
-    await message.answer(render_location_card(player.location_slug), reply_markup=main_menu(player.location_slug, player.current_district_slug))
+    await send_location_image(message, player.location_slug,
+                               render_location_card(player.location_slug),
+                               reply_markup=main_menu(player.location_slug, player.current_district_slug))
 
 
 async def move_handler(message: Message):
@@ -94,4 +97,6 @@ async def move_handler(message: Message):
     if story_done:
         text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
 
-    await message.answer(text, reply_markup=main_menu(target.slug, None))
+    # Показываем картинку локации при прибытии
+    await send_location_image(message, target.slug, text,
+                               reply_markup=main_menu(target.slug, None))
