@@ -34,6 +34,7 @@ def district_actions_menu(district_slug: str):
         keyboard = [
             [KeyboardButton(text="🎯 Гильдия ловцов"), KeyboardButton(text="🌿 Гильдия собирателей")],
             [KeyboardButton(text="⛏ Гильдия геологов"), KeyboardButton(text="⚗ Гильдия алхимиков")],
+            [KeyboardButton(text="🌌 Алтарь рождения")],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 

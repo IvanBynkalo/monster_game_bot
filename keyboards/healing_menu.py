@@ -9,6 +9,7 @@ def healing_menu() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text="🩹 Лечить героя"),          KeyboardButton(text="❤️ Лечить монстра")],
         [KeyboardButton(text="😴 Отдых героя"),            KeyboardButton(text="⚡ Восстановить энергию")],
+        [KeyboardButton(text="💎 Возродить монстра")],
         [KeyboardButton(text="⬅️ Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
