@@ -142,8 +142,14 @@ def render_location_card(location_slug: str) -> str:
         "",
         "Переходы:",
     ]
+    from game.location_rules import LOCATION_REQUIREMENTS
     for item in neighbors:
-        lines.append(f"— {item.name}")
+        req = LOCATION_REQUIREMENTS.get(item.slug, {})
+        min_lvl = req.get("min_level", 1)
+        if player and player.level < min_lvl:
+            lines.append(f"— 🔒 {item.name} (ур.{min_lvl}+)")
+        else:
+            lines.append(f"— {item.name}")
     return "\n".join(lines)
 
 
