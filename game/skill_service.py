@@ -68,3 +68,9 @@ def resolve_skill_use(encounter: dict, monster: dict):
                 "text": f"{SKILL_LABELS['inspiration']}! {monster['name']} исцеляется на {healed} и завершает бой вспышкой."}
     return {"ok": True, "finished": False, "player_damage": enemy,
             "text": f"{SKILL_LABELS['inspiration']}! {monster['name']} восстанавливает {healed} HP и наносит {dmg} урона.\nВраг отвечает на {enemy}."}
+
+
+# Алиас для совместимости с bot.py
+def apply_skill(encounter: dict, monster: dict, player=None) -> dict | None:
+    """Обёртка над resolve_skill_use для вызова из fight_inline_callback."""
+    return resolve_skill_use(encounter, monster)

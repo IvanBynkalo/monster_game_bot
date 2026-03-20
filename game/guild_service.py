@@ -148,3 +148,94 @@ def render_guild_list(guilds: list[dict]) -> str:
     for g in guilds:
         lines.append(f"• {g['name']} — {g.get('member_count',0)} чел. | Казна: {g.get('treasury_gold',0)}з")
     return "\n".join(lines)
+
+
+# ── Групповые рейды на редких зверей ──────────────────────────────────────────
+
+RARE_WILDLIFE_BOSSES = [
+    {"slug": "forest_giant",   "name": "🌲 Лесной великан",       "location": "dark_forest",
+     "hp": 180, "attack": 18, "reward_gold": 200, "reward_exp": 60,
+     "trophy": "forest_giant_claw", "min_exploration": 50},
+    {"slug": "golden_eagle",   "name": "🦅 Золотой орёл",         "location": "emerald_fields",
+     "hp": 140, "attack": 15, "reward_gold": 180, "reward_exp": 55,
+     "trophy": "golden_eagle_feather", "min_exploration": 40},
+    {"slug": "mountain_lion",  "name": "🦁 Горный лев",           "location": "stone_hills",
+     "hp": 200, "attack": 20, "reward_gold": 220, "reward_exp": 65,
+     "trophy": "mountain_lion_fang", "min_exploration": 60},
+    {"slug": "magma_boar",     "name": "🔥 Магматический кабан",  "location": "volcano_wrath",
+     "hp": 240, "attack": 22, "reward_gold": 260, "reward_exp": 75,
+     "trophy": "magma_tusk", "min_exploration": 70},
+    {"slug": "swamp_croc",     "name": "🐊 Болотный крокодил",    "location": "shadow_swamp",
+     "hp": 220, "attack": 20, "reward_gold": 240, "reward_exp": 70,
+     "trophy": "swamp_croc_scale", "min_exploration": 55},
+]
+
+
+def simulate_wildlife_raid(guild_id: int, boss_slug: str) -> dict:
+    """Групповой рейд на редкого зверя. Логика аналогична рейду на гильдейского босса."""
+    import random
+    from database.repositories import get_guild_members, get_player, add_player_gold, add_player_experience, add_resource
+    from game.exploration_service import get_exploration
+
+    boss = next((b for b in RARE_WILDLIFE_BOSSES if b["slug"] == boss_slug), None)
+    if not boss:
+        return {"error": f"Зверь '{boss_slug}' не найден."}
+
+    members = get_guild_members(guild_id)
+    if not members:
+        return {"error": "В гильдии нет участников."}
+
+    # Фильтруем участников по уровню исследования локации
+    eligible = []
+    for m in members:
+        p = get_player(m["telegram_id"])
+        if p:
+            expl = get_exploration(m["telegram_id"], boss["location"])
+            if expl >= boss["min_exploration"]:
+                eligible.append(p)
+
+    if not eligible:
+        return {"error": f"Нужно исследовать {boss['location']} минимум на {boss['min_exploration']}% чтобы участвовать."}
+
+    # Симуляция боя
+    boss_hp    = boss["hp"]
+    total_dmg  = 0
+    log        = []
+    for p in eligible:
+        from database.repositories import get_active_monster
+        m_obj = get_active_monster(p.telegram_id)
+        atk   = (m_obj.get("attack", 5) if m_obj else 5) + p.strength
+        dmg   = random.randint(max(3, atk - 3), atk + 5)
+        boss_hp  -= dmg
+        total_dmg += dmg
+        log.append(f"⚔️ {p.name}: -{dmg}")
+
+    victory      = boss_hp <= 0
+    split_gold   = (boss["reward_gold"] * len(eligible) // max(1, len(eligible))) if victory else boss["reward_gold"] // 4
+    split_exp    = boss["reward_exp"] if victory else boss["reward_exp"] // 3
+    trophy_winner = None
+
+    if victory:
+        winner = random.choice(eligible)
+        trophy_winner = winner.telegram_id
+        for p in eligible:
+            add_player_gold(p.telegram_id, split_gold)
+            add_player_experience(p.telegram_id, split_exp)
+        # Трофей одному случайному участнику
+        add_resource(trophy_winner, boss["trophy"], 1)
+    else:
+        for p in eligible:
+            add_player_gold(p.telegram_id, split_gold)
+
+    return {
+        "victory":       victory,
+        "boss_name":     boss["name"],
+        "boss_hp_left":  max(0, boss_hp),
+        "total_damage":  total_dmg,
+        "participants":  len(eligible),
+        "split_gold":    split_gold,
+        "split_exp":     split_exp,
+        "trophy_winner": trophy_winner,
+        "trophy_item":   boss["trophy"],
+        "log":           log,
+    }
