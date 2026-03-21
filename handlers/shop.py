@@ -106,10 +106,44 @@ async def item_shop_handler(message: Message):
         return
 
     set_ui_screen(message.from_user.id, "item_shop")
+    from game.shop_service import ITEM_ORDER, get_market_item_price
+    from database.repositories import get_market_item_entry
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    LABELS = {
+        "small_potion":   ("🧪", "Малое зелье"),
+        "energy_capsule": ("⚡", "Капсула энергии"),
+        "basic_trap":     ("🪤", "Простая ловушка"),
+        "flee_elixir":    ("💨", "Эликсир побега"),
+        "revival_shard":  ("💎", "Осколок возрождения"),
+    }
+    rows = []
+    for slug in ITEM_ORDER:
+        emoji, name = LABELS.get(slug, ("🛒", slug))
+        price = get_market_item_price(slug)
+        rows.append([InlineKeyboardButton(
+            text=f"🛒 {emoji} {name} — {price}з",
+            callback_data=f"shop:buy:{slug}"
+        )])
+    # Extra items
+    for slug in ["flee_elixir", "revival_shard"]:
+        try:
+            from game.item_service import ITEMS
+            if slug in ITEMS:
+                emoji, name = LABELS.get(slug, ("🛒", slug))
+                rows.append([InlineKeyboardButton(
+                    text=f"🛒 {emoji} {name} — 60з",
+                    callback_data=f"shop:buy:{slug}"
+                )])
+        except Exception:
+            pass
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="shop:back")])
+    inline_kb = InlineKeyboardMarkup(inline_keyboard=rows)
+
     await message.answer(
         render_item_shop_text(),
         reply_markup=item_shop_menu(),
     )
+    await message.answer("🛒 Купить:", reply_markup=inline_kb)
 
 
 async def monster_shop_handler(message: Message):
