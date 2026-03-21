@@ -97,17 +97,8 @@ from handlers.city import (
     back_to_city_from_board_handler,
     market_inline_callback,
 )
-from handlers.admin import (
-    admin_panel_handler,
-    admin_buttons_handler,
-    grant_gold_handler,
-    grant_energy_handler,
-    heal_all_handler,
-    teleport_location_handler,
-    teleport_district_handler,
-    reset_player_handler,
-    ADMIN_STATES,
-)
+# old admin handlers removed
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -167,13 +158,6 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 dp.message.register(start_handler, Command("start"))
-dp.message.register(admin_panel_handler, Command("admin"))
-dp.message.register(grant_gold_handler, Command("grant_gold"))
-dp.message.register(grant_energy_handler, Command("grant_energy"))
-dp.message.register(heal_all_handler, Command("heal_all"))
-dp.message.register(teleport_location_handler, Command("teleport_location"))
-dp.message.register(teleport_district_handler, Command("teleport_district"))
-dp.message.register(reset_player_handler, Command("reset_player"))
 
 dp.message.register(codex_handler, text_is("📖 Кодекс", "Кодекс"))
 dp.message.register(relics_handler, text_is("🔮 Реликвии", "Реликвии"))
@@ -341,7 +325,6 @@ dp.callback_query.register(
     lambda c: c.data and c.data.startswith("bestiary:"),
 )
 
-dp.message.register(admin_panel_handler, text_is("🛠 Админ-панель"))
 dp.message.register(
     admin_buttons_handler,
     lambda message: is_admin(message.from_user.id) and (
@@ -1440,14 +1423,14 @@ dp.message.register(player_notifications_handler, text_is("🔔 Уведомле
 dp.callback_query.register(admin_callback, lambda c: c.data and c.data.startswith("adm:"))
 dp.callback_query.register(notification_callback, lambda c: c.data and c.data.startswith("notif:"))
 
+dp.message.register(admin_cmd, Command("admin"))
+dp.message.register(admin_cmd, text_is("🛠 Админ-панель", "Адмін-панель"))
 dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
 dp.callback_query.register(crystal_callback, lambda c: c.data and c.data.startswith("crystal:"))
 
 dp.callback_query.register(equipment_callback, lambda c: c.data and c.data.startswith("equip:"))
 
-@dp.message(Command("admin", "admin_panel"))
-async def _admin_cmd_wrapper(message):
-    await admin_cmd(message)
+
 
 
 
