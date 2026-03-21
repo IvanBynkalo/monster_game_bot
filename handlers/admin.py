@@ -185,6 +185,8 @@ async def admin_buttons_handler(message: Message):
             await message.answer("Игрок не найден.", reply_markup=admin_menu())
             return True
         reset_player_state(target_id, name=player.name)
+        from game.player_service import ensure_starter_monster as _give_starter
+        _give_starter(target_id)
         _clear_state(message.from_user.id)
         await message.answer(f"✅ Игрок {target_id} сброшен.", reply_markup=admin_menu())
         return True
@@ -328,4 +330,6 @@ async def reset_player_handler(message: Message):
         await message.answer("Игрок не найден.")
         return
     reset_player_state(target_id, name=player.name)
+    from game.player_service import ensure_starter_monster as _give_starter
+    _give_starter(target_id)
     await message.answer(f"✅ Игрок {target_id} сброшен.")
