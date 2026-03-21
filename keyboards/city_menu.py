@@ -5,8 +5,9 @@ def city_menu(district_slug: str | None = None):
     keyboard = [
         [KeyboardButton(text="🏬 Торговый квартал"), KeyboardButton(text="📜 Доска заказов")],
         [KeyboardButton(text="🏛 Гильдии"),           KeyboardButton(text="⚒ Ремесленный квартал")],
-        [KeyboardButton(text="🐲 Мои монстры"),        KeyboardButton(text="🎒 Инвентарь")],
-        [KeyboardButton(text="👤 Персонаж"),           KeyboardButton(text="⚔️ Экипировка")],
+        [KeyboardButton(text="🐲 Мои монстры"),        KeyboardButton(text="💎 Кристаллы")],
+        [KeyboardButton(text="🎒 Инвентарь"),          KeyboardButton(text="👤 Персонаж")],
+        [KeyboardButton(text="⚔️ Экипировка"),         KeyboardButton(text="📂 Ещё")],
         [KeyboardButton(text="🧭 Перемещение"),        KeyboardButton(text="🚶 Покинуть город")],
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
