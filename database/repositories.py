@@ -361,7 +361,16 @@ def tick_energy_regen(telegram_id: int) -> tuple[int, bool]:
 
     # Считаем сколько энергии восстановилось
     elapsed = now - last_t
-    regen_ticks = elapsed // 600  # 1 энергия каждые 10 мин
+    # Бонус от комбеза ускоряет регенерацию
+    try:
+        from game.equipment_service import get_equipment_bonuses
+        _eq = get_equipment_bonuses(telegram_id)
+        _suit_bonus = _eq.get("energy_regen", 0.0)
+        _regen_interval = max(60, int(600 / (1 + _suit_bonus)))  # мин. 60 сек
+    except Exception:
+        _regen_interval = 600
+
+    regen_ticks = elapsed // _regen_interval
 
     if regen_ticks <= 0:
         return current, False
