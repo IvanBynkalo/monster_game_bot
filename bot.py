@@ -1450,6 +1450,56 @@ async def _admin_cmd_wrapper(message):
     await admin_cmd(message)
 
 
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("shop:"))
+async def shop_inline_callback(callback: CallbackQuery):
+    """Покупка товара через inline-кнопку."""
+    from database.repositories import get_player, add_item, _update_player_field
+    from game.shop_service import get_market_item_price
+    from game.item_service import ITEMS
+    uid = callback.from_user.id
+    data = callback.data
+    await callback.answer()
+
+    if data == "shop:back":
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        return
+
+    if data.startswith("shop:buy:"):
+        slug = data.split(":", 2)[-1]
+        player = get_player(uid)
+        if not player:
+            await callback.answer("Сначала /start", show_alert=True)
+            return
+
+        item = ITEMS.get(slug)
+        if not item:
+            await callback.answer("Товар не найден.", show_alert=True)
+            return
+
+        try:
+            price = get_market_item_price(slug)
+        except Exception:
+            price = 60  # default for new items
+
+        if player.gold < price:
+            await callback.answer(
+                f"Недостаточно золота! Нужно {price}з, у тебя {player.gold}з",
+                show_alert=True
+            )
+            return
+
+        _update_player_field(uid, gold=player.gold - price)
+        add_item(uid, slug, 1)
+        await callback.answer(
+            f"✅ Куплено: {item.get('name', slug)}",
+            show_alert=False
+        )
+
+
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
     logger.exception("Unhandled update error: %s", event.exception)
