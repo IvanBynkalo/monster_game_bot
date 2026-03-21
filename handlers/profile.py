@@ -26,6 +26,16 @@ from utils.logger import log_event
 # ── Компактные тексты для каждой вкладки ──────────────────────────────────────
 
 def _tab_main(player, monsters) -> str:
+    # Crystal summary
+    try:
+        from game.crystal_service import get_player_crystals as _gpc, get_summoned_monster as _gsm
+        _crystals = _gpc(player.telegram_id)
+        _summoned = _gsm(player.telegram_id)
+        _crystal_line = f"\n💎 Кристаллов: {len(_crystals)}"
+        _summon_line = f"\n⚡ Призван: {_summoned['name']} ур.{_summoned['level']}" if _summoned else ""
+    except Exception:
+        _crystal_line = ""
+        _summon_line = ""
     return (
         f"📊 *Основное*\n\n"
         f"👤 {player.name} | Ур. {player.level}\n"
@@ -33,8 +43,9 @@ def _tab_main(player, monsters) -> str:
         f"⚡ Энергия: {player.energy}/{get_max_energy(player.telegram_id)}\n"
         f"💰 Золото: {player.gold}\n"
         f"{render_player_status(player)}\n\n"
-        f"🐲 Монстров: {len(monsters)}\n"
-        f"📍 {get_location_name(player.location_slug)}"
+        f"🐲 Монстров: {len(monsters)}"
+        + _crystal_line + _summon_line + "\n"
+        + f"📍 {get_location_name(player.location_slug)}"
     )
 
 
