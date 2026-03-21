@@ -1018,7 +1018,7 @@ async def city_guilds_handler(message: Message):
         message,
         "guild_hall.png",
         text,
-        district_actions_menu("guild_quarter"),
+        district_actions_menu("guild_quarter", message.from_user.id),
     )
 
 
@@ -1082,7 +1082,7 @@ async def _guild_handler(
         message,
         image_name,
         render_guild_text(title, description, quests),
-        district_actions_menu("guild_quarter"),
+        district_actions_menu("guild_quarter", message.from_user.id),
     )
 
 
@@ -1103,7 +1103,7 @@ async def city_guard_handler(message: Message):
         message,
         "city_square.png",
         text,
-        district_actions_menu("main_gate"),
+        district_actions_menu("main_gate", message.from_user.id),
     )
 
 
@@ -1174,7 +1174,7 @@ async def city_market_handler(message: Message):
         message,
         "city_square.png",
         text,
-        district_actions_menu("market_square"),
+        district_actions_menu("market_square", message.from_user.id),
     )
 
 
@@ -1238,7 +1238,7 @@ async def city_craft_quarter_handler(message: Message):
         message,
         "alchemy_lab.png",
         text,
-        district_actions_menu("craft_quarter"),
+        district_actions_menu("craft_quarter", message.from_user.id),
     )
 
 
@@ -1283,7 +1283,7 @@ async def city_traps_handler(message: Message):
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="trap:back")])
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
-    await _answer_with_city_image(message, "trap_workshop.png", text, district_actions_menu("craft_quarter"))
+    await _answer_with_city_image(message, "trap_workshop.png", text, district_actions_menu("craft_quarter", message.from_user.id))
     await message.answer("Выбери предмет для крафта:", reply_markup=kb)
 
 

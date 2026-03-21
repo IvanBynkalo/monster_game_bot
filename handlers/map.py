@@ -112,6 +112,18 @@ async def move_handler(message: Message):
         return
 
     # Проверяем не в пути ли уже герой
+    if (message.text or "").strip() == "🚫 Отменить перемещение":
+        from database.repositories import get_connection as _gc_cancel
+        with _gc_cancel() as _conn:
+            _conn.execute("DELETE FROM player_travel WHERE telegram_id=?",
+                          (message.from_user.id,))
+            _conn.commit()
+        await message.answer(
+            "✅ Перемещение отменено. Ты остался на месте.",
+            reply_markup=main_menu(player.location_slug, player.current_district_slug)
+        )
+        return
+
     if is_traveling(message.from_user.id):
         travel_data = get_travel(message.from_user.id)
         if travel_data:
@@ -154,7 +166,7 @@ async def move_handler(message: Message):
     from_name = LOCATION_NAMES.get(player.location_slug, player.location_slug)
     to_name   = LOCATION_NAMES.get(target.slug, target.slug)
 
-    if travel["seconds"] <= 15:
+    if travel["seconds"] <= 30:
         # Короткий переход — мгновенно
         update_player_location(message.from_user.id, target.slug)
         story_done = update_story_progress(message.from_user.id, "move", target.slug)
@@ -166,8 +178,9 @@ async def move_handler(message: Message):
             f"{from_name} → {to_name}\n"
             f"⏱ Время в пути: {travel['time_text']}\n\n"
             f"Во время перехода нельзя исследовать и сражаться.\n"
-            f"Ты получишь уведомление по прибытии.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug)
+            f"Нажми 🚫 Отменить перемещение если хочешь остаться.",
+            reply_markup=main_menu(player.location_slug, player.current_district_slug,
+                                   is_traveling=True)
         )
         return
 
