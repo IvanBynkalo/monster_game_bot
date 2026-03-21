@@ -95,10 +95,14 @@ def _lazy():
         _travel_table_ok = True
 
 
-def start_travel(telegram_id: int, from_slug: str, to_slug: str, agility: int = 0) -> dict:
+def start_travel(telegram_id: int, from_slug: str, to_slug: str,
+                 agility: int = 0, extra_speed_bonus: float = 0.0) -> dict:
     """Начинает переход. Возвращает данные о путешествии."""
     _lazy()
     seconds = get_travel_seconds(from_slug, to_slug, agility)
+    # Применяем бонус от сапог
+    if extra_speed_bonus > 0:
+        seconds = max(10, int(seconds * (1 - min(0.50, extra_speed_bonus))))
     arrive_at = int(time.time()) + seconds
     with get_connection() as conn:
         conn.execute("""
