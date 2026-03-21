@@ -1020,19 +1020,7 @@ async def city_guilds_handler(message: Message):
         text,
         district_actions_menu("guild_quarter"),
     )
-    # Алтарь рождения — отдельной кнопкой после основного меню
-    birth_kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="🌌 Алтарь — Ритуал рождения монстра",
-            callback_data="loc:birth"
-        )
-    ]])
-    from game.emotion_birth_service import get_birth_panel
-    birth_panel = get_birth_panel(message.from_user.id, "silver_city")
-    if birth_panel:
-        await message.answer(birth_panel, reply_markup=birth_kb)
-    else:
-        await message.answer("🌌 Алтарь Сереброграда доступен для ритуала рождения.", reply_markup=birth_kb)
+
 
 
 async def guild_hunters_handler(message: Message):
@@ -1519,10 +1507,38 @@ async def market_inline_callback(callback: CallbackQuery):
             await callback.answer("Монстр не найден.", show_alert=True)
             return
 
+        player = get_player(callback.from_user.id)
+        if not player:
+            await callback.answer("Ошибка игрока.", show_alert=True)
+            return
+
         price = offer.get("price", offer.get("base_price", 0))
-        buy_text = f"🛒 Купить монстра: {offer['name']} • {price}з"
-        await callback.answer("Покупаю у Варга...")
-        await _run_existing_handler(callback, buy_monster_handler, buy_text)
+        if player.gold < price:
+            await callback.answer(
+                f"Недостаточно золота! Нужно {price}з, у тебя {player.gold}з",
+                show_alert=True
+            )
+            return
+
+        # Покупаем напрямую
+        from database.repositories import add_captured_monster
+        _update_player_field(callback.from_user.id, gold=player.gold - price)
+        new_monster = add_captured_monster(
+            telegram_id=callback.from_user.id,
+            name=offer["name"],
+            rarity=offer.get("rarity", "common"),
+            mood=offer.get("mood", "instinct"),
+            hp=offer.get("hp", 10),
+            attack=offer.get("attack", 3),
+            source_type="shop",
+        )
+        await callback.answer(f"✅ Куплен {offer['name']}!", show_alert=False)
+        await callback.message.answer(
+            f"🛒 Ты купил монстра: {offer['name']}\n"
+            f"Редкость: {offer.get('rarity','common')}\n"
+            f"💰 Потрачено: {price} золота\n\n"
+            f"Монстр добавлен в твой ростер. Назначь его активным через 🐲 Мои монстры."
+        )
         return
 
     if data == "marketnpc:varg_sell_menu":
