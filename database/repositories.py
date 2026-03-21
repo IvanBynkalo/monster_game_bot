@@ -1642,3 +1642,68 @@ def get_analytics_summary() -> dict:
         events   = conn.execute("""SELECT event, COUNT(*) as cnt FROM analytics_events
             GROUP BY event ORDER BY cnt DESC LIMIT 20""").fetchall()
     return {"total_players":total,"active_7d":active7d,"top_events":[dict(r) for r in events]}
+
+
+def get_guild_quests_status(telegram_id: int) -> dict:
+    """
+    Возвращает статус квестов по гильдиям.
+    Формат: {"hunter": "active"|"ready"|None, ...}
+    """
+    try:
+        with get_connection() as conn:
+            rows = conn.execute("""
+                SELECT source, completed, progress,
+                       (SELECT count FROM player_guild_quests pq2
+                        WHERE pq2.telegram_id=pq.telegram_id
+                        AND pq2.quest_id=pq.quest_id LIMIT 1) as target
+                FROM player_guild_quests pq
+                WHERE telegram_id=? AND completed=0
+                GROUP BY source
+            """, (telegram_id,)).fetchall()
+        result = {}
+        for row in rows:
+            source = row["source"] if row["source"] else "unknown"
+            result[source] = "active"
+        return result
+    except Exception:
+        return {}
+
+
+def get_npc_quest_status(telegram_id: int, npc_key: str) -> str | None:
+    """
+    Проверяет статус квеста у конкретного NPC.
+    npc_key: "mirna", "varg", "bort", "hunter", "gatherer" и т.д.
+    Возвращает: "ready" | "active" | None
+    """
+    try:
+        with get_connection() as conn:
+            # Сначала проверяем готовые к сдаче (completed=1, reward не получен)
+            ready = conn.execute("""
+                SELECT COUNT(*) FROM player_guild_quests
+                WHERE telegram_id=? AND source=? AND completed=1
+            """, (telegram_id, npc_key)).fetchone()[0]
+            if ready:
+                return "ready"
+            # Потом активные
+            active = conn.execute("""
+                SELECT COUNT(*) FROM player_guild_quests
+                WHERE telegram_id=? AND source=? AND completed=0
+            """, (telegram_id, npc_key)).fetchone()[0]
+            if active:
+                return "active"
+            # Также проверяем board_quests (Mirna, Bort)
+            board_ready = conn.execute("""
+                SELECT COUNT(*) FROM player_board_quests
+                WHERE telegram_id=? AND npc=? AND completed=1 AND claimed=0
+            """, (telegram_id, npc_key)).fetchone()[0]
+            if board_ready:
+                return "ready"
+            board_active = conn.execute("""
+                SELECT COUNT(*) FROM player_board_quests
+                WHERE telegram_id=? AND npc=? AND completed=0
+            """, (telegram_id, npc_key)).fetchone()[0]
+            if board_active:
+                return "active"
+    except Exception:
+        pass
+    return None
