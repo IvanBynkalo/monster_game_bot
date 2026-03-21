@@ -45,6 +45,7 @@ from handlers.craft import craft_handler, resources_handler, craft_item_handler
 from handlers.profile import profile_handler, restore_energy_handler, profile_tab_callback, profile_stat_callback
 from handlers.healing import heal_hero_handler, rest_hero_handler, revive_monster_handler
 from handlers.equipment import equipment_handler, equipment_callback
+from handlers.crystals import crystals_handler, crystal_callback
 from handlers.codex import codex_handler, bestiary_callback
 from handlers.relics import relics_handler
 from handlers.progression import (
@@ -678,9 +679,21 @@ async def fight_inline_callback(callback: CallbackQuery):
     has_trap  = any(get_item_count(uid, t) > 0 for t in ["basic_trap", "frost_trap", "blast_trap"])
     has_ptrap = get_item_count(uid, "poison_trap") > 0
 
+    # Получаем модификаторы кристалла
+    try:
+        from game.crystal_service import get_combat_modifiers as _gcm
+        _crystal_mods = _gcm(uid, active["id"])
+        _crystal_multiplier = _crystal_mods.get("atk_multiplier", 1.0)
+        _crystal_note = _crystal_mods.get("note", "")
+    except Exception:
+        _crystal_multiplier = 1.0
+        _crystal_note = ""
+
+    _base_atk = int((active.get("attack", 3) + player.strength) * _crystal_multiplier)
+
     if action == "attack":
         result = resolve_attack(enc,
-            active_monster_attack=active.get("attack", 3) + player.strength,
+            active_monster_attack=_base_atk,
             attacker_type=active.get("monster_type"),
             active_monster=active)
 
@@ -688,7 +701,7 @@ async def fight_inline_callback(callback: CallbackQuery):
         result = apply_skill(enc, active, player)
         if result is None:
             result = resolve_attack(enc,
-                active_monster_attack=active.get("attack", 3) + player.strength,
+                active_monster_attack=_base_atk,
                 attacker_type=active.get("monster_type"),
                 active_monster=active)
 
@@ -727,6 +740,8 @@ async def fight_inline_callback(callback: CallbackQuery):
         return
 
     lines = [result.get("text", "")]
+    if _crystal_note:
+        lines.append(f"💎 {_crystal_note}")
 
     # Применяем урон врага по монстру
     player_damage = result.get("player_damage", 0)
@@ -762,6 +777,15 @@ async def fight_inline_callback(callback: CallbackQuery):
         clear_pending_encounter(uid)
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+        # Записываем результат боя в систему кристаллов
+        try:
+            from game.crystal_service import record_battle_result, return_summoned_monster as _rsm
+            _victory = bool(result.get("victory") or result.get("captured") or result.get("flee_success"))
+            record_battle_result(uid, active["id"], _victory)
+            _rsm(uid, heal_in_home_crystal=_victory)
         except Exception:
             pass
 
@@ -1407,6 +1431,9 @@ async def do_hunt_craft(message: Message):
     )
 
 dp.message.register(equipment_handler, text_is("⚔️ Экипировка", "Экипировка"))
+dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
+dp.callback_query.register(crystal_callback, lambda c: c.data and c.data.startswith("crystal:"))
+
 dp.callback_query.register(equipment_callback, lambda c: c.data and c.data.startswith("equip:"))
 
 @dp.errors()
@@ -1513,6 +1540,18 @@ async def _notification_loop(bot_instance):
         except Exception as e:
             log.error(f"Notification loop error: {e}")
 
+async def _run_migration():
+    """Запускает миграцию кристаллов при старте."""
+    try:
+        from game.crystal_service import migrate_existing_players, _lazy as _crystal_lazy
+        _crystal_lazy()  # ensure tables
+        n = migrate_existing_players()
+        if n > 0:
+            logging.info(f"Crystal migration: {n} monsters placed in crystals")
+    except Exception as e:
+        logging.warning(f"Crystal migration warning: {e}")
+
+
 async def main():
     # Инициализируем SQLite базу данных (рек. #1)
     init_db()
@@ -1524,6 +1563,7 @@ async def main():
 
     import asyncio
     asyncio.ensure_future(_notification_loop(bot))
+    await _run_migration()
     await dp.start_polling(bot)
 
 
