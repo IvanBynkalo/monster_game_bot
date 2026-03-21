@@ -9,6 +9,8 @@ from game.crystal_service import (
     create_crystal, render_crystal_list, render_crystal_detail,
     summon_monster, find_free_crystal, calculate_monster_volume,
     recalculate_crystal_load, repair_crystal, get_bond_level, get_combat_modifiers,
+    get_crystal_capacity, move_crystal_to_varg, move_crystal_from_varg,
+    rent_varg_slot, can_add_crystal,
 )
 from keyboards.main_menu import main_menu
 
@@ -17,10 +19,20 @@ def crystals_list_inline(telegram_id: int) -> InlineKeyboardMarkup:
     crystals = get_player_crystals(telegram_id)
     rows = []
     for c in crystals:
-        free = c["max_volume"] - c["current_volume"]
-        label = f"{c['name']} [{c['current_volume']}/{c['max_volume']}]"
+        loc = c.get("location", "on_hand")
+        loc_icon = "🎒" if loc == "on_hand" else "🏪"
+        state_icon = {"normal": "", "cracked": "⚠️", "broken": "💔"}.get(c.get("state","normal"), "")
+        label = f"{loc_icon}{state_icon} {c['name']} [{c['current_volume']}/{c['max_volume']}]"
         rows.append([InlineKeyboardButton(text=label, callback_data=f"crystal:open:{c['id']}")])
-    rows.append([InlineKeyboardButton(text="🛒 Купить кристалл", callback_data="crystal:shop")])
+
+    cap = get_crystal_capacity(telegram_id)
+    on_hand_count = sum(1 for c in crystals if c.get("location","on_hand") == "on_hand")
+    varg_count = sum(1 for c in crystals if c.get("location") == "varg")
+
+    rows.append([
+        InlineKeyboardButton(text="🛒 Купить кристалл", callback_data="crystal:shop"),
+        InlineKeyboardButton(text="🏪 Аренда у Варга", callback_data="crystal:rent_varg"),
+    ])
     rows.append([InlineKeyboardButton(text="⬅️ Закрыть", callback_data="crystal:close")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -52,6 +64,19 @@ def crystal_detail_inline(crystal_id: int, telegram_id: int) -> InlineKeyboardMa
     if crystal and crystal.get("state") in ("cracked", "broken"):
         state_label = "⚠️ Починить (треснут)" if crystal["state"] == "cracked" else "💔 Починить (разбит)"
         rows.append([InlineKeyboardButton(text=state_label, callback_data=f"crystal:repair:{crystal_id}")])
+    # Перемещение к Варгу / обратно
+    if crystal:
+        loc = crystal.get("location", "on_hand")
+        if loc == "on_hand":
+            rows.append([InlineKeyboardButton(
+                text="🏪 Сдать Варгу на хранение",
+                callback_data=f"crystal:to_varg:{crystal_id}"
+            )])
+        else:
+            rows.append([InlineKeyboardButton(
+                text="🎒 Забрать с хранения",
+                callback_data=f"crystal:from_varg:{crystal_id}"
+            )])
     rows.append([InlineKeyboardButton(text="⬅️ К списку кристаллов", callback_data="crystal:list")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -145,6 +170,11 @@ async def crystal_callback(callback: CallbackQuery):
                 show_alert=True
             )
             return
+        # Проверяем место
+        ok_cap, cap_msg = can_add_crystal(uid, "on_hand")
+        if not ok_cap:
+            await callback.answer(cap_msg, show_alert=True)
+            return
         _update_player_field(uid, gold=player.gold - tmpl["buy_price"])
         crystal = create_crystal(uid, code)
         await callback.answer(f"✅ Куплен {crystal['name']}!", show_alert=False)
@@ -153,6 +183,43 @@ async def crystal_callback(callback: CallbackQuery):
             await callback.message.edit_text(text, reply_markup=crystals_list_inline(uid))
         except Exception:
             await callback.message.answer(text, reply_markup=crystals_list_inline(uid))
+
+    elif data == "crystal:rent_varg":
+        if player.location_slug != "silver_city":
+            await callback.answer("Аренда доступна только в Сереброграде у Варга.", show_alert=True)
+            return
+        ok, msg, new_gold = rent_varg_slot(uid, player.gold)
+        if ok:
+            _update_player_field(uid, gold=new_gold)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            text = render_crystal_list(uid)
+            try:
+                await callback.message.edit_text(text, reply_markup=crystals_list_inline(uid))
+            except Exception:
+                await callback.message.answer(text, reply_markup=crystals_list_inline(uid))
+
+    elif data.startswith("crystal:to_varg:"):
+        cid = int(data.split(":")[-1])
+        ok, msg = move_crystal_to_varg(uid, cid)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            text = render_crystal_list(uid)
+            try:
+                await callback.message.edit_text(text, reply_markup=crystals_list_inline(uid))
+            except Exception:
+                pass
+
+    elif data.startswith("crystal:from_varg:"):
+        cid = int(data.split(":")[-1])
+        ok, msg = move_crystal_from_varg(uid, cid)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            text = render_crystal_list(uid)
+            try:
+                await callback.message.edit_text(text, reply_markup=crystals_list_inline(uid))
+            except Exception:
+                pass
 
     elif data.startswith("crystal:repair:"):
         cid = int(data.split(":")[-1])
