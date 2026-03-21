@@ -850,7 +850,6 @@ async def fight_inline_callback(callback: CallbackQuery):
     await callback.message.answer("\n".join(l for l in lines if l), reply_markup=kb)
 
 
-@dp.callback_query(lambda c: c.data and c.data.startswith("loc:"))
 async def location_inline_callback(callback: CallbackQuery):
     """Inline-действия в локации.
     Вызываем игровую логику напрямую по uid — НЕ мутируем frozen pydantic объект.
@@ -1077,8 +1076,9 @@ async def explore_direction_callback(callback: CallbackQuery):
     from game.grid_exploration_service import (
         explore_cell, render_exploration_result, render_exploration_panel,
         get_available_directions, get_grid, is_dungeon_available,
-        get_current_cell_bonuses,
+        get_current_cell_bonuses, render_mini_map,
     )
+    from game.exploration_service import get_cartographer_level
     from game.wildlife_service import has_wildlife, roll_wildlife, render_wildlife_encounter
     from game.encounter_service import generate_district_encounter, render_encounter_text
     from game.emotion_service import grant_event_emotions, render_emotion_changes
@@ -1201,7 +1201,8 @@ async def explore_direction_callback(callback: CallbackQuery):
         # Мини-карта 5×5 вокруг текущей позиции
         try:
             from game.grid_exploration_service import render_mini_map
-            _mini = render_mini_map(get_grid(uid, player.location_slug))
+            _cart_lvl = get_cartographer_level(uid) if True else 1
+            _mini = render_mini_map(get_grid(uid, player.location_slug), cart_level=_cart_lvl)
             parts.append(_mini)
         except Exception:
             pass
@@ -1268,7 +1269,7 @@ async def explore_stop_callback(callback: CallbackQuery):
     """Остановиться и вернуться к меню локации."""
     await callback.answer()
     from database.repositories import get_player
-    from game.grid_exploration_service import render_exploration_panel, is_dungeon_available, get_grid
+    from game.grid_exploration_service import render_exploration_panel, is_dungeon_available
     from keyboards.location_menu import location_actions_inline
     from game.dungeon_service import DUNGEONS
     from keyboards.main_menu import main_menu
@@ -1283,7 +1284,8 @@ async def explore_stop_callback(callback: CallbackQuery):
     from game.grid_exploration_service import render_mini_map
     _grid_stop = get_grid(callback.from_user.id, player.location_slug)
     _panel_stop = render_exploration_panel(callback.from_user.id, player.location_slug)
-    _mini_stop = render_mini_map(_grid_stop)
+    _cart_lvl_stop = get_cartographer_level(callback.from_user.id)
+    _mini_stop = render_mini_map(_grid_stop, cart_level=_cart_lvl_stop)
     await callback.message.answer(
         _panel_stop + "\n\n" + _mini_stop,
         reply_markup=main_menu(player.location_slug, player.current_district_slug)
@@ -1308,7 +1310,9 @@ async def map_grid_cmd(message: Message):
         return
     grid = get_grid(message.from_user.id, player.location_slug)
     from game.grid_exploration_service import render_mini_map
-    mini = render_mini_map(grid)
+    from game.exploration_service import get_cartographer_level as _gcl
+    _cl = _gcl(message.from_user.id)
+    mini = render_mini_map(grid, cart_level=_cl)
     panel = render_exploration_panel(message.from_user.id, player.location_slug)
     await message.answer(panel + "\n\n" + mini)
 
@@ -1406,16 +1410,6 @@ async def do_hunt_craft(message: Message):
 async def global_error_handler(event: ErrorEvent):
     logger.exception("Unhandled update error: %s", event.exception)
     return True
-
-
-@dp.callback_query()
-async def fallback_callback_handler(callback: CallbackQuery):
-    logger.warning(
-        "UNHANDLED CALLBACK: user=%s data=%r",
-        callback.from_user.id if callback.from_user else None,
-        callback.data,
-    )
-    await callback.answer("Кнопка не работает", show_alert=False)
 
 
 @dp.message()
