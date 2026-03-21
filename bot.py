@@ -51,6 +51,16 @@ from handlers.admin_panel import (
 )
 from game.analytics_service import touch_player_activity, _lazy as _analytics_lazy
 from handlers.crystals import crystals_handler, crystal_callback
+from handlers.workshop_auction import (
+    workshop_handler, workshop_callback,
+    auction_handler, auction_callback,
+    orders_handler, orders_callback,
+)
+from game.roaming_monsters import update_roaming_positions as _update_roaming
+from game.world_events import get_location_event_bonuses, render_active_events, expire_old_events, try_spawn_anomaly, try_spawn_crystal_storm
+from game.false_encounters import roll_false_encounter, apply_false_encounter_effect
+from game.crystal_heat import get_heat_modifiers, add_heat, calculate_battle_heat, HEAT_STATUS_LABELS
+from game.rift_service import is_in_rift, get_rift_encounter_modifiers, spend_token, try_drop_crystal, render_rift_status
 from handlers.codex import codex_handler, bestiary_callback
 from handlers.relics import relics_handler
 from handlers.progression import (
@@ -653,7 +663,7 @@ async def fight_inline_callback(callback: CallbackQuery):
     has_trap  = any(get_item_count(uid, t) > 0 for t in ["basic_trap", "frost_trap", "blast_trap"])
     has_ptrap = get_item_count(uid, "poison_trap") > 0
 
-    # Получаем модификаторы кристалла
+    # Получаем модификаторы кристалла + комбо-бонусы
     try:
         from game.crystal_service import get_combat_modifiers as _gcm
         _crystal_mods = _gcm(uid, active["id"])
@@ -662,6 +672,18 @@ async def fight_inline_callback(callback: CallbackQuery):
     except Exception:
         _crystal_multiplier = 1.0
         _crystal_note = ""
+
+    try:
+        from game.combo_crystals import get_summoned_crystal_combos
+        _combos = get_summoned_crystal_combos(uid)
+        _crystal_multiplier *= (1 + _combos.get("atk_bonus", 0.0))
+        if _combos.get("combos"):
+            _crystal_note += " | " + " + ".join(_combos["combos"])
+        # Комбо capture_bonus применяется в resolve_capture
+        if _combos.get("capture_bonus"):
+            enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + _combos["capture_bonus"]
+    except Exception:
+        pass
 
     _base_atk = int((active.get("attack", 3) + player.strength) * _crystal_multiplier)
 
@@ -760,6 +782,27 @@ async def fight_inline_callback(callback: CallbackQuery):
             _victory = bool(result.get("victory") or result.get("captured") or result.get("flee_success"))
             record_battle_result(uid, active["id"], _victory)
             _rsm(uid, heal_in_home_crystal=_victory)
+        except Exception:
+            pass
+        # Жар кристалла после боя
+        try:
+            _fresh_active = __import__("database.repositories", fromlist=["get_active_monster"]).get_active_monster(uid)
+            if _fresh_active and _fresh_active.get("crystal_id"):
+                _heat_amt = calculate_battle_heat(
+                    _fresh_active.get("current_hp", 1),
+                    _fresh_active.get("max_hp", 10),
+                    bool(result.get("victory"))
+                )
+                if _heat_amt > 0:
+                    add_heat(_fresh_active["crystal_id"], _heat_amt)
+        except Exception:
+            pass
+        # Дроп кристалла в Разломе
+        try:
+            if is_in_rift(get_player(uid).location_slug if get_player(uid) else ""):
+                _rift_drop = try_drop_crystal(uid)
+                if _rift_drop:
+                    lines.append(_rift_drop)
         except Exception:
             pass
 
@@ -1111,6 +1154,13 @@ async def explore_direction_callback(callback: CallbackQuery):
         await callback.message.answer("⚡ Недостаточно энергии для исследования.")
         return
 
+    # Разлом: тратим токен
+    if is_in_rift(player.location_slug):
+        _tok_ok, _tok_msg = spend_token(uid)
+        if not _tok_ok:
+            await callback.message.answer(_tok_msg)
+            return
+
     # Сбрасываем старую встречу
     clear_pending_encounter(uid)
 
@@ -1412,6 +1462,14 @@ dp.callback_query.register(notification_callback, lambda c: c.data and c.data.st
 dp.message.register(admin_cmd, Command("admin"))
 dp.message.register(admin_cmd, text_is("🛠 Админ-панель", "Адмін-панель"))
 dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
+dp.message.register(workshop_handler, text_is("🔨 Мастерская", "Мастерская Геммы"))
+dp.message.register(auction_handler, text_is("🏛 Аукцион", "Аукцион"))
+dp.callback_query.register(workshop_callback, lambda c: c.data and c.data.startswith("ws:"))
+dp.callback_query.register(auction_callback, lambda c: c.data and c.data.startswith("auc:"))
+dp.message.register(orders_handler, text_is("📋 Заказы", "Рынок заказов", "📋 Рынок заказов"))
+dp.callback_query.register(orders_callback, lambda c: c.data and c.data.startswith("ord:"))
+
+
 dp.callback_query.register(crystal_callback, lambda c: c.data and c.data.startswith("crystal:"))
 
 dp.callback_query.register(equipment_callback, lambda c: c.data and c.data.startswith("equip:"))
@@ -1537,6 +1595,14 @@ async def _notification_loop(bot_instance):
                     )
                 except Exception as e:
                     log.warning(f"Travel notification failed for {uid}: {e}")
+
+            # 2.5 Мировые события — спавн аномалий/бурь
+            try:
+                expire_old_events()
+                try_spawn_anomaly()
+                try_spawn_crystal_storm()
+            except Exception:
+                pass
 
             # 2. Уведомления о восполнении энергии
             try:
