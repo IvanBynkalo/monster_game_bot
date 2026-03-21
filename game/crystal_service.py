@@ -667,23 +667,180 @@ def get_bond_level(monster_id: int, crystal_id: int) -> int:
     return row["bond_level"] if row else 0
 
 
+
+
+def _ensure_storage_table():
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS player_crystal_storage (
+                telegram_id  INTEGER PRIMARY KEY,
+                varg_slots   INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(player_crystals)").fetchall()]
+        if "location" not in cols:
+            conn.execute(
+                "ALTER TABLE player_crystals ADD COLUMN location TEXT NOT NULL DEFAULT 'on_hand'"
+            )
+        conn.commit()
+
+_storage_ok = False
+def _ensure_storage():
+    global _storage_ok
+    if not _storage_ok:
+        _ensure_storage_table()
+        _storage_ok = True
+
+
+def _get_varg_storage_slots(telegram_id: int) -> int:
+    _ensure_storage()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT varg_slots FROM player_crystal_storage WHERE telegram_id=?",
+            (telegram_id,)
+        ).fetchone()
+    return row["varg_slots"] if row else 0
+
+
+def get_crystal_capacity(telegram_id: int) -> dict:
+    """Максимум кристаллов: 1 базово + ремень + уровень/5 + хранилище Варга."""
+    _ensure_storage()
+    base = 1
+    belt_slots = 0
+    try:
+        from game.equipment_service import get_equipped
+        belt = get_equipped(telegram_id).get("belt")
+        if belt:
+            belt_slots = belt.get("crystal_slots", 0)
+    except Exception:
+        pass
+    from database.repositories import get_player
+    p = get_player(telegram_id)
+    level_bonus = (p.level // 5) if p else 0
+    varg_slots = _get_varg_storage_slots(telegram_id)
+    on_hand = base + belt_slots + level_bonus
+    return {
+        "on_hand": on_hand,
+        "varg_storage": varg_slots,
+        "total": on_hand + varg_slots,
+        "base": base,
+        "belt_slots": belt_slots,
+        "level_bonus": level_bonus,
+    }
+
+
+def can_add_crystal(telegram_id: int, location: str = "on_hand") -> tuple[bool, str]:
+    """Проверяет есть ли место для нового кристалла."""
+    _ensure_storage()
+    cap = get_crystal_capacity(telegram_id)
+    crystals = get_player_crystals(telegram_id)
+    on_hand_count = sum(1 for c in crystals if c.get("location", "on_hand") == "on_hand")
+    varg_count = sum(1 for c in crystals if c.get("location") == "varg")
+    if location == "on_hand":
+        if on_hand_count >= cap["on_hand"]:
+            belt_hint = " Купи ремень!" if cap["belt_slots"] == 0 else ""
+            return False, (
+                f"Нет места! ({on_hand_count}/{cap['on_hand']})\n"
+                f"Ремень:{cap['belt_slots']} Уровень:{cap['level_bonus']}{belt_hint}\n"
+                f"Хранилище Варга: {cap['varg_storage'] - varg_count}/{cap['varg_storage']}"
+            )
+        return True, ""
+    else:
+        if varg_count >= cap["varg_storage"]:
+            return False, "Нет места у Варга! Аренда ячейки стоит 80з."
+        return True, ""
+
+
+def rent_varg_slot(telegram_id: int, gold: int) -> tuple[bool, str, int]:
+    """Арендует ячейку хранилища у Варга (80з, постоянно)."""
+    PRICE = 80
+    _ensure_storage()
+    if gold < PRICE:
+        return False, f"Нужно {PRICE}з. У тебя {gold}з", gold
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO player_crystal_storage (telegram_id, varg_slots)
+            VALUES (?, 1)
+            ON CONFLICT(telegram_id) DO UPDATE SET varg_slots = varg_slots + 1
+        """, (telegram_id,))
+        conn.commit()
+    return True, "✅ Арендована ячейка у Варга (+1 место).", gold - PRICE
+
+
+def move_crystal_to_varg(telegram_id: int, crystal_id: int) -> tuple[bool, str]:
+    """Сдаёт кристалл на хранение к Варгу."""
+    _ensure_storage()
+    crystal = get_crystal(crystal_id)
+    if not crystal or crystal["telegram_id"] != telegram_id:
+        return False, "Кристалл не найден."
+    monsters = get_monsters_in_crystal(crystal_id)
+    if any(m.get("is_summoned") for m in monsters):
+        return False, "Нельзя сдать кристалл с призванным монстром."
+    ok, msg = can_add_crystal(telegram_id, "varg")
+    if not ok:
+        return False, msg
+    with get_connection() as conn:
+        conn.execute("UPDATE player_crystals SET location='varg' WHERE id=?", (crystal_id,))
+        conn.commit()
+    return True, f"✅ {crystal['name']} отдан Варгу на хранение."
+
+
+def move_crystal_from_varg(telegram_id: int, crystal_id: int) -> tuple[bool, str]:
+    """Забирает кристалл с хранения у Варга."""
+    _ensure_storage()
+    ok, msg = can_add_crystal(telegram_id, "on_hand")
+    if not ok:
+        return False, msg
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE player_crystals SET location='on_hand' WHERE id=? AND telegram_id=?",
+            (crystal_id, telegram_id)
+        )
+        conn.commit()
+    crystal = get_crystal(crystal_id)
+    return True, f"✅ {crystal['name']} взят с хранения."
+
+
+def render_capacity_hint(telegram_id: int) -> str:
+    """Строка с текущей загрузкой слотов."""
+    _ensure_storage()
+    cap = get_crystal_capacity(telegram_id)
+    crystals = get_player_crystals(telegram_id)
+    on_hand = sum(1 for c in crystals if c.get("location", "on_hand") == "on_hand")
+    varg = sum(1 for c in crystals if c.get("location") == "varg")
+    line = f"💎 При себе: {on_hand}/{cap['on_hand']} (база:1 + ремень:{cap['belt_slots']} + ур:{cap['level_bonus']})"
+    if cap["varg_storage"] > 0:
+        line += f" | 🏪 Варг: {varg}/{cap['varg_storage']}"
+    return line
+
+
 def render_crystal_list(telegram_id: int) -> str:
     """Список кристаллов игрока."""
+    _ensure_storage()
     crystals = get_player_crystals(telegram_id)
     if not crystals:
         return "У тебя нет кристаллов. Купи у торговца!"
 
-    lines = ["💎 Твои кристаллы\n"]
-    for c in crystals:
-        vol_bar = "█" * int(c["current_volume"] / max(1, c["max_volume"]) * 10)
-        vol_bar += "░" * (10 - len(vol_bar))
-        state_icon = {"normal": "✅", "cracked": "⚠️", "overloaded": "❌"}.get(c["state"], "❓")
-        lines.append(
-            f"{state_icon} {c['name']}\n"
-            f"  Объём: [{vol_bar}] {c['current_volume']}/{c['max_volume']}\n"
-            f"  Монстры: {c['current_monsters']}/{c['max_monsters']}"
-        )
-    return "\n\n".join(lines)
+    lines = ["💎 Твои кристаллы\n" + render_capacity_hint(telegram_id)]
+    on_hand = [c for c in crystals if c.get("location", "on_hand") == "on_hand"]
+    at_varg = [c for c in crystals if c.get("location") == "varg"]
+
+    if on_hand:
+        lines.append("\n🎒 При себе:")
+        for c in on_hand:
+            vol_bar = "█" * int(c["current_volume"] / max(1, c["max_volume"]) * 10)
+            vol_bar += "░" * (10 - len(vol_bar))
+            state_icon = {"normal": "✅", "cracked": "⚠️", "broken": "💔"}.get(c.get("state","normal"), "❓")
+            lines.append(
+                f"  {state_icon} {c['name']}\n"
+                f"    [{vol_bar}] {c['current_volume']}/{c['max_volume']} | "
+                f"Монстров: {c['current_monsters']}/{c['max_monsters']}"
+            )
+    if at_varg:
+        lines.append("\n🏪 У Варга:")
+        for c in at_varg:
+            lines.append(f"  🔒 {c['name']} | {c['current_monsters']} монстров")
+    return "\n".join(lines)
 
 
 def render_crystal_detail(crystal_id: int) -> str:
