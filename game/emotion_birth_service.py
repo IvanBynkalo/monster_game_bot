@@ -184,6 +184,15 @@ def try_manual_birth(telegram_id: int, location_slug: str) -> tuple[dict | None,
     )
     mark_birth_done(telegram_id)
     start_birth_cooldown(telegram_id, actions=10)  # кулдаун 10 действий
+    # Помещаем в кристалл
+    try:
+        from game.crystal_service import auto_store_new_monster as _crystal_store
+        _ok, _msg = _crystal_store(telegram_id, monster["id"])
+        if not _ok:
+            return None, _msg
+    except Exception:
+        pass
+
     return monster, ""
 
 

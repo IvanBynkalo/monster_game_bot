@@ -33,4 +33,11 @@ def ensure_starter_monster(telegram_id: int) -> tuple[dict | None, bool]:
         attack=template["attack"],
         source_type="starter",
     )
+    # Помещаем стартового монстра в кристалл
+    try:
+        from game.crystal_service import auto_store_new_monster as _cs, ensure_starter_crystal
+        ensure_starter_crystal(telegram_id)
+        _cs(telegram_id, monster["id"])
+    except Exception:
+        pass
     return monster, True
