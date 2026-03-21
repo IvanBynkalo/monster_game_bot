@@ -338,6 +338,19 @@ async def capture_handler(message: Message):
             max(1, encounter["hp"]),
             encounter["attack"],
         )
+        # Помещаем в кристалл
+        if captured:
+            try:
+                from game.crystal_service import auto_store_new_monster
+                _ok, _msg = auto_store_new_monster(message.from_user.id, captured["id"])
+                if not _ok:
+                    crystal_warn = f"\n\n{_msg}"
+                else:
+                    crystal_warn = ""
+            except Exception:
+                crystal_warn = ""
+        else:
+            crystal_warn = ""
 
         rarity_xp = {
             "common": 1,
@@ -434,7 +447,6 @@ async def flee_handler(message: Message):
         text = _append_progression(message.from_user.id, result["text"], result, _district_mood_from_player(player), "flee_success")
         if damage_text:
             text += "\n\n" + damage_text
-        text += "\n\n🏕 Ты вернулся в безопасную зону."
         await message.answer(text, reply_markup=main_menu(player.location_slug))
         await message.answer(
             "Что делать:",
