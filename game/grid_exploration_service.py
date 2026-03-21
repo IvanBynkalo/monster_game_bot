@@ -325,15 +325,96 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
 
 
 
-def render_mini_map(grid: dict) -> str:
+# Тусклые иконки для тумана войны — показывают ТИП но приглушённо
+_FOG_ICONS_NEAR = {
+    "normal":    "🌫",   # туман — обычная местность
+    "gathering": "🌱",   # слабый намёк на ресурсы
+    "danger":    "⚠️",   # чувствуется опасность
+    "discovery": "🔆",   # что-то особенное рядом
+    "dungeon":   "🕳",   # слышны звуки из-под земли
+    "boss_zone": "☠️",   # ощущение угрозы
+}
+_FOG_ICONS_FAR = {
+    "normal":    "░",    # совсем тускло
+    "gathering": "·🌱",
+    "danger":    "·⚠",
+    "discovery": "·✨",
+    "dungeon":   "·🕳",
+    "boss_zone": "·☠",
+}
+
+
+def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict[str, str]:
+    """
+    Возвращает словарь {key: fog_icon} для клеток в "тумане войны".
+    
+    Уровень 4+: соседние клетки — тусклый намёк на тип (предсказание картографа)
+    Уровень 10+: клетки через одну — ещё тусклее с типом
+    """
+    if cart_level < 4:
+        return {}
+
+    cells = grid["cells"]
+    visited_set = set()
+    for key, cell in cells.items():
+        if cell.get("visited"):
+            col, row = map(int, key.split(","))
+            visited_set.add((col, row))
+
+    fog = {}
+
+    def _get_predicted_type(key: str, row: int) -> str:
+        """Берём уже сохранённый predicted_type или генерируем новый."""
+        cell = cells.get(key, {})
+        if cell.get("predicted_type"):
+            return cell["predicted_type"]
+        # Генерируем предсказание на основе зоны
+        pct = min(100, grid.get("visited_count", 1))
+        ctype = _weighted_cell_type(row, pct)
+        # Сохраняем в ячейку (персистится при следующем _save_grid)
+        cell["predicted_type"] = ctype
+        return ctype
+
+    # Слой 1 (уровень 4+): ближние соседи с тусклым типом
+    for col, row in visited_set:
+        for dc, dr in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
+            nc, nr = col + dc, row + dr
+            if not (0 <= nc <= 9 and 0 <= nr <= 9):
+                continue
+            nkey = f"{nc},{nr}"
+            if (nc, nr) in visited_set or nkey in fog:
+                continue
+            ptype = _get_predicted_type(nkey, nr)
+            fog[nkey] = _FOG_ICONS_NEAR.get(ptype, "🌫")
+
+    # Слой 2 (уровень 10+): дальние соседи ещё тусклее
+    if cart_level >= 10:
+        layer1_keys = set(fog.keys())
+        for fkey in layer1_keys:
+            fc, fr = map(int, fkey.split(","))
+            for dc, dr in [(-1,0),(1,0),(0,-1),(0,1)]:
+                nc, nr = fc + dc, fr + dr
+                if not (0 <= nc <= 9 and 0 <= nr <= 9):
+                    continue
+                nkey = f"{nc},{nr}"
+                if (nc, nr) in visited_set or nkey in fog:
+                    continue
+                ptype = _get_predicted_type(nkey, nr)
+                far_icon = _FOG_ICONS_FAR.get(ptype, "░")
+                fog[nkey] = far_icon
+
+    return fog
+
+
+def render_mini_map(grid: dict, cart_level: int = 1) -> str:
     """
     Мини-карта 5×5 вокруг текущей позиции.
-    Показывает какие клетки открыты и где ты сейчас.
     
     Легенда:
     📍 — ты здесь
-    🟩 — обычная  🟦 — сбор  🟥 — опасность
-    🟨 — находка  🕳 — подземелье  💀 — босс-зона
+    🟩 обычная  🟦 сбор  🟥 опасность  🟨 находка  🕳 подземелье  💀 босс
+    🔲 — рядом с исследованным (видно с картографом 4+)
+    ▫️  — чуть дальше (видно с картографом 10+)
     ⬜ — не исследовано
     """
     col_cur, row_cur = grid["current_pos"]
@@ -343,20 +424,20 @@ def render_mini_map(grid: dict) -> str:
         "gathering": "🟦",
         "danger":    "🟥",
         "discovery": "🟨",
-        "dungeon":   "🕳 ",
+        "dungeon":   "🕳",
         "boss_zone": "💀",
     }
 
-    # Показываем 5 строк: текущую + 2 вверх + 2 вниз
+    # Область показа: 5×5 вокруг позиции
     row_start = max(0, row_cur - 2)
     row_end   = min(9, row_cur + 2)
-
-    # Показываем 5 колонок: текущую + 2 влево + 2 вправо
     col_start = max(0, col_cur - 2)
     col_end   = min(9, col_cur + 2)
 
+    # Туман войны от картографа
+    fog = _get_fog_cells(grid, cart_level, grid.get("location_slug", ""))
+
     lines = []
-    # Рисуем сверху вниз (большая глубина = вверху)
     for row in range(row_end, row_start - 1, -1):
         row_str = ""
         for col in range(col_start, col_end + 1):
@@ -364,23 +445,28 @@ def render_mini_map(grid: dict) -> str:
             cell = grid["cells"].get(key, {})
             if col == col_cur and row == row_cur:
                 row_str += "📍"
-            elif not cell.get("visited"):
-                row_str += "⬜"
-            else:
+            elif cell.get("visited"):
                 ctype = cell.get("type", "normal")
                 row_str += ICONS.get(ctype, "🟩")
-        # Пометка текущей строки
+            elif key in fog:
+                row_str += fog[key]
+            else:
+                row_str += "⬜"
         if row == row_cur:
-            row_str += f" ← ты (гл.{row+1})"
+            row_str += f" ← гл.{row+1}"
         elif row == 0:
             row_str += " ← вход"
         lines.append(row_str)
 
-    # Легенда компактная
-    legend = "⬜ неизвестно  🟩 обычная  🟦 сбор  🟥 опасно  🟨 находка"
+    # Легенда с учётом уровня картографа
+    if cart_level >= 10:
+        legend = "📍ты  🟩норм  🟦сбор  🟥опасно  🟨находка  🕳подзем\n🌫/⚠️/🌱 — предсказание (близко)  ░·☠ — предсказание (далеко)"
+    elif cart_level >= 4:
+        legend = "📍ты  🟩норм  🟦сбор  🟥опасно  🟨находка\n🌫⚠️🌱🔆 — предсказание картографа"
+    else:
+        legend = "📍ты  ⬜неизв  🟩норм  🟦сбор  🟥опасно  🟨находка  🕳подзем"
 
-    header = f"🗺 Карта [{col_start+1}-{col_end+1} / глубина {row_start+1}-{row_end+1}]"
-
+    header = f"🗺 Карта [{col_start+1}–{col_end+1} / гл.{row_start+1}–{row_end+1}]"
     return header + "\n" + "\n".join(lines) + "\n" + legend
 
 def render_grid_map(grid: dict) -> str:
