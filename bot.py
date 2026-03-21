@@ -325,20 +325,6 @@ dp.callback_query.register(
     lambda c: c.data and c.data.startswith("bestiary:"),
 )
 
-dp.message.register(
-    admin_buttons_handler,
-    lambda message: is_admin(message.from_user.id) and (
-        normalize_text(message.text) in {
-            normalize_text("💰 Выдать золото"),
-            normalize_text("⚡ Выдать энергию"),
-            normalize_text("❤️ Вылечить монстров"),
-            normalize_text("🧹 Сбросить игрока"),
-            normalize_text("🗺 Телепорт по локации"),
-            normalize_text("🧭 Телепорт по району"),
-            normalize_text("❌ Закрыть админ-панель"),
-        } or has_admin_state(message)
-    )
-)
 
 
 
