@@ -202,6 +202,7 @@ def reset_player_state(telegram_id: int, name: str = "Игрок") -> Player:
         conn.execute("DELETE FROM player_codex WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_relics WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_pvp WHERE telegram_id=?", (telegram_id,))
+        # Сбрасываем основные поля игрока
         conn.execute("""UPDATE players SET
             name=?,location_slug='silver_city',current_region_slug='valley_of_emotions',
             current_district_slug='market_square',gold=120,level=1,experience=0,
@@ -209,8 +210,22 @@ def reset_player_state(telegram_id: int, name: str = "Игрок") -> Player:
             stat_points=0,gatherer_level=1,gatherer_exp=0,hunter_level=1,hunter_exp=0,
             geologist_level=1,geologist_exp=0,alchemist_level=1,alchemist_exp=0,
             merchant_level=1,merchant_exp=0,bag_capacity=12,hp=30,max_hp=30,
-            is_defeated=0,injury_turns=0,daily_streak=0,last_login_date=''
+            is_defeated=0,injury_turns=0,daily_streak=0,last_login_date=\'\',
+            last_energy_time=NULL,energy_notified=0,cartographer_level=1,cartographer_exp=0
             WHERE telegram_id=?""", (name, telegram_id))
+        # Сбрасываем исследование локаций (картограф)
+        conn.execute("DELETE FROM player_exploration WHERE telegram_id=?", (telegram_id,))
+        conn.execute("DELETE FROM player_grid_exploration WHERE telegram_id=?", (telegram_id,))
+        # Сбрасываем охотничьи квесты
+        try:
+            conn.execute("DELETE FROM player_hunting_quests WHERE telegram_id=?", (telegram_id,))
+        except Exception:
+            pass
+        # Сбрасываем путешествие
+        try:
+            conn.execute("DELETE FROM player_travel WHERE telegram_id=?", (telegram_id,))
+        except Exception:
+            pass
         conn.commit()
     return create_player(telegram_id, name)
 
@@ -590,7 +605,12 @@ def get_living_active_monster(telegram_id: int) -> dict | None:
 
 def has_living_monster(telegram_id: int) -> bool:
     """Checks if player has any living active monster."""
-    return get_living_active_monster(telegram_id) is not None
+    try:
+        return get_living_active_monster(telegram_id) is not None
+    except Exception:
+        # Fallback: just check active monster exists with hp > 0
+        m = get_active_monster(telegram_id)
+        return m is not None and m.get("current_hp", 1) > 0
 
 
 def revive_monster(telegram_id: int, monster_id: int, hp: int) -> bool:
