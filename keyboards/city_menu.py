@@ -14,28 +14,68 @@ def city_menu(district_slug: str | None = None):
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def district_actions_menu(district_slug: str):
+def district_actions_menu(district_slug: str, telegram_id: int = None):
     keyboard = [
         [KeyboardButton(text="⬅️ Назад")],
     ]
 
     if district_slug == "market_square":
+        # Quest indicators для торговцев
+        def _npc_qi(base: str, npc_key: str) -> str:
+            if not telegram_id:
+                return base
+            try:
+                from database.repositories import get_npc_quest_status
+                st = get_npc_quest_status(telegram_id, npc_key)
+                if st == "ready":
+                    return f"{base} (✅ 1)"
+                elif st == "active":
+                    return f"{base} (❗ 1)"
+            except Exception:
+                pass
+            return base
+
         keyboard = [
-            [KeyboardButton(text="🎒 Лавка сумок"), KeyboardButton(text="🐲 Рынок монстров")],
-            [KeyboardButton(text="🧪 Лавка зелий"),  KeyboardButton(text="💰 Скупщик ресурсов")],
+            [KeyboardButton(text=_npc_qi("🎒 Лавка сумок", "mirna")),
+             KeyboardButton(text=_npc_qi("🐲 Рынок монстров", "varg"))],
+            [KeyboardButton(text="🧪 Лавка зелий"),
+             KeyboardButton(text=_npc_qi("💰 Скупщик ресурсов", "bort"))],
+            [KeyboardButton(text="💎 Кристаллы"), KeyboardButton(text="⚔️ Экипировка")],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 
     elif district_slug == "craft_quarter":
         keyboard = [
             [KeyboardButton(text="⚗ Алхимическая лаборатория"), KeyboardButton(text="🪤 Мастер ловушек")],
+            [KeyboardButton(text="🔨 Мастерская"), KeyboardButton(text="🏛 Аукцион")],
+            [KeyboardButton(text="📋 Заказы")],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 
     elif district_slug == "guild_quarter":
+        # Проверяем выполненные квесты для индикаторов
+        _q_done = {}
+        if telegram_id:
+            try:
+                from database.repositories import get_guild_quests_status
+                _q_done = get_guild_quests_status(telegram_id)
+            except Exception:
+                pass
+
+        def _qi(base_text: str, guild_key: str) -> str:
+            """Quest indicator: NPC (❗ N) когда есть квесты."""
+            status = _q_done.get(guild_key)
+            if status == "ready":
+                return f"{base_text} (✅ 1)"
+            elif status == "active":
+                return f"{base_text} (❗ 1)"
+            return base_text
+
         keyboard = [
-            [KeyboardButton(text="🎯 Гильдия ловцов"), KeyboardButton(text="🌿 Гильдия собирателей")],
-            [KeyboardButton(text="⛏ Гильдия геологов"), KeyboardButton(text="⚗ Гильдия алхимиков")],
+            [KeyboardButton(text=_qi("🎯 Гильдия ловцов", "hunter")),
+             KeyboardButton(text=_qi("🌿 Гильдия собирателей", "gatherer"))],
+            [KeyboardButton(text=_qi("⛏ Гильдия геологов", "geologist")),
+             KeyboardButton(text=_qi("⚗ Гильдия алхимиков", "alchemist"))],
             [KeyboardButton(text="🌌 Алтарь рождения")],
             [KeyboardButton(text="⬅️ Назад")],
         ]

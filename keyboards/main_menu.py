@@ -9,13 +9,17 @@ from game.location_rules import is_city
 from keyboards.city_menu import city_menu
 
 
-def main_menu(location_slug: str, district_slug: str | None = None) -> ReplyKeyboardMarkup:
+def main_menu(location_slug: str, district_slug: str | None = None,
+              is_traveling: bool = False) -> ReplyKeyboardMarkup:
     if is_city(location_slug):
         return city_menu(district_slug)
 
+    # Кнопка перемещения меняется во время путешествия
+    move_btn = KeyboardButton(text="🚫 Отменить перемещение") if is_traveling else KeyboardButton(text="🧭 Переместиться")
+
     # Чистое меню — Собирать и Подземелье теперь в inline под сообщением локации
     keyboard = [
-        [KeyboardButton(text="🧭 Переместиться"), KeyboardButton(text="🐲 Мои монстры")],
+        [move_btn, KeyboardButton(text="🐲 Мои монстры")],
         [KeyboardButton(text="🎒 Инвентарь"),     KeyboardButton(text="👤 Персонаж")],
         [KeyboardButton(text="📂 Ещё")],
     ]
