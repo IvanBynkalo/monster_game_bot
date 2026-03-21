@@ -44,6 +44,7 @@ from handlers.inventory import (
 from handlers.craft import craft_handler, resources_handler, craft_item_handler
 from handlers.profile import profile_handler, restore_energy_handler, profile_tab_callback, profile_stat_callback
 from handlers.healing import heal_hero_handler, rest_hero_handler, revive_monster_handler
+from handlers.equipment import equipment_handler, equipment_callback
 from handlers.codex import codex_handler, bestiary_callback
 from handlers.relics import relics_handler
 from handlers.progression import (
@@ -1014,11 +1015,11 @@ async def birth_cmd(message: Message):
 
     # Проверяем нахождение в месте рождения
     birth_loc = loc
-    # В городе — только в ремесленном квартале (алтарь)
-    if loc == "silver_city" and district != "craft_quarter":
+    # В городе — в гильдейском или ремесленном квартале
+    if loc == "silver_city" and district not in ("craft_quarter", "guild_quarter", "market_square"):
         await message.answer(
-            "🏛 Алтарь для ритуала находится в Ремесленном квартале Сереброграда.\n"
-            "Перейди туда через меню города."
+            "🏛 Алтарь Сереброграда находится в Квартале гильдий.\n"
+            "Нажми 🏛 Гильдии → 🌌 Алтарь рождения."
         )
         return
 
@@ -1404,6 +1405,9 @@ async def do_hunt_craft(message: Message):
         f"{recipe['description']}\n"
         f"Потрачено: {recipe['gold_cost']} золота"
     )
+
+dp.message.register(equipment_handler, text_is("⚔️ Экипировка", "Экипировка"))
+dp.callback_query.register(equipment_callback, lambda c: c.data and c.data.startswith("equip:"))
 
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
