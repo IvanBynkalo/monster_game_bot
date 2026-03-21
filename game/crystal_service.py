@@ -129,6 +129,45 @@ def get_affinity_bonus(monster_mood: str, crystal_affinity: str) -> float:
 
 # ── БД ────────────────────────────────────────────────────────────────────────
 
+
+
+# ── Именные кристаллы ─────────────────────────────────────────────────────────
+
+_NAMED_PREFIXES = {
+    "rage":        ["Багровое", "Пылающее", "Яростное", "Огненное"],
+    "joy":         ["Золотое", "Лучезарное", "Светлое", "Янтарное"],
+    "fear":        ["Теневое", "Мрачное", "Тёмное", "Ночное"],
+    "sadness":     ["Туманное", "Слезливое", "Серое", "Печальное"],
+    "instinct":    ["Острое", "Дикое", "Первозданное", "Звериное"],
+    "inspiration": ["Лунное", "Мечтательное", "Небесное", "Хрустальное"],
+    "neutral":     ["Чистое", "Молчаливое", "Тихое", "Древнее"],
+}
+_NAMED_NOUNS = [
+    "Сердце", "Призма", "Осколок", "Сосуд", "Зеркало",
+    "Слеза", "Коготь", "Жемчуг", "Клык", "Оплот",
+]
+_NAMED_SUFFIXES = [
+    "Мирны", "Тумана", "Бури", "Рассвета", "Забвения",
+    "Судьбы", "Вечности", "Разлома", "Глубин", "Тишины",
+]
+
+
+def generate_crystal_name(template_code: str, rarity: str) -> str:
+    """Генерирует уникальное имя для редкого кристалла."""
+    if rarity not in ("rare", "epic", "legendary"):
+        return CRYSTAL_TEMPLATES.get(template_code, {}).get("name", "Кристалл")
+
+    import random as _r
+    tmpl = CRYSTAL_TEMPLATES.get(template_code, {})
+    affinity = tmpl.get("emotion_affinity", "neutral")
+    prefix = _r.choice(_NAMED_PREFIXES.get(affinity, _NAMED_PREFIXES["neutral"]))
+    noun = _r.choice(_NAMED_NOUNS)
+    # Легендарные получают суффикс
+    if rarity == "legendary":
+        suffix = _r.choice(_NAMED_SUFFIXES)
+        return f"✨ {prefix} {noun} {suffix}"
+    return f"💎 {prefix} {noun}"
+
 def _ensure_crystal_tables():
     with get_connection() as conn:
         conn.execute("""
@@ -208,13 +247,16 @@ def create_crystal(telegram_id: int, template_code: str) -> dict:
     """Создаёт кристалл игроку по шаблону."""
     _lazy()
     tmpl = CRYSTAL_TEMPLATES.get(template_code, CRYSTAL_TEMPLATES["simple_quartz"])
+    # Генерируем имя (уникальное для редких кристаллов)
+    crystal_name = generate_crystal_name(template_code, tmpl["rarity"])
+
     with get_connection() as conn:
         cur = conn.execute("""
             INSERT INTO player_crystals
             (telegram_id, template_code, name, rarity, emotion_affinity,
              max_volume, max_monsters, current_volume, current_monsters)
             VALUES (?,?,?,?,?,?,?,0,0)
-        """, (telegram_id, template_code, tmpl["name"], tmpl["rarity"],
+        """, (telegram_id, template_code, crystal_name, tmpl["rarity"],
               tmpl["emotion_affinity"], tmpl["max_volume"], tmpl["max_monsters"]))
         cid = cur.lastrowid
         conn.commit()

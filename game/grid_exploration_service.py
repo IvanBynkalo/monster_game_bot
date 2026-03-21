@@ -590,8 +590,12 @@ def get_current_cell_bonuses(telegram_id: int, location_slug: str) -> dict:
     cell = grid["cells"].get(key, {})
     ctype = cell.get("type", "normal")
     cell_info = CELL_TYPES.get(ctype, {})
+    is_danger = ctype in ("danger", "boss_zone")
+    rare_bonus = 0.05 if ctype == "discovery" else 0.0
     return {
         "gather_bonus": cell_info.get("gather_bonus", 0.0),
         "enemy_bonus":  cell_info.get("enemy_bonus",  1.0),
         "cell_type":    ctype,
+        "is_danger":    is_danger,
+        "rare_bonus":   rare_bonus,
     }
