@@ -45,6 +45,11 @@ from handlers.craft import craft_handler, resources_handler, craft_item_handler
 from handlers.profile import profile_handler, restore_energy_handler, profile_tab_callback, profile_stat_callback
 from handlers.healing import heal_hero_handler, rest_hero_handler, revive_monster_handler
 from handlers.equipment import equipment_handler, equipment_callback
+from handlers.admin_panel import (
+    admin_cmd, admin_callback, admin_text_handler, is_admin,
+    player_notifications_handler, notification_callback,
+)
+from game.analytics_service import touch_player_activity, _lazy as _analytics_lazy
 from handlers.crystals import crystals_handler, crystal_callback
 from handlers.codex import codex_handler, bestiary_callback
 from handlers.relics import relics_handler
@@ -258,7 +263,7 @@ dp.message.register(bag_shop_handler, text_is("🎒 Сумки", "Сумки"))
 dp.message.register(buy_bag_handler, text_startswith("🛒 Купить сумку:", "Купить сумку:"))
 dp.message.register(sell_resources_handler, text_is("💰 Продать ресурсы", "Продать ресурсы"))
 dp.message.register(sell_resource_item_handler, text_startswith("💰 Продать:", "Продать:"))
-dp.message.register(item_shop_handler, text_is("🧪 Магазин предметов", "Магазин предметов"))
+dp.message.register(item_shop_handler, text_is("🧪 Магазин предметов", "Магазин предметов", "🧪 Лавка зелий", "Лавка зелий"))
 dp.message.register(monster_shop_handler, text_is("🐲 Магазин монстров", "Магазин монстров"))
 dp.message.register(back_to_shop_handler, text_is("⬅️ Назад в магазин", "Назад в магазин"))
 dp.message.register(buy_item_handler, text_startswith("🛒 Купить:", "Купить:"))
@@ -1431,10 +1436,19 @@ async def do_hunt_craft(message: Message):
     )
 
 dp.message.register(equipment_handler, text_is("⚔️ Экипировка", "Экипировка"))
+dp.message.register(player_notifications_handler, text_is("🔔 Уведомления", "Уведомления"))
+dp.callback_query.register(admin_callback, lambda c: c.data and c.data.startswith("adm:"))
+dp.callback_query.register(notification_callback, lambda c: c.data and c.data.startswith("notif:"))
+
 dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
 dp.callback_query.register(crystal_callback, lambda c: c.data and c.data.startswith("crystal:"))
 
 dp.callback_query.register(equipment_callback, lambda c: c.data and c.data.startswith("equip:"))
+
+@dp.message(Command("admin", "admin_panel"))
+async def _admin_cmd_wrapper(message):
+    await admin_cmd(message)
+
 
 @dp.errors()
 async def global_error_handler(event: ErrorEvent):
@@ -1540,6 +1554,17 @@ async def _notification_loop(bot_instance):
         except Exception as e:
             log.error(f"Notification loop error: {e}")
 
+@dp.message.outer_middleware()
+async def activity_middleware(handler, event, data):
+    """Обновляет last_active_at при каждом сообщении от игрока."""
+    try:
+        _analytics_lazy()
+        touch_player_activity(event.from_user.id, event.from_user.username)
+    except Exception:
+        pass
+    return await handler(event, data)
+
+
 async def _run_migration():
     """Запускает миграцию кристаллов при старте."""
     try:
@@ -1564,6 +1589,15 @@ async def main():
     import asyncio
     asyncio.ensure_future(_notification_loop(bot))
     await _run_migration()
+    # Register admin text handler as high-priority
+    dp.message.register(
+        admin_text_handler,
+        lambda m: m.text and (
+            m.text.startswith('/admin_') or
+            m.text.startswith('/notif ') or
+            is_admin(m.from_user.id)
+        )
+    )
     await dp.start_polling(bot)
 
 
