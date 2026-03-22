@@ -264,11 +264,12 @@ async def explore_handler(message: Message, forced_direction: str = None):
         encounter = {
             "type": "world_boss",
             "name": boss["name"],
+            "monster_name": boss["name"],   # нужно для боевого обработчика
             "hp": boss["hp"],
             "attack": boss["attack"],
             "reward_gold": boss["reward_gold"],
             "reward_exp": boss["reward_exp"],
-            "monster_type": boss["monster_type"],
+            "monster_type": boss.get("monster_type", "void"),
         }
         save_pending_encounter(message.from_user.id, encounter)
         log_event("world_boss", message.from_user.id, boss["name"])
