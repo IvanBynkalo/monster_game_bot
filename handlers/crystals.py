@@ -43,9 +43,12 @@ def crystal_detail_inline(crystal_id: int, telegram_id: int) -> InlineKeyboardMa
     rows = []
     for m in monsters:
         if m.get("is_dead"):
+            rarity = m.get("rarity", "common")
+            costs = {"common": 40, "uncommon": 150, "rare": 400, "epic": 900, "legendary": 1500}
+            cost = costs.get(rarity, 100)
             rows.append([InlineKeyboardButton(
-                text=f"💀 {m['name']} (пал)",
-                callback_data=f"crystal:info:{m['id']}"
+                text=f"💀 {m['name']} — Возродить за {cost}з",
+                callback_data=f"crystal:revive:{m['id']}"
             )])
             continue
         bond = get_bond_level(m["id"], crystal_id)
@@ -185,9 +188,6 @@ async def crystal_callback(callback: CallbackQuery):
             await callback.message.answer(text, reply_markup=crystals_list_inline(uid))
 
     elif data == "crystal:rent_varg":
-        if player.location_slug != "silver_city":
-            await callback.answer("Аренда доступна только в Сереброграде у Варга.", show_alert=True)
-            return
         ok, msg, new_gold = rent_varg_slot(uid, player.gold)
         if ok:
             _update_player_field(uid, gold=new_gold)
@@ -232,6 +232,46 @@ async def crystal_callback(callback: CallbackQuery):
             text = render_crystal_detail(cid)
             try:
                 await callback.message.edit_text(text, reply_markup=crystal_detail_inline(cid, uid))
+            except Exception:
+                pass
+
+    elif data.startswith("crystal:revive:"):
+        monster_id = int(data.split(":")[-1])
+        from database.repositories import revive_monster, get_connection as _gc
+        rarity_costs = {"common": 40, "uncommon": 150, "rare": 400, "epic": 900, "legendary": 1500}
+        with _gc() as conn:
+            mrow = conn.execute(
+                "SELECT name, rarity, max_hp FROM player_monsters WHERE id=? AND telegram_id=?",
+                (monster_id, uid)
+            ).fetchone()
+        if not mrow:
+            await callback.answer("Монстр не найден.", show_alert=True)
+            return
+        cost = rarity_costs.get(mrow["rarity"], 100)
+        if player.gold < cost:
+            await callback.answer(
+                f"💀 {mrow['name']} пал.\n"
+                f"Нужно {cost}з для возрождения.\n"
+                f"У тебя {player.gold}з — не хватает {cost - player.gold}з",
+                show_alert=True
+            )
+            return
+        revive_hp = max(1, mrow["max_hp"] * 30 // 100)
+        revive_monster(uid, monster_id, revive_hp)
+        _update_player_field(uid, gold=player.gold - cost)
+        await callback.answer(f"✅ {mrow['name']} возрождён с {revive_hp} HP!", show_alert=True)
+        # Refresh crystal view
+        with _gc() as conn:
+            crow = conn.execute(
+                "SELECT crystal_id FROM player_monsters WHERE id=?", (monster_id,)
+            ).fetchone()
+        if crow and crow["crystal_id"]:
+            recalculate_crystal_load(crow["crystal_id"])
+            text = render_crystal_detail(crow["crystal_id"])
+            try:
+                await callback.message.edit_text(
+                    text, reply_markup=crystal_detail_inline(crow["crystal_id"], uid)
+                )
             except Exception:
                 pass
 

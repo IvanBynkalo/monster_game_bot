@@ -51,8 +51,8 @@ async def revive_monster_handler(message):
     from keyboards.main_menu import main_menu
 
     player = get_player(message.from_user.id)
-    if not player or not is_city(player.location_slug):
-        await message.answer("Возродить монстра можно только в городе.")
+    if not player:
+        await message.answer("Сначала напиши /start")
         return
 
     active = get_active_monster(message.from_user.id)

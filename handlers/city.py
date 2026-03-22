@@ -1533,12 +1533,35 @@ async def market_inline_callback(callback: CallbackQuery):
             source_type="shop",
         )
         await callback.answer(f"✅ Куплен {offer['name']}!", show_alert=False)
-        await callback.message.answer(
-            f"🛒 Ты купил монстра: {offer['name']}\n"
-            f"Редкость: {offer.get('rarity','common')}\n"
-            f"💰 Потрачено: {price} золота\n\n"
-            f"Монстр добавлен в твой ростер. Назначь его активным через 🐲 Мои монстры."
-        )
+
+        # Пытаемся автоматически разместить в кристалл
+        from game.crystal_service import auto_store_new_monster, get_player_crystals
+        _placed_ok, _placed_msg = auto_store_new_monster(callback.from_user.id, new_monster["id"])
+
+        if _placed_ok:
+            crystals = get_player_crystals(callback.from_user.id)
+            from game.crystal_service import get_monsters_in_crystal
+            crystal_name = next(
+                (c["name"] for c in crystals
+                 if any(m["id"] == new_monster["id"]
+                        for m in get_monsters_in_crystal(c["id"]))),
+                "кристалл"
+            )
+            await callback.message.answer(
+                f"🛒 Куплен: {offer['name']}\n"
+                f"Редкость: {offer.get('rarity','common')}\n"
+                f"💰 Потрачено: {price} золота\n\n"
+                f"💎 Помещён в: {crystal_name}\n"
+                f"Открой 💎 Кристаллы чтобы управлять монстром."
+            )
+        else:
+            await callback.message.answer(
+                f"🛒 Куплен: {offer['name']}\n"
+                f"Редкость: {offer.get('rarity','common')}\n"
+                f"💰 Потрачено: {price} золота\n\n"
+                f"⚠️ {_placed_msg}\n"
+                f"Купи кристалл в 💎 Торговом квартале."
+            )
         return
 
     if data == "marketnpc:varg_sell_menu":
