@@ -1838,24 +1838,23 @@ async def fallback_callback_handler(callback: CallbackQuery):
 
 
 @dp.errors()
-async def errors_handler(event, exception):
-    """Глобальный обработчик ошибок — логирует в error_tracker."""
-    import traceback as _tb
+async def errors_handler(event):
+    """Глобальный обработчик ошибок aiogram 3 — логирует в error_tracker."""
+    exception = event.exception
     ctx = "unknown"
     uid = None
     try:
-        if hasattr(event, "update"):
-            upd = event.update
-            if upd.message:
-                ctx = f"msg:{(upd.message.text or '')[:50]}"
-                uid = upd.message.from_user.id
-            elif upd.callback_query:
-                ctx = f"cb:{upd.callback_query.data[:50]}"
-                uid = upd.callback_query.from_user.id
+        upd = event.update
+        if upd.message:
+            ctx = f"msg:{(upd.message.text or '')[:50]}"
+            uid = upd.message.from_user.id
+        elif upd.callback_query:
+            ctx = f"cb:{(upd.callback_query.data or '')[:50]}"
+            uid = upd.callback_query.from_user.id
     except Exception:
         pass
     log_exception(ctx, exception, uid)
-    return True  # ошибка обработана
+    return True
 
 
 async def global_error_handler(event: ErrorEvent):
