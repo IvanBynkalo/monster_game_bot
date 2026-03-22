@@ -78,6 +78,26 @@ DEFAULT_CITY_RESOURCE_MARKET = {
     "bog_flower":    {"base_price":9,  "stock":4.0, "target_stock":4.0},
     "dark_resin":    {"base_price":11, "stock":4.0, "target_stock":4.0},
     "ghost_reed":    {"base_price":32, "stock":1.0, "target_stock":1.0},
+    # Охотничий лут — продаётся у Скупщика ресурсов (Борт)
+    "fox_fur":            {"base_price":12, "stock":5.0, "target_stock":5.0},
+    "mouse_whisker":      {"base_price":8,  "stock":6.0, "target_stock":6.0},
+    "wolf_fang":          {"base_price":18, "stock":4.0, "target_stock":4.0},
+    "wolf_hide":          {"base_price":15, "stock":4.0, "target_stock":4.0},
+    "rabbit_pelt":        {"base_price":7,  "stock":8.0, "target_stock":8.0},
+    "deer_antler":        {"base_price":22, "stock":3.0, "target_stock":3.0},
+    "bear_hide":          {"base_price":28, "stock":2.0, "target_stock":2.0},
+    "boar_tusk":          {"base_price":20, "stock":3.0, "target_stock":3.0},
+    "goat_horn":          {"base_price":14, "stock":5.0, "target_stock":5.0},
+    "eagle_feather":      {"base_price":35, "stock":2.0, "target_stock":2.0},
+    "lynx_claw":          {"base_price":30, "stock":2.0, "target_stock":2.0},
+    "aurochs_horn":       {"base_price":25, "stock":3.0, "target_stock":3.0},
+    "giant_bark":         {"base_price":16, "stock":4.0, "target_stock":4.0},
+    "mountain_lion_pelt": {"base_price":40, "stock":2.0, "target_stock":2.0},
+    "stone_beetle":       {"base_price":22, "stock":3.0, "target_stock":3.0},
+    "lava_wolf_fang":     {"base_price":45, "stock":1.0, "target_stock":1.0},
+    "croc_scale":         {"base_price":32, "stock":2.0, "target_stock":2.0},
+    "shadow_wolf_fang":   {"base_price":50, "stock":1.0, "target_stock":1.0},
+    "crystal_shard":      {"base_price":20, "stock":3.0, "target_stock":3.0},
 }
 
 # ─── Утилиты ──────────────────────────────────────────────────────────────────
@@ -1747,6 +1767,30 @@ def get_npc_quest_status(telegram_id: int, npc_key: str) -> str | None:
         "bort":      "geologist",
     }
     guild_key = NPC_TO_GUILD.get(npc_key, npc_key)
+
+    # Доска заказов - проверяем board quests
+    if npc_key == "board":
+        try:
+            with get_connection() as conn:
+                ready = conn.execute(
+                    "SELECT COUNT(*) FROM player_board_quests WHERE telegram_id=? AND completed=1",
+                    (telegram_id,)
+                ).fetchone()[0]
+                if ready:
+                    return "ready"
+                active = conn.execute(
+                    "SELECT COUNT(*) FROM player_board_quests WHERE telegram_id=? AND completed=0",
+                    (telegram_id,)
+                ).fetchone()[0]
+                if active:
+                    return "active"
+        except Exception:
+            pass
+        return None
+
+    if guild_key is None:
+        return None
+
     try:
         with get_connection() as conn:
             # Гильдейские квесты (player_guild_quests — колонка guild_key)
