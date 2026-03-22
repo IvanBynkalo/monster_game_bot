@@ -1,3 +1,11 @@
+# ── Error tracking shim ─────────────────────────────
+try:
+    from game.error_tracker import log_logic_error as _log_logic, log_exception as _log_exc
+except Exception:
+    def _log_logic(*a, **k): pass
+    def _log_exc(*a, **k): pass
+# ────────────────────────────────────────────────────
+
 from pathlib import Path
 
 from aiogram.types import (
@@ -1586,36 +1594,55 @@ async def market_inline_callback(callback: CallbackQuery):
             attack=offer.get("attack", 3),
             source_type="shop",
         )
-        await callback.answer(f"✅ Куплен {offer['name']}!", show_alert=False)
-
-        # Пытаемся автоматически разместить в кристалл
-        from game.crystal_service import auto_store_new_monster, get_player_crystals
+        # Автоматически размещаем в кристалл
+        from game.crystal_service import (
+            auto_store_new_monster, get_player_crystals,
+            get_monsters_in_crystal, calculate_monster_volume
+        )
         _placed_ok, _placed_msg = auto_store_new_monster(callback.from_user.id, new_monster["id"])
 
         if _placed_ok:
             crystals = get_player_crystals(callback.from_user.id)
-            from game.crystal_service import get_monsters_in_crystal
             crystal_name = next(
                 (c["name"] for c in crystals
                  if any(m["id"] == new_monster["id"]
                         for m in get_monsters_in_crystal(c["id"]))),
                 "кристалл"
             )
+            await callback.answer(f"✅ {offer['name']} → {crystal_name}", show_alert=True)
             await callback.message.answer(
-                f"🛒 Куплен: {offer['name']}\n"
+                f"✅ Куплен: {offer['name']}\n"
                 f"Редкость: {offer.get('rarity','common')}\n"
-                f"💰 Потрачено: {price} золота\n\n"
-                f"💎 Помещён в: {crystal_name}\n"
-                f"Открой 💎 Кристаллы чтобы управлять монстром."
+                f"💰 Потрачено: {price}з\n\n"
+                f"💎 Помещён в: {crystal_name}"
             )
         else:
-            await callback.message.answer(
-                f"🛒 Куплен: {offer['name']}\n"
-                f"Редкость: {offer.get('rarity','common')}\n"
-                f"💰 Потрачено: {price} золота\n\n"
-                f"⚠️ {_placed_msg}\n"
-                f"Купи кристалл в 💎 Торговом квартале."
-            )
+            # Нет места — показываем выбор кристалла
+            from aiogram.types import InlineKeyboardMarkup as _IKM, InlineKeyboardButton as _IKB
+            vol = calculate_monster_volume(new_monster)
+            rows = []
+            for c in get_player_crystals(callback.from_user.id):
+                fv = c["max_volume"] - c["current_volume"]
+                fs = c["max_monsters"] - c["current_monsters"]
+                loc = c.get("location", "on_hand")
+                if fv >= vol and fs > 0 and loc == "on_hand":
+                    rows.append([_IKB(
+                        text=f"💎 {c['name']} [{c['current_volume']}/{c['max_volume']}]",
+                        callback_data=f"mon:set_crystal:{new_monster['id']}:{c['id']}"
+                    )])
+            if rows:
+                await callback.answer(f"✅ {offer['name']} куплен! Выбери кристалл.", show_alert=True)
+                await callback.message.answer(
+                    f"✅ Куплен: {offer['name']} (-{price}з)\n"
+                    f"💎 Выбери кристалл:",
+                    reply_markup=_IKM(inline_keyboard=rows)
+                )
+            else:
+                await callback.answer(
+                    f"✅ Куплен {offer['name']}, но нет свободного кристалла!\n"
+                    f"Нужно {vol} ед. объёма. Купи кристалл в Торговом квартале.",
+                    show_alert=True
+                )
         return
 
     if data == "marketnpc:varg_sell_menu":
