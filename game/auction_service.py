@@ -12,7 +12,10 @@ import random
 import time
 from database.repositories import get_connection, add_resource, _update_player_field
 
-AUCTION_REFRESH_HOURS = 72  # каждые 3 дня
+import os as _os
+# Для тестирования: AUCTION_HOURS=0.016 (1 минута)
+AUCTION_REFRESH_HOURS = float(_os.environ.get("AUCTION_HOURS", "72"))
+AUCTION_DURATION_HOURS = float(_os.environ.get("AUCTION_DURATION", str(AUCTION_REFRESH_HOURS)))
 BID_INCREMENT_PCT = 0.10    # минимальный шаг ставки 10%
 
 # Пул лотов аукциона
@@ -105,7 +108,7 @@ def refresh_auction_if_needed():
     _finish_expired_lots()
 
     # Создаём 3 новых лота
-    ends_at = now + AUCTION_REFRESH_HOURS * 3600
+    ends_at = now + int(AUCTION_DURATION_HOURS * 3600)
     selected = random.sample(AUCTION_POOL, min(3, len(AUCTION_POOL)))
     with get_connection() as conn:
         for lot in selected:
