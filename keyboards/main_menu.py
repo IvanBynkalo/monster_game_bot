@@ -16,7 +16,7 @@ def _get_notif_label(telegram_id: int = None) -> str:
     try:
         from game.notification_service import get_unread_count
         n = get_unread_count(telegram_id)
-        return f"🔔 Уведомления ({n})" if n > 0 else "🔔 Уведомления"
+        return f"🔔 Уведомления ({n} 🔵)" if n > 0 else "🔔 Уведомления"
     except Exception:
         return "🔔 Уведомления"
 
