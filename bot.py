@@ -1464,7 +1464,14 @@ dp.message.register(admin_reply_handler, lambda m: m.reply_to_message is not Non
 dp.callback_query.register(notification_callback, lambda c: c.data and c.data.startswith("notif:"))
 
 dp.message.register(admin_cmd, Command("admin"))
+async def hunt_cmd(message):
+    """Статус охоты недели."""
+    from game.roaming_monsters import render_hunt_status
+    text = render_hunt_status(message.from_user.id)
+    await message.answer(text)
+
 dp.message.register(hunt_cmd,  text_is("🎯 Охота недели", "Охота недели"))
+dp.message.register(hunt_cmd, Command("hunt"))
 dp.message.register(rift_cmd,  text_is("🌌 Разлом", "Разлом"))
 dp.message.register(cooldown_cmd, text_is("♨️ Перегрев", "Перегрев"))
 
