@@ -202,12 +202,11 @@ def get_available_directions(grid: dict) -> list[dict]:
     col, row = grid["current_pos"]
 
     # Приоритет 1: непосещённые клетки вперёд и в стороны
+    # Только 4 направления: вперёд, назад, влево, вправо
     forward_candidates = [
-        {"dir": "forward", "label": "⬆️ Вперёд",      "col": col,     "row": row + 1},
-        {"dir": "left",    "label": "↖️ Влево-вперёд", "col": col - 1, "row": row + 1},
-        {"dir": "right",   "label": "↗️ Вправо-вперёд","col": col + 1, "row": row + 1},
-        {"dir": "side_l",  "label": "⬅️ Влево",        "col": col - 1, "row": row},
-        {"dir": "side_r",  "label": "➡️ Вправо",       "col": col + 1, "row": row},
+        {"dir": "forward", "label": "⬆️ Вперёд", "col": col,     "row": row + 1},
+        {"dir": "side_l",  "label": "⬅️ Влево",  "col": col - 1, "row": row},
+        {"dir": "side_r",  "label": "➡️ Вправо", "col": col + 1, "row": row},
     ]
 
     new_cells = []
