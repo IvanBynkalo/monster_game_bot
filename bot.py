@@ -46,8 +46,8 @@ from handlers.profile import profile_handler, restore_energy_handler, profile_ta
 from handlers.healing import heal_hero_handler, rest_hero_handler, revive_monster_handler
 from handlers.equipment import equipment_handler, equipment_callback
 from handlers.admin_panel import (
-    admin_cmd, admin_callback, admin_text_handler, is_admin,
-    player_notifications_handler, notification_callback,
+    admin_cmd, admin_callback, admin_reply_handler, admin_quick_callback,
+    is_admin, player_notifications_handler, notification_callback,
 )
 from game.analytics_service import touch_player_activity, _lazy as _analytics_lazy
 from handlers.crystals import crystals_handler, crystal_callback
@@ -1458,10 +1458,22 @@ dp.callback_query.register(monster_callback, lambda c: c.data and c.data.startsw
 dp.message.register(equipment_handler, text_is("⚔️ Экипировка", "Экипировка"))
 dp.message.register(player_notifications_handler, text_is("🔔 Уведомления", "Уведомления"))
 dp.callback_query.register(admin_callback, lambda c: c.data and c.data.startswith("adm:"))
+dp.callback_query.register(admin_quick_callback, lambda c: c.data and c.data.startswith("adm:quick_") or (c.data and c.data.startswith("adm:confirm_")) or c.data == "adm:cancel_action")
+dp.message.register(admin_reply_handler, lambda m: m.reply_to_message is not None and is_admin(m.from_user.id))
+
 dp.callback_query.register(notification_callback, lambda c: c.data and c.data.startswith("notif:"))
 
 dp.message.register(admin_cmd, Command("admin"))
+dp.message.register(hunt_cmd,  text_is("🎯 Охота недели", "Охота недели"))
+dp.message.register(rift_cmd,  text_is("🌌 Разлом", "Разлом"))
+dp.message.register(cooldown_cmd, text_is("♨️ Перегрев", "Перегрев"))
+
 dp.message.register(admin_cmd, text_is("🛠 Админ-панель", "Адмін-панель"))
+# Admin text handler — перехватывает ввод в диалогах (только для админов в активном состоянии)
+dp.message.register(
+    admin_text_handler,
+    lambda m: is_admin(m.from_user.id) and m.text and not m.text.startswith("/start")
+)
 dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
 dp.message.register(workshop_handler, text_is("🔨 Мастерская", "Мастерская Геммы"))
 dp.message.register(auction_handler, text_is("🏛 Аукцион", "Аукцион"))
@@ -1685,15 +1697,7 @@ async def main():
     import asyncio
     asyncio.ensure_future(_notification_loop(bot))
     await _run_migration()
-    # Register admin text handler as high-priority
-    dp.message.register(
-        admin_text_handler,
-        lambda m: m.text and (
-            m.text.startswith('/admin_') or
-            m.text.startswith('/notif ') or
-            is_admin(m.from_user.id)
-        )
-    )
+
     await dp.start_polling(bot)
 
 
