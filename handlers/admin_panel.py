@@ -21,6 +21,15 @@ from game.notification_service import (
 )
 
 import os
+# ── Error tracking shim ──────────────────────────────────────────────────────
+try:
+    from game.error_tracker import log_logic_error as _log_logic, log_exception as _log_exc
+except Exception:
+    def _log_logic(*a, **k): pass
+    def _log_exc(*a, **k): pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 ADMIN_IDS = set(
     int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip().isdigit()
 )
@@ -38,6 +47,15 @@ _admin_states: dict[int, dict] = {}
 # ── Клавиатуры ────────────────────────────────────────────────────────────────
 
 def admin_main_kb() -> InlineKeyboardMarkup:
+    # Считаем активные ошибки для значка
+    try:
+        from game.error_tracker import get_error_summary
+        _err_sum = get_error_summary()
+        _err_count = _err_sum.get("total_occurrences", 0)
+        _err_label = f"🐛 Ошибки ({_err_count})" if _err_count > 0 else "🐛 Ошибки"
+    except Exception:
+        _err_label = "🐛 Ошибки"
+
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👥 Игроки",       callback_data="adm:players"),
          InlineKeyboardButton(text="📊 Аналитика",   callback_data="adm:analytics")],
@@ -45,8 +63,9 @@ def admin_main_kb() -> InlineKeyboardMarkup:
          InlineKeyboardButton(text="🏆 Топы",         callback_data="adm:tops")],
         [InlineKeyboardButton(text="📣 Рассылки",     callback_data="adm:broadcasts"),
          InlineKeyboardButton(text="🔔 Уведомление",  callback_data="adm:notif_menu")],
-        [InlineKeyboardButton(text="📋 Лог действий", callback_data="adm:log"),
-         InlineKeyboardButton(text="⚙️ Управление",  callback_data="adm:manage")],
+        [InlineKeyboardButton(text=_err_label,        callback_data="adm:errors"),
+         InlineKeyboardButton(text="📋 Лог действий", callback_data="adm:log")],
+        [InlineKeyboardButton(text="⚙️ Управление",  callback_data="adm:manage")],
         [InlineKeyboardButton(text="❌ Закрыть",      callback_data="adm:close")],
     ])
 
