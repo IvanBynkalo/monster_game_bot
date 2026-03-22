@@ -17,12 +17,9 @@ def navigation_menu(location_slug: str, district_slug: str | None = None):
 
         buttons.append([KeyboardButton(text="🗺 Карта")])
     else:
-        # Показываем соседние локации с пометкой уровня
-        from game.location_rules import LOCATION_REQUIREMENTS, check_location_access
+        from game.map_service import LOCATION_LEVEL_REQUIREMENT
         for location in get_connected_locations(location_slug):
-            req = LOCATION_REQUIREMENTS.get(location.slug, {})
-            min_lvl = req.get("min_level", 1)
-            # Только доступные локации — заблокированные показываем серым текстом
+            min_lvl = LOCATION_LEVEL_REQUIREMENT.get(location.slug, 1)
             if min_lvl <= 1:
                 cmd = f"🚶 {location.name}"
             else:
