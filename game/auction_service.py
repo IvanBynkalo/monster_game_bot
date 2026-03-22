@@ -14,6 +14,7 @@ from database.repositories import get_connection, add_resource, _update_player_f
 
 import os as _os
 # Для тестирования: AUCTION_HOURS=0.016 (1 минута)
+# Для теста: установи AUCTION_HOURS=0.016 в Railway (= 1 минута)
 AUCTION_REFRESH_HOURS = float(_os.environ.get("AUCTION_HOURS", "72"))
 AUCTION_DURATION_HOURS = float(_os.environ.get("AUCTION_DURATION", str(AUCTION_REFRESH_HOURS)))
 BID_INCREMENT_PCT = 0.10    # минимальный шаг ставки 10%
@@ -90,6 +91,15 @@ def _serialize(data: dict) -> str:
 def _deserialize(s: str) -> dict:
     import json
     return json.loads(s)
+
+
+def force_reset_auction():
+    """Принудительно сбрасывает и пересоздаёт аукцион (для тестирования)."""
+    _lazy()
+    with get_connection() as conn:
+        conn.execute("UPDATE auction_lots SET is_active=0")
+        conn.commit()
+    refresh_auction_if_needed()
 
 
 def refresh_auction_if_needed():
