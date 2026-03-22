@@ -11,9 +11,9 @@ from keyboards.city_menu import city_menu
 
 
 def _get_notif_label(telegram_id: int = None) -> str:
-    if not telegram_id:
-        return "🔔 Уведомления"
     try:
+        if not telegram_id:
+            return "🔔 Уведомления"
         from game.notification_service import get_unread_count
         n = get_unread_count(telegram_id)
         return f"🔔 Уведомления ({n} 🔵)" if n > 0 else "🔔 Уведомления"
