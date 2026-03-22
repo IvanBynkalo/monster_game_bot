@@ -1862,7 +1862,6 @@ async def global_error_handler(event: ErrorEvent):
     return True
 
 
-@dp.callback_query()
 async def fallback_callback_handler(callback: CallbackQuery):
     logger.warning(
         "UNHANDLED CALLBACK: user=%s data=%r",
@@ -1989,10 +1988,9 @@ async def activity_middleware(handler, event, data):
     try:
         return await handler(event, data)
     except Exception as _exc:
-        import traceback as _tb
         _ctx = (event.text or "")[:60] if hasattr(event, "text") else "?"
         log_exception(f"msg:{_ctx}", _exc, getattr(event.from_user, "id", None))
-        raise  # пробрасываем дальше чтобы aiogram тоже обработал
+        # НЕ пробрасываем - иначе aiogram прерывает цепочку обработки
 
 
 @dp.callback_query.outer_middleware()
@@ -2001,12 +1999,16 @@ async def callback_error_middleware(handler, event, data):
     try:
         return await handler(event, data)
     except Exception as _exc:
-        log_exception(f"cb:{event.data[:60]}", _exc, getattr(event.from_user, "id", None))
+        try:
+            _cb_ctx = (event.data or "")[:60]
+        except Exception:
+            _cb_ctx = "?"
+        log_exception(f"cb:{_cb_ctx}", _exc, getattr(event.from_user, "id", None))
         try:
             await event.answer("⚠️ Произошла ошибка. Попробуй позже.", show_alert=True)
         except Exception:
             pass
-        raise
+        # НЕ пробрасываем
 
 
 async def _run_migration():
