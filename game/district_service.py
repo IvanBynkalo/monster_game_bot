@@ -61,8 +61,52 @@ DISTRICTS = {
 
 MOOD_LABELS = {"rage": "🔥 Ярость", "fear": "😱 Страх", "instinct": "🎯 Инстинкт", "inspiration": "✨ Вдохновение"}
 
+# Порог исследования (%) для открытия района по уровню опасности
+DISTRICT_UNLOCK_PCT = {
+    0: 0,   # город — всегда открыт
+    1: 0,   # начальный район — открыт сразу
+    2: 30,  # открывается после 30% исследования
+    3: 60,  # открывается после 60% исследования
+    4: 85,  # открывается после 85% исследования
+}
+
 def get_districts_for_location(location_slug: str):
     return DISTRICTS.get(location_slug, [])
+
+
+def get_explored_pct(telegram_id: int, location_slug: str) -> int:
+    """Возвращает % исследования локации для данного игрока."""
+    try:
+        from database.repositories import get_connection
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT grid_data FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
+                (telegram_id, location_slug)
+            ).fetchone()
+        if not row:
+            return 0
+        import json
+        grid = json.loads(row["grid_data"])
+        visited = grid.get("visited_count", 0)
+        return min(100, int(visited))
+    except Exception:
+        return 0
+
+
+def get_unlocked_districts(telegram_id: int, location_slug: str) -> list:
+    """Возвращает только открытые районы с учётом % исследования."""
+    from game.location_rules import is_city
+    if is_city(location_slug):
+        return get_districts_for_location(location_slug)
+
+    explored_pct = get_explored_pct(telegram_id, location_slug)
+    result = []
+    for district in get_districts_for_location(location_slug):
+        danger = district.get("danger", 1)
+        required_pct = DISTRICT_UNLOCK_PCT.get(danger, 0)
+        if explored_pct >= required_pct:
+            result.append(district)
+    return result
 
 def get_district(location_slug: str, district_slug: str):
     for district in get_districts_for_location(location_slug):
@@ -78,8 +122,13 @@ def get_district_name(location_slug: str, district_slug: str) -> str:
     district = get_district(location_slug, district_slug)
     return district["name"] if district else (district_slug or "не выбран")
 
-def get_district_move_commands(location_slug: str):
-    return [f"🧭→ {district['name']}" for district in get_districts_for_location(location_slug)]
+def get_district_move_commands(location_slug: str, telegram_id: int = None):
+    """Возвращает команды перехода в районы. Если передан telegram_id — только открытые."""
+    if telegram_id:
+        districts = get_unlocked_districts(telegram_id, location_slug)
+    else:
+        districts = get_districts_for_location(location_slug)
+    return [f"🧭→ {district['name']}" for district in districts]
 
 def resolve_district_by_move_text(location_slug: str, text: str):
     target_name = text.replace("🧭→ ", "", 1).strip()
