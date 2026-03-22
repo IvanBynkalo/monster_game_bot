@@ -519,15 +519,31 @@ def bort_sell_inline(player_id: int, city_slug: str) -> InlineKeyboardMarkup:
     market = get_city_resource_market(city_slug)
     player = get_player(player_id)
     merchant_level = getattr(player, "merchant_level", 1) if player else 1
+
+    try:
+        from game.wildlife_loot import WILDLIFE_LOOT_ITEMS as _WLI
+    except Exception:
+        _WLI = {}
+
     rows = []
 
     for slug, qty in resources.items():
         if qty <= 0:
             continue
+        label = get_resource_label(slug)
+        # Охотничий лут — фиксированная цена
+        if slug in _WLI:
+            price = _WLI[slug].get("sell_price", 0)
+            if price > 0:
+                rows.append([InlineKeyboardButton(
+                    text=f"🪙 {label} • {price}з/шт • x{qty}",
+                    callback_data=f"marketnpc:bort_sell:{slug}",
+                )])
+            continue
+        # Обычный рыночный ресурс
         if slug not in market:
             continue
         price = get_city_resource_sell_price(city_slug, slug, merchant_level=merchant_level)
-        label = get_resource_label(slug)
         rows.append([
             InlineKeyboardButton(
                 text=f"🪙 {label} • {price}з/шт • x{qty}",
@@ -823,25 +839,41 @@ def render_bort_sell_text(city_slug: str, player_id: int) -> str:
     resources = get_resources(player_id)
     market = get_city_resource_market(city_slug)
 
+    try:
+        from game.wildlife_loot import WILDLIFE_LOOT_ITEMS as _WLI
+    except Exception:
+        _WLI = {}
+
     lines = [
         "💰 Борт — выкуп ресурсов",
         "",
-        "Борт принимает городские ресурсы.",
+        "Борт принимает городские ресурсы и охотничий лут.",
         "",
         "Доступно для продажи:",
     ]
 
     shown = False
+    merchant_level = getattr(get_player(player_id), "merchant_level", 1)
+
     for slug, qty in resources.items():
         if qty <= 0:
             continue
+        label = get_resource_label(slug)
+        # Охотничий лут — фиксированная цена
+        if slug in _WLI:
+            sell_price = _WLI[slug].get("sell_price", 0)
+            if sell_price > 0:
+                shown = True
+                lines.append(f"• {label} — {sell_price} золота • у тебя x{qty}")
+            continue
+        # Обычный рыночный ресурс
         if slug not in market:
             continue
-        buy_price = get_city_resource_sell_price(city_slug, slug, merchant_level=getattr(get_player(player_id), "merchant_level", 1))
-        if buy_price <= 0:
+        sell_price = get_city_resource_sell_price(city_slug, slug, merchant_level=merchant_level)
+        if sell_price <= 0:
             continue
         shown = True
-        lines.append(f"• {get_resource_label(slug)} — {buy_price} золота • у тебя x{qty}")
+        lines.append(f"• {label} — {sell_price} золота • у тебя x{qty}")
 
     if not shown:
         lines.append("У тебя нет подходящих ресурсов для продажи Борту.")
@@ -1848,25 +1880,62 @@ async def market_inline_callback(callback: CallbackQuery):
 
     if data.startswith("marketnpc:bort_sell:"):
         slug = data.split(":")[-1]
-        market = get_city_resource_market(player.location_slug)
-        entry = market.get(slug)
-        if not entry:
-            await callback.answer("Ресурс не найден.", show_alert=True)
+        # Продаём напрямую по slug — не через парсер текста кнопки
+        from database.repositories import get_resources as _get_res, sell_resource_to_city_market as _sell_res
+        resources = _get_res(callback.from_user.id)
+        if resources.get(slug, 0) <= 0:
+            await callback.answer("У тебя нет этого ресурса.", show_alert=True)
             return
 
-        label = get_resource_label(slug)
-        buy_price = int(entry.get("buy_price", 0))
-        sell_text = f"💰 Продать: {label} • {buy_price}з"
-        await callback.answer("Продаю Борту...")
-        await _run_existing_handler(callback, sell_resource_item_handler, sell_text)
-        # Обновляем inline-меню Борта после продажи
+        # Проверяем охотничий лут — он продаётся по фиксированной цене из wildlife_loot
         try:
-            await callback.message.answer(
+            from game.wildlife_loot import WILDLIFE_LOOT_ITEMS as _WLI
+        except Exception:
+            _WLI = {}
+
+        if slug in _WLI:
+            # Охотничий лут — прямая продажа по sell_price
+            sell_price = _WLI[slug].get("sell_price", 0)
+            from database.repositories import add_player_gold as _apg, _update_player_field as _upf
+            from database.repositories import get_connection as _gc_sell
+            with _gc_sell() as _conn:
+                _conn.execute(
+                    "UPDATE player_resources SET qty = qty - 1 WHERE telegram_id=? AND slug=?",
+                    (callback.from_user.id, slug)
+                )
+                _conn.commit()
+            _apg(callback.from_user.id, sell_price)
+            label = get_resource_label(slug)
+            await callback.answer(f"✅ Продано: {label} +{sell_price}з", show_alert=True)
+        else:
+            # Обычный ресурс рынка
+            gold = _sell_res(
+                telegram_id=callback.from_user.id,
+                city_slug=player.location_slug,
+                slug=slug,
+                amount=1,
+            )
+            if gold is None:
+                await callback.answer("Не удалось продать ресурс.", show_alert=True)
+                return
+            label = get_resource_label(slug)
+            await callback.answer(f"✅ Продано: {label} +{gold}з", show_alert=True)
+
+        # Обновляем меню Борта после продажи
+        try:
+            updated_player = get_player(callback.from_user.id)
+            await callback.message.edit_text(
                 render_bort_sell_text(player.location_slug, callback.from_user.id),
                 reply_markup=bort_sell_inline(callback.from_user.id, player.location_slug),
             )
         except Exception:
-            pass
+            try:
+                await callback.message.answer(
+                    render_bort_sell_text(player.location_slug, callback.from_user.id),
+                    reply_markup=bort_sell_inline(callback.from_user.id, player.location_slug),
+                )
+            except Exception:
+                pass
         return
 
     if data == "marketnpc:bort_quest_menu":
