@@ -19,6 +19,7 @@ from aiogram.types import (
 from database.repositories import (
     add_player_experience,
     add_player_gold,
+    _update_player_field,
     get_player,
     get_resources,
     update_player_location,
