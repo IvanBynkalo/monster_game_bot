@@ -1738,7 +1738,18 @@ async def errors_callback(callback):
 
 
 
+async def auction_reset_cmd(message):
+    """Сброс аукциона для тестирования (только для админов)."""
+    if not is_admin(message.from_user.id):
+        return
+    from game.auction_service import force_reset_auction
+    force_reset_auction()
+    await message.answer("✅ Аукцион сброшен и пересоздан с текущей длительностью.")
+
+
 dp.message.register(errors_cmd, Command("errors", "errors_log"))
+dp.message.register(auction_reset_cmd, Command("auction_reset"))
+
 dp.callback_query.register(errors_callback, lambda c: c.data and c.data.startswith("errs:"))
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("shop:"))
