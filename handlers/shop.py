@@ -1,3 +1,11 @@
+# ── Error tracking shim ─────────────────────────────
+try:
+    from game.error_tracker import log_logic_error as _log_logic, log_exception as _log_exc
+except Exception:
+    def _log_logic(*a, **k): pass
+    def _log_exc(*a, **k): pass
+# ────────────────────────────────────────────────────
+
 from aiogram.types import Message
 
 from database.repositories import (
@@ -92,7 +100,7 @@ async def shop_handler(message: Message):
     set_ui_screen(message.from_user.id, "shop")
     await message.answer(
         get_shop_name(player.location_slug) + "\n\n" + render_shop_menu_text(),
-        reply_markup=shop_menu(),
+        reply_markup=district_actions_menu("market_square", message.from_user.id),
     )
 
 
@@ -139,10 +147,10 @@ async def item_shop_handler(message: Message):
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="shop:back")])
     inline_kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
-    await message.answer(
-        render_item_shop_text(),
-        reply_markup=item_shop_menu(),
-    )
+    # Используем меню квартала вместо старого shop_menu
+    from keyboards.city_menu import district_actions_menu
+    _reply_kb = district_actions_menu("market_square", message.from_user.id)
+    await message.answer(render_item_shop_text(), reply_markup=_reply_kb)
     await message.answer("🛒 Купить:", reply_markup=inline_kb)
 
 
@@ -158,7 +166,7 @@ async def monster_shop_handler(message: Message):
     set_ui_screen(message.from_user.id, "monster_shop")
     await message.answer(
         render_monster_shop_text(),
-        reply_markup=monster_shop_menu(),
+        reply_markup=district_actions_menu("market_square", message.from_user.id),
     )
 
 
@@ -194,15 +202,15 @@ async def buy_bag_handler(message: Message):
             break
 
     if not offer:
-        await message.answer("Не удалось определить сумку.", reply_markup=bag_shop_menu())
+        await message.answer("Не удалось определить сумку.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     if player.bag_capacity >= offer["capacity"]:
-        await message.answer("У тебя уже есть сумка не хуже этой.", reply_markup=bag_shop_menu())
+        await message.answer("У тебя уже есть сумка не хуже этой.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     if player.gold < offer["price"]:
-        await message.answer("Недостаточно золота.", reply_markup=bag_shop_menu())
+        await message.answer("Недостаточно золота.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     player.gold -= offer["price"]
@@ -228,7 +236,7 @@ async def buy_bag_handler(message: Message):
     if extras:
         text += "\n\n" + "\n\n".join(extras)
 
-    await message.answer(text, reply_markup=bag_shop_menu())
+    await message.answer(text, reply_markup=district_actions_menu("market_square", message.from_user.id))
 
 
 async def buy_item_handler(message: Message):
@@ -242,12 +250,12 @@ async def buy_item_handler(message: Message):
 
     slug = ITEM_NAME_TO_SLUG.get((message.text or "").strip())
     if not slug:
-        await message.answer("Не удалось определить товар.", reply_markup=item_shop_menu())
+        await message.answer("Не удалось определить товар.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     price = purchase_market_item(message.from_user.id, slug)
     if price is None:
-        await message.answer("Недостаточно золота для покупки.", reply_markup=item_shop_menu())
+        await message.answer("Недостаточно золота для покупки.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     add_item(message.from_user.id, slug, 1)
@@ -257,7 +265,7 @@ async def buy_item_handler(message: Message):
         f"Товар добавлен в инвентарь.\n"
         f"Потрачено: {price} золота\n"
         f"Осталось золота: {player.gold}",
-        reply_markup=item_shop_menu(),
+        reply_markup=district_actions_menu("market_square", message.from_user.id),
     )
 
 
@@ -272,12 +280,12 @@ async def buy_monster_handler(message: Message):
 
     slug = MONSTER_BUTTON_TO_SLUG.get((message.text or "").strip())
     if not slug:
-        await message.answer("Не удалось определить монстра.", reply_markup=monster_shop_menu())
+        await message.answer("Не удалось определить монстра.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     price = purchase_market_monster(message.from_user.id, slug)
     if price is None:
-        await message.answer("Недостаточно золота для покупки.", reply_markup=monster_shop_menu())
+        await message.answer("Недостаточно золота для покупки.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     offer = MONSTER_SHOP_OFFERS[slug]
@@ -296,7 +304,7 @@ async def buy_monster_handler(message: Message):
         f"✅ Ты купил монстра: {monster['name']}\n"
         f"Потрачено: {price} золота\n"
         f"Осталось золота: {player.gold}",
-        reply_markup=monster_shop_menu(),
+        reply_markup=district_actions_menu("market_square", message.from_user.id),
     )
 
 
@@ -355,12 +363,12 @@ async def sell_resource_item_handler(message: Message):
 
     slug = get_resource_slug_from_sell_button(message.text)
     if not slug:
-        await message.answer("Не удалось определить ресурс.", reply_markup=shop_menu())
+        await message.answer("Не удалось определить ресурс.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     resources = get_resources(message.from_user.id)
     if resources.get(slug, 0) <= 0:
-        await message.answer("У тебя нет этого ресурса.", reply_markup=shop_menu())
+        await message.answer("У тебя нет этого ресурса.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     gold = sell_resource_to_city_market(
@@ -371,7 +379,7 @@ async def sell_resource_item_handler(message: Message):
     )
 
     if gold is None:
-        await message.answer("Не удалось продать ресурс.", reply_markup=shop_menu())
+        await message.answer("Не удалось продать ресурс.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     profession_gain = improve_profession_from_action(message.from_user.id, "merchant", 1)
@@ -429,7 +437,7 @@ async def buy_resource_item_handler(message: Message):
 
     slug = get_resource_slug_from_buy_button(message.text)
     if not slug:
-        await message.answer("Не удалось определить ресурс.", reply_markup=shop_menu())
+        await message.answer("Не удалось определить ресурс.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     price = buy_resource_from_city_market(
@@ -470,5 +478,5 @@ async def back_to_shop_handler(message: Message):
     set_ui_screen(message.from_user.id, "shop")
     await message.answer(
         render_shop_menu_text(),
-        reply_markup=shop_menu(),
+        reply_markup=district_actions_menu("market_square", message.from_user.id),
     )

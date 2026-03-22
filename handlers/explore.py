@@ -48,6 +48,15 @@ from game.grid_exploration_service import (
 from game.bestiary_service import register_bestiary_seen, check_trophy_drop
 from game.weekly_quest_service import progress_weekly_quest, claim_weekly_reward, render_weekly_quest
 from game.wildlife_service import roll_wildlife, render_wildlife_encounter, has_wildlife
+# ── Error tracking shim ──────────────────────────────────────────────────────
+try:
+    from game.error_tracker import log_logic_error as _log_logic, log_exception as _log_exc
+except Exception:
+    def _log_logic(*a, **k): pass
+    def _log_exc(*a, **k): pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 from utils.logger import log_event
 from utils.cooldown import cooldown_guard
 from utils.analytics import track_explore
@@ -140,16 +149,40 @@ async def explore_handler(message: Message):
     _grid = get_grid(message.from_user.id, player.location_slug)
     _directions = get_available_directions(_grid)
 
-    # Если есть выбор направления — показываем inline кнопки и ждём выбора
+    # Если есть выбор направления — показываем reply-кнопки + мини-карту
     if len(_directions) > 1:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        _dir_rows = [
-            [InlineKeyboardButton(text=d['label'], callback_data='explore:dir:' + d['dir'])]
-            for d in _directions
-        ]
-        _dir_kb = InlineKeyboardMarkup(inline_keyboard=_dir_rows)
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        # Строим reply-клавиатуру с направлениями
+        # Раскладка: Влево | Вперёд | Вправо / Назад / Остановиться
+        dir_map = {d['dir']: d['label'] for d in _directions}
+        kbd_rows = []
+        # Верхний ряд: влево, вперёд, вправо
+        top_row = []
+        for d in ['side_l', 'forward', 'side_r']:
+            if d in dir_map:
+                top_row.append(KeyboardButton(text=dir_map[d]))
+        if top_row:
+            kbd_rows.append(top_row)
+        # Второй ряд: назад
+        if 'back' in dir_map:
+            kbd_rows.append([KeyboardButton(text=dir_map['back'])])
+        # Стоп
+        kbd_rows.append([KeyboardButton(text="🏕 Остановиться")])
+        _dir_kb = ReplyKeyboardMarkup(keyboard=kbd_rows, resize_keyboard=True)
+
+        # Мини-карта в тексте
+        try:
+            from game.grid_exploration_service import render_mini_map
+            from game.exploration_service import get_cartographer_level as _gcl
+            _mini = render_mini_map(_grid, cart_level=_gcl(message.from_user.id))
+        except Exception:
+            _mini = ""
+
         _panel = render_exploration_panel(message.from_user.id, player.location_slug)
-        await message.answer('Куда идти?\n\n' + _panel, reply_markup=_dir_kb)
+        _prompt = "Куда идти?\n\n" + _panel
+        if _mini:
+            _prompt += "\n\n" + _mini
+        await message.answer(_prompt, reply_markup=_dir_kb)
         return
 
     # Одно направление или возврат — идём автоматически

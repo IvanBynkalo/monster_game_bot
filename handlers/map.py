@@ -18,6 +18,15 @@ from game.travel_service import start_travel, get_travel, get_travel_seconds, fo
 from keyboards.main_menu import main_menu
 from keyboards.location_menu import location_actions_inline
 from keyboards.navigation_menu import navigation_menu
+# ── Error tracking shim ──────────────────────────────────────────────────────
+try:
+    from game.error_tracker import log_logic_error as _log_logic, log_exception as _log_exc
+except Exception:
+    def _log_logic(*a, **k): pass
+    def _log_exc(*a, **k): pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 
 
 def _normalize_move_text(text: str) -> str:
@@ -38,7 +47,7 @@ async def navigation_handler(message: Message):
     set_ui_screen(message.from_user.id, "navigation")
     await message.answer(
         "🧭 Навигация\n\nЗдесь собраны все доступные переходы: районы, соседние области и карта.",
-        reply_markup=navigation_menu(player.location_slug, player.current_district_slug),
+        reply_markup=navigation_menu(player.location_slug, player.current_district_slug, telegram_id=message.from_user.id),
     )
 
 
@@ -171,6 +180,18 @@ async def move_handler(message: Message):
         update_player_location(message.from_user.id, target.slug)
         story_done = update_story_progress(message.from_user.id, "move", target.slug)
         set_ui_screen(message.from_user.id, "main")
+        # Отмечаем локацию как посещённую (для навигации)
+        try:
+            from database.repositories import get_connection as _gc_disc
+            with _gc_disc() as _conn:
+                _conn.execute("""
+                    INSERT OR IGNORE INTO player_grid_exploration
+                    (telegram_id, location_slug, col, row, cell_type)
+                    VALUES (?, ?, 5, 0, 'normal')
+                """, (message.from_user.id, target.slug))
+                _conn.commit()
+        except Exception:
+            pass
     else:
         # Длинный переход — герой в пути
         await message.answer(
