@@ -1698,6 +1698,46 @@ dp.message.register(today_cmd, text_is("📅 Сегодня", "Сегодня"))
 dp.message.register(today_cmd, Command("today"))
 dp.message.register(hunt_cmd,  text_is("🎯 Охота недели", "Охота недели"))
 dp.message.register(hunt_cmd, Command("hunt"))
+
+async def errors_cmd(message):
+    """Показывает журнал ошибок (только для админов)."""
+    if not is_admin(message.from_user.id):
+        return
+    text = render_errors(limit=20)
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Сбросить все", callback_data="errs:clear_all")],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="errs:refresh")],
+    ])
+    await message.answer(text[:4000], reply_markup=kb)
+
+
+async def errors_callback(callback):
+    """Действия с журналом ошибок."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Нет доступа.")
+        return
+    await callback.answer()
+    if callback.data == "errs:clear_all":
+        mark_resolved(all_errors=True)
+        await callback.message.edit_text(
+            "✅ Журнал сброшен.",
+            reply_markup=None
+        )
+    elif callback.data == "errs:refresh":
+        text = render_errors(limit=20)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 Сбросить все", callback_data="errs:clear_all")],
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="errs:refresh")],
+        ])
+        try:
+            await callback.message.edit_text(text[:4000], reply_markup=kb)
+        except Exception:
+            pass
+
+
+
 dp.message.register(errors_cmd, Command("errors", "errors_log"))
 dp.callback_query.register(errors_callback, lambda c: c.data and c.data.startswith("errs:"))
 
@@ -1782,42 +1822,19 @@ async def onboarding_callback(callback):
 @dp.callback_query(lambda c: c.data and c.data.startswith("shop:"))
 @dp.callback_query(lambda c: c.data and c.data.startswith("onb:"))
 
-async def errors_cmd(message):
-    """Показывает журнал ошибок (только для админов)."""
-    if not is_admin(message.from_user.id):
-        return
-    text = render_errors(limit=20)
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗑 Сбросить все", callback_data="errs:clear_all")],
-        [InlineKeyboardButton(text="🔄 Обновить", callback_data="errs:refresh")],
-    ])
-    await message.answer(text[:4000], reply_markup=kb)
 
 
-async def errors_callback(callback):
-    """Действия с журналом ошибок."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Нет доступа.")
-        return
-    await callback.answer()
-    if callback.data == "errs:clear_all":
-        mark_resolved(all_errors=True)
-        await callback.message.edit_text(
-            "✅ Журнал сброшен.",
-            reply_markup=None
+@dp.callback_query()
+async def fallback_callback_handler(callback: CallbackQuery):
+    """Перехватывает все необработанные inline-кнопки."""
+    log_callback_error(callback.data or "empty", callback.from_user.id)
+    try:
+        await callback.answer(
+            "⚠️ Эта кнопка больше не активна. Открой меню заново.",
+            show_alert=True
         )
-    elif callback.data == "errs:refresh":
-        text = render_errors(limit=20)
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗑 Сбросить все", callback_data="errs:clear_all")],
-            [InlineKeyboardButton(text="🔄 Обновить", callback_data="errs:refresh")],
-        ])
-        try:
-            await callback.message.edit_text(text[:4000], reply_markup=kb)
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 
 @dp.errors()
