@@ -50,6 +50,11 @@ from handlers.admin_panel import (
     is_admin, player_notifications_handler, notification_callback,
 )
 from game.analytics_service import touch_player_activity, _lazy as _analytics_lazy
+from game.error_tracker import (
+    log_error, log_callback_error, log_exception,
+    log_logic_error, log_warning, ErrType,
+    render_errors, mark_resolved, get_error_summary,
+)
 from handlers.crystals import crystals_handler, crystal_callback
 from handlers.workshop_auction import (
     workshop_handler, workshop_callback,
@@ -1693,6 +1698,9 @@ dp.message.register(today_cmd, text_is("📅 Сегодня", "Сегодня"))
 dp.message.register(today_cmd, Command("today"))
 dp.message.register(hunt_cmd,  text_is("🎯 Охота недели", "Охота недели"))
 dp.message.register(hunt_cmd, Command("hunt"))
+dp.message.register(errors_cmd, Command("errors", "errors_log"))
+dp.callback_query.register(errors_callback, lambda c: c.data and c.data.startswith("errs:"))
+
 @dp.callback_query(lambda c: c.data and c.data.startswith("shop:"))
 async def shop_inline_callback(callback: CallbackQuery):
     """Покупка товара через inline-кнопку."""
@@ -1773,7 +1781,66 @@ async def onboarding_callback(callback):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("shop:"))
 @dp.callback_query(lambda c: c.data and c.data.startswith("onb:"))
+
+async def errors_cmd(message):
+    """Показывает журнал ошибок (только для админов)."""
+    if not is_admin(message.from_user.id):
+        return
+    text = render_errors(limit=20)
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Сбросить все", callback_data="errs:clear_all")],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="errs:refresh")],
+    ])
+    await message.answer(text[:4000], reply_markup=kb)
+
+
+async def errors_callback(callback):
+    """Действия с журналом ошибок."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Нет доступа.")
+        return
+    await callback.answer()
+    if callback.data == "errs:clear_all":
+        mark_resolved(all_errors=True)
+        await callback.message.edit_text(
+            "✅ Журнал сброшен.",
+            reply_markup=None
+        )
+    elif callback.data == "errs:refresh":
+        text = render_errors(limit=20)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 Сбросить все", callback_data="errs:clear_all")],
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="errs:refresh")],
+        ])
+        try:
+            await callback.message.edit_text(text[:4000], reply_markup=kb)
+        except Exception:
+            pass
+
+
 @dp.errors()
+async def errors_handler(event, exception):
+    """Глобальный обработчик ошибок — логирует в error_tracker."""
+    import traceback as _tb
+    ctx = "unknown"
+    uid = None
+    try:
+        if hasattr(event, "update"):
+            upd = event.update
+            if upd.message:
+                ctx = f"msg:{(upd.message.text or '')[:50]}"
+                uid = upd.message.from_user.id
+            elif upd.callback_query:
+                ctx = f"cb:{upd.callback_query.data[:50]}"
+                uid = upd.callback_query.from_user.id
+    except Exception:
+        pass
+    log_exception(ctx, exception, uid)
+    return True  # ошибка обработана
+
+
 async def global_error_handler(event: ErrorEvent):
     logger.exception("Unhandled update error: %s", event.exception)
     return True
@@ -1897,13 +1964,33 @@ async def _notification_loop(bot_instance):
 
 @dp.message.outer_middleware()
 async def activity_middleware(handler, event, data):
-    """Обновляет last_active_at при каждом сообщении от игрока."""
+    """Обновляет last_active_at + перехватывает исключения для логирования."""
     try:
         _analytics_lazy()
         touch_player_activity(event.from_user.id, event.from_user.username)
     except Exception:
         pass
-    return await handler(event, data)
+    try:
+        return await handler(event, data)
+    except Exception as _exc:
+        import traceback as _tb
+        _ctx = (event.text or "")[:60] if hasattr(event, "text") else "?"
+        log_exception(f"msg:{_ctx}", _exc, getattr(event.from_user, "id", None))
+        raise  # пробрасываем дальше чтобы aiogram тоже обработал
+
+
+@dp.callback_query.outer_middleware()
+async def callback_error_middleware(handler, event, data):
+    """Перехватывает исключения в callback-хендлерах."""
+    try:
+        return await handler(event, data)
+    except Exception as _exc:
+        log_exception(f"cb:{event.data[:60]}", _exc, getattr(event.from_user, "id", None))
+        try:
+            await event.answer("⚠️ Произошла ошибка. Попробуй позже.", show_alert=True)
+        except Exception:
+            pass
+        raise
 
 
 async def _run_migration():
