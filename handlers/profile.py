@@ -36,11 +36,18 @@ def _tab_main(player, monsters) -> str:
     except Exception:
         _crystal_line = ""
         _summon_line = ""
+    # Energy display with bonus
+    try:
+        from database.repositories import get_total_energy_display
+        _e, _m, _b = get_total_energy_display(player.telegram_id)
+        _energy_str = f"⚡ Энергия: {_e}/{_m}" + (f" +{_b}🔥 бонус" if _b > 0 else "")
+    except Exception:
+        _energy_str = f"⚡ Энергия: {player.energy}/{get_max_energy(player.telegram_id)}"
     return (
         f"📊 *Основное*\n\n"
         f"👤 {player.name} | Ур. {player.level}\n"
         f"✨ Опыт: {player.experience}/{player.level * 10}\n"
-        f"⚡ Энергия: {player.energy}/{get_max_energy(player.telegram_id)}\n"
+        f"{_energy_str}\n"
         f"💰 Золото: {player.gold}\n"
         f"{render_player_status(player)}\n\n"
         f"🐲 Монстров: {len(monsters)}"
@@ -200,7 +207,19 @@ async def restore_energy_handler(message: Message):
         )
         return
 
-    restore_player_energy(message.from_user.id, amount=5, max_energy=12)
+    from database.repositories import get_max_energy, add_bonus_energy, get_total_energy_display
+    _e, _max_e, _bonus = get_total_energy_display(message.from_user.id)
+    CAPSULE_AMOUNT = 5
+    if _e >= _max_e:
+        # Уже полная — даём бонусную
+        add_bonus_energy(message.from_user.id, CAPSULE_AMOUNT)
+        await message.answer(
+            f"⚡🔥 Капсула использована! +{CAPSULE_AMOUNT} бонусной энергии (сверх лимита).\n"
+            f"Энергия: {_e}/{_max_e} +{_bonus + CAPSULE_AMOUNT}🔥"
+        )
+        return
+    else:
+        restore_player_energy(message.from_user.id, amount=CAPSULE_AMOUNT, max_energy=_max_e)
     player = get_player(message.from_user.id)
     log_event("energy_restored", message.from_user.id, "gold_spent=3")
     await message.answer(

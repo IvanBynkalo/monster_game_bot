@@ -385,9 +385,25 @@ async def admin_reply_handler(message: Message) -> bool:
         if not p:
             await message.answer(f"Игрок {target_id} не найден.")
             return True
-        _update_player_field(target_id, energy=min(p.energy + amount, 20))
+        from database.repositories import get_max_energy, add_bonus_energy
+        max_e = get_max_energy(target_id)
+        current = p.energy
+        if current >= max_e:
+            # Уже полная — даём бонусную
+            add_bonus_energy(target_id, amount)
+            msg_detail = f"+{amount}🔥 бонусной (сверх лимита)"
+        else:
+            # Сначала заполняем до лимита, остаток — бонусная
+            fill = min(amount, max_e - current)
+            _update_player_field(target_id, energy=current + fill)
+            leftover = amount - fill
+            if leftover > 0:
+                add_bonus_energy(target_id, leftover)
+                msg_detail = f"+{fill} обычной +{leftover}🔥 бонусной"
+            else:
+                msg_detail = f"+{fill} энергии"
         log_admin_action(uid, "give_energy", "player", target_id, f"+{amount}")
-        await message.answer(f"✅ {p.name} получил {amount} энергии")
+        await message.answer(f"✅ {p.name}: {msg_detail}")
         return True
 
     # ── Вылечить монстра ──
@@ -552,9 +568,11 @@ async def admin_quick_callback(callback: CallbackQuery):
         target_id = int(data.split(":")[-1])
         p = get_player(target_id)
         if p:
-            _update_player_field(target_id, energy=12)
+            from database.repositories import get_max_energy
+            max_e = get_max_energy(target_id)
+            _update_player_field(target_id, energy=max_e)
             log_admin_action(uid, "quick_energy", "player", target_id)
-            await callback.message.answer(f"✅ Энергия {p.name} восстановлена")
+            await callback.message.answer(f"✅ Энергия {p.name} восстановлена до {max_e}")
 
     elif data.startswith("adm:quick_heal:"):
         target_id = int(data.split(":")[-1])
