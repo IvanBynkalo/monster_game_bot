@@ -1554,6 +1554,34 @@ async def market_inline_callback(callback: CallbackQuery):
 
     # ---------------- VARG ----------------
 
+    if data.startswith("marketnpc:varg_detail:"):
+        # Показываем карточку монстра с кнопкой «Купить»
+        slug = data.split(":")[-1]
+        offer = MONSTER_SHOP_OFFERS.get(slug)
+        if not offer:
+            await callback.answer("Монстр не найден.", show_alert=True)
+            return
+        from game.shop_service import RARITY_LABELS, MOOD_LABELS
+        price   = offer.get("price", offer.get("base_price", 0))
+        rarity  = RARITY_LABELS.get(offer.get("rarity", "common"), offer.get("rarity", ""))
+        mood    = MOOD_LABELS.get(offer.get("mood", ""), offer.get("mood", ""))
+        player  = get_player(callback.from_user.id)
+        gold    = getattr(player, "gold", 0) if player else 0
+        detail_text = (
+            f"🐲 {offer['name']}\n"
+            f"Редкость: {rarity}\n"
+            f"Характер: {mood}\n"
+            f"HP: {offer.get('hp', '?')} | Атака: {offer.get('attack', '?')}\n\n"
+            f"Цена: {price}з\n"
+            f"Твоё золото: {gold}з"
+        )
+        await callback.message.edit_text(
+            detail_text,
+            reply_markup=varg_monster_detail_inline(slug),
+        )
+        await callback.answer()
+        return
+
     if data == "marketnpc:varg_buy_menu":
         await callback.message.edit_text(
             render_varg_buy_text(callback.from_user.id),

@@ -41,6 +41,7 @@ from game.shop_service import (
     render_monster_shop_text,
     render_shop_menu_text,
 )
+from keyboards.city_menu import district_actions_menu
 from keyboards.main_menu import main_menu
 from keyboards.shop_menu import (
     bag_shop_menu,
@@ -148,7 +149,6 @@ async def item_shop_handler(message: Message):
     inline_kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
     # Используем меню квартала вместо старого shop_menu
-    from keyboards.city_menu import district_actions_menu
     _reply_kb = district_actions_menu("market_square", message.from_user.id)
     await message.answer(render_item_shop_text(), reply_markup=_reply_kb)
     await message.answer("🛒 Купить:", reply_markup=inline_kb)
