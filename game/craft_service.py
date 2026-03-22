@@ -62,49 +62,21 @@ RECIPES = {
 }
 
 RESOURCE_LABELS = {
-    # Собранные ресурсы
-    "field_grass":   "🌾 Полевая трава",
-    "sun_blossom":   "🌼 Солнечный цветок",
-    "dew_crystal":   "💧 Кристалл росы",
-    "raw_ore":       "⛏ Сырая руда",
+    "field_grass": "🌾 Полевая трава",
+    "sun_blossom": "🌼 Солнечный цветок",
+    "dew_crystal": "💧 Кристалл росы",
+    "raw_ore": "⛏ Сырая руда",
     "granite_shard": "🪨 Осколок гранита",
-    "sky_crystal":   "💎 Небесный кристалл",
-    "bog_flower":    "🪷 Болотный цветок",
-    "dark_resin":    "🕯 Тёмная смола",
-    "ghost_reed":    "🎐 Призрачный камыш",
-    "forest_herb":   "🌿 Лесная трава",
-    "mushroom_cap":  "🍄 Шляпка гриба",
-    "swamp_moss":    "🪴 Болотный мох",
-    "toxic_spore":   "🧫 Токсичная спора",
-    "ember_stone":   "🔥 Угольный камень",
-    "ash_leaf":      "🍂 Пепельный лист",
-    # Охотничий лут (с убитых зверей)
-    "fox_fur":             "🦊 Рыжий мех",
-    "wolf_fang":           "🐺 Волчий клык",
-    "wolf_hide":           "🐺 Волчья шкура",
-    "bear_hide":           "🐻 Медвежья шкура",
-    "giant_bark":          "🌲 Великанская кора",
-    "rabbit_pelt":         "🐇 Кроличья шкурка",
-    "deer_antler":         "🦌 Оленьи рога",
-    "aurochs_horn":        "🐄 Рог тура",
-    "eagle_feather":       "🦅 Золотое перо",
-    "mouse_whisker":       "🐭 Мышиный ус",
-    "goat_horn":           "🐐 Козлиный рог",
-    "boar_tusk":           "🐗 Кабаний клык",
-    "lynx_claw":           "🐾 Коготь рыси",
-    "mountain_lion_pelt":  "🦁 Шкура горного льва",
-    "stone_beetle":        "🪲 Каменный жук",
-    "lava_wolf_fang":      "🌋 Клык лавового волка",
-    "croc_scale":          "🐊 Чешуя крокодила",
-    "black_bear_claw":     "🐻 Коготь чёрного медведя",
-    "cave_bat_wing":       "🦇 Крыло пещерной летучей мыши",
-    "stone_golem_core":    "⛏ Ядро каменного голема",
-    "shadow_wolf_fang":    "🌑 Клык теневого волка",
-    "desert_scorpion":     "🦂 Пустынный скорпион",
-    "crystal_shard":       "💎 Осколок кристалла",
-    "storm_crystal_shard": "⚡ Штормовой осколок",
-    # Прочее
-    "cooling_shard":       "❄️ Охлаждающий осколок",
+    "sky_crystal": "💎 Небесный кристалл",
+    "bog_flower": "🪷 Болотный цветок",
+    "dark_resin": "🕯 Тёмная смола",
+    "ghost_reed": "🎐 Призрачный камыш",
+    "forest_herb": "🌿 Лесная трава",
+    "mushroom_cap": "🍄 Шляпка гриба",
+    "swamp_moss": "🪴 Болотный мох",
+    "toxic_spore": "🧫 Токсичная спора",
+    "ember_stone": "🔥 Угольный камень",
+    "ash_leaf": "🍂 Пепельный лист",
 }
 
 
@@ -116,7 +88,7 @@ def render_resources_text(resources: dict):
         if qty <= 0:
             continue
         shown = True
-        lines.append(f"{RESOURCE_LABELS.get(slug, slug.replace("_", " ").title())} x{qty}")
+        lines.append(f"{RESOURCE_LABELS.get(slug, slug.replace('_', ' ').title())} x{qty}")
 
     if not shown:
         lines.append("У тебя пока нет ресурсов.")
@@ -202,7 +174,7 @@ def render_craft_text(player, resources: dict):
             have = resources.get(slug, 0)
             if have < need:
                 enough_resources = False
-            lines.append(f"- {RESOURCE_LABELS.get(slug, slug.replace("_", " ").title())}: {have}/{need}")
+            lines.append(f"- {RESOURCE_LABELS.get(slug, slug)}: {have}/{need}")
 
         if not meets_alchemy_requirement(player, recipe):
             lines.append(
