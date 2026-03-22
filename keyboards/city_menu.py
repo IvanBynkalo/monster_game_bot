@@ -31,8 +31,7 @@ def _qi(telegram_id: int, base: str, npc_key: str) -> str:
     if not telegram_id:
         return base
     try:
-        from database.repositories import get_npc_quest_status
-        st = get_npc_quest_status(telegram_id, npc_key)
+        st = _cached_quest_status(telegram_id, npc_key)
         if st == "ready":
             return f"{base} (✅)"
         elif st == "active":
@@ -111,7 +110,6 @@ def district_actions_menu(district_slug: str, telegram_id: int = None) -> ReplyK
              KeyboardButton(text="🪤 Мастер ловушек")],
             [KeyboardButton(text=_qi(telegram_id, "🔨 Мастерская", "gemma")),
              KeyboardButton(text="🏛 Аукцион")],
-            [KeyboardButton(text=_orders_label(telegram_id))],
             [KeyboardButton(text="⬅️ Назад")],
         ]
 
