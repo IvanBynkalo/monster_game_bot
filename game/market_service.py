@@ -4,6 +4,13 @@ from database.repositories import (
     get_city_resource_sell_price,
 )
 
+# Подгружаем названия охотничьего лута чтобы они отображались на рынке
+try:
+    from game.wildlife_loot import WILDLIFE_LOOT_ITEMS as _WLI
+    _WILDLIFE_LABELS = {slug: f"{v['emoji']} {v['name']}" for slug, v in _WLI.items()}
+except Exception:
+    _WILDLIFE_LABELS = {}
+
 RESOURCE_LABELS = {
     "forest_herb": "🌿 Лесная трава",
     "mushroom_cap": "🍄 Шляпка гриба",
@@ -24,6 +31,8 @@ RESOURCE_LABELS = {
     "dark_resin": "🕯 Тёмная смола",
     "ghost_reed": "🎐 Призрачный камыш",
 }
+# Merge wildlife loot labels (охотничий лут)
+RESOURCE_LABELS.update(_WILDLIFE_LABELS)
 
 BAG_OFFERS = {
     "waist_bag": {"name": "Поясная сумка", "capacity": 16, "price": 45},
@@ -33,20 +42,7 @@ BAG_OFFERS = {
 
 
 def get_resource_label(slug: str) -> str:
-    """Возвращает читаемое название ресурса. Проверяет оба словаря."""
-    label = RESOURCE_LABELS.get(slug)
-    if label:
-        return label
-    # Проверяем craft_service (содержит охотничий лут)
-    try:
-        from game.craft_service import RESOURCE_LABELS as CRAFT_LABELS
-        label = CRAFT_LABELS.get(slug)
-        if label:
-            return label
-    except Exception:
-        pass
-    # Красиво форматируем slug как fallback
-    return slug.replace("_", " ").title()
+    return RESOURCE_LABELS.get(slug, slug)
 
 
 def make_sell_button_text(slug: str, city_slug: str, merchant_level: int, player_qty: int) -> str:
