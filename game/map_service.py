@@ -82,18 +82,34 @@ LOCATIONS = {
     ),
 }
 
+# Уровни доступа к локациям (минимальный уровень игрока)
+LOCATION_LEVEL_REQUIREMENT = {
+    "silver_city":   1,
+    "dark_forest":   1,   # стартовая зона
+    "emerald_fields":1,   # стартовая зона
+    "shadow_marsh":  4,
+    "stone_hills":   4,
+    "shadow_swamp":  6,
+    "ancient_ruins": 6,
+    "bone_desert":   8,
+    "volcano_wrath": 10,
+    "storm_ridge":   10,
+    "emotion_rift":  12,
+}
+
+# Упрощённая карта переходов — максимум 2-3 соседа у каждой точки
 TRAVEL_GRAPH = {
-    "silver_city": ["dark_forest"],
-    "dark_forest": ["silver_city", "shadow_swamp", "ancient_ruins", "emerald_fields"],
-    "emerald_fields": ["dark_forest", "stone_hills"],
-    "stone_hills": ["emerald_fields", "bone_desert"],
-    "shadow_marsh": ["shadow_swamp"],
-    "shadow_swamp": ["dark_forest", "emotion_rift", "shadow_marsh"],
-    "ancient_ruins": ["dark_forest", "bone_desert", "emotion_rift"],
-    "bone_desert": ["ancient_ruins", "volcano_wrath", "storm_ridge", "stone_hills"],
+    "silver_city":   ["dark_forest"],
+    "dark_forest":   ["silver_city", "emerald_fields", "shadow_marsh"],
+    "emerald_fields":["dark_forest", "stone_hills"],
+    "shadow_marsh":  ["dark_forest", "shadow_swamp"],
+    "stone_hills":   ["emerald_fields", "ancient_ruins"],
+    "shadow_swamp":  ["shadow_marsh", "bone_desert"],
+    "ancient_ruins": ["stone_hills", "bone_desert"],
+    "bone_desert":   ["shadow_swamp", "ancient_ruins", "volcano_wrath"],
     "volcano_wrath": ["bone_desert", "storm_ridge"],
-    "storm_ridge": ["bone_desert", "volcano_wrath"],
-    "emotion_rift": ["shadow_swamp", "ancient_ruins"],
+    "storm_ridge":   ["volcano_wrath", "emotion_rift"],
+    "emotion_rift":  ["storm_ridge"],
 }
 
 MOOD_LABELS = {

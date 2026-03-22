@@ -14,19 +14,25 @@ from database.repositories import get_connection
 # Расстояния между локациями (симметричные)
 # Единица ≈ 1 минута базового времени
 # Расстояния в секундах (базовое время без ловкости)
+# Минимум 4 секунды
 DISTANCES: dict[tuple[str, str], int] = {
-    ("silver_city",    "dark_forest"):    45,   # 45 сек — стартовый маршрут
-    ("dark_forest",    "emerald_fields"): 90,   # 1.5 мин
-    ("dark_forest",    "shadow_marsh"):   150,  # 2.5 мин
-    ("dark_forest",    "ancient_ruins"):  180,  # 3 мин
-    ("emerald_fields", "stone_hills"):    120,  # 2 мин
-    ("emerald_fields", "shadow_swamp"):   210,  # 3.5 мин
-    ("stone_hills",    "volcano_wrath"):  300,  # 5 мин
-    ("stone_hills",    "bone_desert"):    240,  # 4 мин
+    # Стартовая зона (ур.1-3)
+    ("silver_city",    "dark_forest"):    20,   # ~20 сек — почти мгновенно
+    ("dark_forest",    "emerald_fields"): 30,   # 30 сек
+
+    # Средняя зона (ур.4-6)
+    ("dark_forest",    "shadow_marsh"):   60,   # 1 мин
+    ("emerald_fields", "stone_hills"):    60,   # 1 мин
     ("shadow_marsh",   "shadow_swamp"):   90,   # 1.5 мин
-    ("shadow_swamp",   "volcano_wrath"):  270,  # 4.5 мин
-    ("bone_desert",    "storm_ridge"):    210,  # 3.5 мин
-    ("volcano_wrath",  "emotion_rift"):   420,  # 7 мин
+    ("stone_hills",    "ancient_ruins"):  90,   # 1.5 мин
+
+    # Дальняя зона (ур.7-9)
+    ("shadow_swamp",   "bone_desert"):    150,  # 2.5 мин
+    ("ancient_ruins",  "bone_desert"):    150,  # 2.5 мин
+
+    # Эндгейм (ур.10+)
+    ("bone_desert",    "volcano_wrath"):  240,  # 4 мин
+    ("volcano_wrath",  "storm_ridge"):    180,  # 3 мин
     ("storm_ridge",    "emotion_rift"):   300,  # 5 мин
 }
 
@@ -60,7 +66,7 @@ def get_travel_seconds(from_slug: str, to_slug: str, agility: int = 0) -> int:
     """
     base_seconds = get_distance(from_slug, to_slug)
     agility_discount = min(0.70, (agility // 5) * 0.10)
-    return max(10, int(base_seconds * (1 - agility_discount)))
+    return max(4, int(base_seconds * (1 - agility_discount)))
 
 
 def format_travel_time(seconds: int) -> str:
@@ -102,7 +108,7 @@ def start_travel(telegram_id: int, from_slug: str, to_slug: str,
     seconds = get_travel_seconds(from_slug, to_slug, agility)
     # Применяем бонус от сапог
     if extra_speed_bonus > 0:
-        seconds = max(10, int(seconds * (1 - min(0.50, extra_speed_bonus))))
+        seconds = max(4, int(seconds * (1 - min(0.50, extra_speed_bonus))))
     arrive_at = int(time.time()) + seconds
     with get_connection() as conn:
         conn.execute("""
