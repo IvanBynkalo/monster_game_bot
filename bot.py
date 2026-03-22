@@ -1871,18 +1871,8 @@ async def fallback_callback_handler(callback: CallbackQuery):
     await callback.answer("Кнопка не работает", show_alert=False)
 
 
-@dp.message()
-async def fallback_handler(message: Message):
-    logger.info(
-        "UNHANDLED MESSAGE: user=%s raw=%r normalized=%r",
-        message.from_user.id,
-        message.text,
-        normalize_text(message.text),
-    )
-    await message.answer(
-        f"Кнопка получена, но обработчик не сработал:\n{message.text}\n\n"
-        f"Нажми /start для перезагрузки меню."
-    )
+# Unhandled messages are now logged via error_tracker middleware
+# The old @dp.message() fallback was intercepting ALL messages - removed
 
 
 
@@ -1979,36 +1969,28 @@ async def _notification_loop(bot_instance):
 
 @dp.message.outer_middleware()
 async def activity_middleware(handler, event, data):
-    """Обновляет last_active_at + перехватывает исключения для логирования."""
+    """Обновляет last_active_at при каждом сообщении."""
     try:
         _analytics_lazy()
         touch_player_activity(event.from_user.id, event.from_user.username)
     except Exception:
         pass
-    try:
-        return await handler(event, data)
-    except Exception as _exc:
-        _ctx = (event.text or "")[:60] if hasattr(event, "text") else "?"
-        log_exception(f"msg:{_ctx}", _exc, getattr(event.from_user, "id", None))
-        # НЕ пробрасываем - иначе aiogram прерывает цепочку обработки
+    return await handler(event, data)
 
 
 @dp.callback_query.outer_middleware()
 async def callback_error_middleware(handler, event, data):
-    """Перехватывает исключения в callback-хендлерах."""
+    """Логирует исключения в callback-хендлерах."""
     try:
         return await handler(event, data)
     except Exception as _exc:
         try:
-            _cb_ctx = (event.data or "")[:60]
-        except Exception:
-            _cb_ctx = "?"
-        log_exception(f"cb:{_cb_ctx}", _exc, getattr(event.from_user, "id", None))
-        try:
-            await event.answer("⚠️ Произошла ошибка. Попробуй позже.", show_alert=True)
+            log_exception(f"cb:{(event.data or '')[:60]}", _exc,
+                         getattr(event.from_user, "id", None))
+            await event.answer("⚠️ Произошла ошибка.", show_alert=True)
         except Exception:
             pass
-        # НЕ пробрасываем
+        return None
 
 
 async def _run_migration():
