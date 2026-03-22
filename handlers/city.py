@@ -60,6 +60,10 @@ except ImportError:
         return None
 
 from game.city_service import render_city_menu, render_guild_text, GUILD_QUESTS
+from game.guild_quests import (
+    render_guild_panel, get_active_quests, get_available_quests,
+    take_quest, claim_quest, progress_quest, WEEKLY_GUILD_QUESTS,
+)
 from game.craft_service import render_craft_text
 from game.item_service import ITEMS
 from game.location_rules import is_city
@@ -1075,15 +1079,52 @@ async def _guild_handler(
         await message.answer("Гильдии доступны только в городе.")
         return
 
-    quests = [q for q in GUILD_QUESTS if q["profession"] == profession]
     set_ui_screen(message.from_user.id, "district")
+    uid = message.from_user.id
+
+    text = render_guild_panel(uid, profession, title, description)
+
+    # Inline кнопки: взять поручение / сдать выполненное
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from game.guild_quests import get_active_quests, get_available_quests, WEEKLY_GUILD_QUESTS
+    rows = []
+
+    # Кнопки "Взять" для доступных
+    available = get_available_quests(uid, profession)
+    for q in available:
+        rows.append([InlineKeyboardButton(
+            text=f"📌 Взять: {q['title']}",
+            callback_data=f"guild:take:{profession}:{q['id']}"
+        )])
+
+    # Кнопки "Сдать" для выполненных
+    active = get_active_quests(uid, profession)
+    for q in active:
+        if q.get("completed"):
+            rows.append([InlineKeyboardButton(
+                text=f"✅ Сдать: {q['title']}",
+                callback_data=f"guild:claim:{profession}:{q['id']}"
+            )])
+
+    # Еженедельное
+    weekly = WEEKLY_GUILD_QUESTS.get(profession, {})
+    active_ids = {q["id"] for q in active}
+    if weekly and weekly["id"] not in active_ids:
+        rows.append([InlineKeyboardButton(
+            text=f"🌟 Взять недельное: {weekly['title']}",
+            callback_data=f"guild:take:{profession}:{weekly['id']}"
+        )])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
     await _answer_with_city_image(
         message,
         image_name,
-        render_guild_text(title, description, quests),
+        text,
         district_actions_menu("guild_quarter", message.from_user.id),
     )
+    if kb:
+        await message.answer("Действия:", reply_markup=kb)
 
 
 async def city_guard_handler(message: Message):

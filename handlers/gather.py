@@ -59,6 +59,18 @@ async def gather_handler(message: Message):
     guild_completed = progress_guild_quests(message.from_user.id, "gather", result.get("amount", 1)) if not result.get("rare") else []
     if result.get("kind") == "geologist":
         guild_completed += progress_guild_quests(message.from_user.id, "geology", result.get("amount", 1))
+    # Новая система гильдейских квестов
+    try:
+        _gq_done = _gq_progress(message.from_user.id, "gatherer", "gather", result.get("amount", 1))
+        for _cq in _gq_done:
+            guild_completed.append(_cq)
+        if result.get("kind") == "geologist":
+            _gq_done2 = _gq_progress(message.from_user.id, "geologist", "gather_resource_type",
+                                      result.get("amount", 1), {"res_type": "stone"})
+            for _cq in _gq_done2:
+                guild_completed.append(_cq)
+    except Exception:
+        pass
 
     if result.get("rare"):
         completed = progress_extra_quests(message.from_user.id, "rare_gather", 1)
