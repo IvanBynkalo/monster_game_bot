@@ -122,7 +122,7 @@ async def elite_expedition_handler(message: Message):
         reply_markup=main_menu(player.location_slug),
     )
 
-async def explore_handler(message: Message):
+async def explore_handler(message: Message, forced_direction: str = None):
     player = get_player(message.from_user.id)
     if not player:
         await message.answer("Сначала напиши /start")
@@ -149,8 +149,8 @@ async def explore_handler(message: Message):
     _grid = get_grid(message.from_user.id, player.location_slug)
     _directions = get_available_directions(_grid)
 
-    # Если есть выбор направления — показываем reply-кнопки + мини-карту
-    if len(_directions) > 1:
+    # Если выбор направления задан явно (из кнопок reply-клавиатуры) — пропускаем показ меню
+    if forced_direction is None and len(_directions) > 1:
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         # Строим reply-клавиатуру с направлениями
         # Раскладка: Влево | Вперёд | Вправо / Назад / Остановиться
@@ -185,8 +185,11 @@ async def explore_handler(message: Message):
         await message.answer(_prompt, reply_markup=_dir_kb)
         return
 
-    # Одно направление или возврат — идём автоматически
-    _chosen_dir = _directions[0]['dir'] if _directions else 'forward'
+    # Если направление задано явно — используем его; иначе выбираем автоматически
+    if forced_direction:
+        _chosen_dir = forced_direction
+    else:
+        _chosen_dir = _directions[0]['dir'] if _directions else 'forward'
     _expl_result = explore_cell(message.from_user.id, player.location_slug, _chosen_dir)
     _expl_text = render_exploration_result(_expl_result, player.location_slug)
     _expl_bonuses = get_current_cell_bonuses(message.from_user.id, player.location_slug)
@@ -442,10 +445,37 @@ async def explore_handler(message: Message):
             wildlife_kb.inline_keyboard = [r for r in wildlife_kb.inline_keyboard if r]
             await message.answer(full_text, reply_markup=wildlife_kb)
     else:
-        # ── СОБЫТИЕ: текст + сбрасываем reply-меню на основное ──
-        # Боевых кнопок нет, reply-меню всегда в чистом состоянии после события
+        # ── СОБЫТИЕ: текст + меню ──
         player = get_player(message.from_user.id)
-        await message.answer(
-            full_text,
-            reply_markup=main_menu(player.location_slug, player.current_district_slug)
-        )
+        if forced_direction:
+            # Продолжаем исследование — показываем следующие направления
+            _grid_next = get_grid(message.from_user.id, player.location_slug)
+            _dirs_next = get_available_directions(_grid_next)
+            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+            _dir_labels_next = {d['dir']: d['label'] for d in _dirs_next}
+            _kbd_rows_next = []
+            _top_next = [KeyboardButton(text=_dir_labels_next[d]) for d in ['side_l', 'forward', 'side_r'] if d in _dir_labels_next]
+            if _top_next:
+                _kbd_rows_next.append(_top_next)
+            if 'back' in _dir_labels_next:
+                _kbd_rows_next.append([KeyboardButton(text=_dir_labels_next['back'])])
+            _kbd_rows_next.append([KeyboardButton(text="🏕 Остановиться")])
+            _dir_kb_next = ReplyKeyboardMarkup(keyboard=_kbd_rows_next, resize_keyboard=True)
+            try:
+                from game.grid_exploration_service import render_mini_map
+                from game.exploration_service import get_cartographer_level as _gcl_ev
+                _mini_ev = render_mini_map(_grid_next, cart_level=_gcl_ev(message.from_user.id))
+            except Exception:
+                _mini_ev = ""
+            _panel_ev = render_exploration_panel(message.from_user.id, player.location_slug)
+            _next_prompt = "Куда дальше?\n\n" + _panel_ev
+            if _mini_ev:
+                _next_prompt += "\n\n" + _mini_ev
+            await message.answer(full_text)
+            await message.answer(_next_prompt, reply_markup=_dir_kb_next)
+        else:
+            # Обычное исследование — возвращаем главное меню
+            await message.answer(
+                full_text,
+                reply_markup=main_menu(player.location_slug, player.current_district_slug)
+            )
