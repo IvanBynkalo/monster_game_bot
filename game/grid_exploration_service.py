@@ -270,42 +270,33 @@ def is_cell_cleared(telegram_id: int, location_slug: str) -> bool:
 # ── Направления ───────────────────────────────────────────────────────────────
 
 def get_available_directions(grid: dict) -> list:
+    """
+    Возвращает ВСЕ доступные направления в пределах сетки.
+    Новые клетки помечены new=True, посещённые (включая cleared) — new=False.
+    Cleared-клетки всегда доступны для перехода (сбор ресурсов).
+    """
     col, row = grid["current_pos"]
 
-    forward_candidates = [
+    candidates = [
         {"dir": "forward", "label": "⬆️ Вперёд", "col": col,     "row": row + 1},
         {"dir": "side_l",  "label": "⬅️ Влево",  "col": col - 1, "row": row},
         {"dir": "side_r",  "label": "➡️ Вправо", "col": col + 1, "row": row},
     ]
+    if row > 0:
+        candidates.append({"dir": "back", "label": "⬇️ Назад", "col": col, "row": row - 1})
 
-    new_cells = []
-    visited_cells = []
-
-    for c in forward_candidates:
+    result = []
+    for c in candidates:
         nc, nr = c["col"], c["row"]
         if not (0 <= nc <= 9 and 0 <= nr <= 9):
             continue
         key = f"{nc},{nr}"
         cell = grid["cells"][key]
         c["key"] = key
-        if not cell["visited"]:
-            c["new"] = True
-            new_cells.append(c)
-        else:
-            c["new"] = False
-            visited_cells.append(c)
+        c["new"] = not cell["visited"]
+        result.append(c)
 
-    back = None
-    if row > 0:
-        bkey = f"{col},{row - 1}"
-        back = {"dir": "back", "label": "⬇️ Назад", "col": col, "row": row - 1,
-                "key": bkey, "new": False}
-
-    result = new_cells[:3]
-    if not result:
-        result = visited_cells[:2]
-    if back and len(result) < 4:
-        result.append(back)
+    # Если совсем некуда (стартовая точка без соседей) — возврат к входу
     if not result:
         result.append({"dir": "back", "label": "🔄 Вернуться к входу",
                        "col": 5, "row": 0, "key": "5,0", "new": False})
@@ -336,6 +327,7 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
     visited_before = cell["visited"]
 
     if not visited_before:
+        # Новая клетка — генерируем тип
         explored_pct = int(grid["visited_count"] / 100 * 100)
         cell_type = _weighted_cell_type(nr, explored_pct)
         cell["type"] = cell_type
@@ -343,6 +335,10 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
         cell["visited"] = True
         cell["cleared"] = False
         grid["visited_count"] += 1
+    else:
+        # Уже посещённая — тип НЕ меняем, cleared сохраняется
+        # Исключение: если это dungeon/boss_zone — всегда можно зайти
+        pass
 
     grid["current_pos"] = [nc, nr]
     _save_grid(telegram_id, location_slug, grid)
@@ -386,8 +382,19 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
 # ── Туман войны ───────────────────────────────────────────────────────────────
 
 def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict:
+    """
+    Туман войны масштабируется по уровню картографа:
+    - 1-3:  нет предсказаний
+    - 4-6:  1 круг (ближние соседи — полные иконки)
+    - 7-9:  2 круга (2й круг — тусклые)
+    - 10-12: 3 круга
+    - 13+:  4 круга (максимум)
+    """
     if cart_level < 4:
         return {}
+
+    # Количество кругов по уровню
+    max_layers = min(4, (cart_level - 4) // 3 + 1)
 
     cells = grid["cells"]
     visited_set = set()
@@ -407,6 +414,7 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
         cell["predicted_type"] = ctype
         return ctype
 
+    # Слой 1 — все 8 соседей посещённых клеток (полные иконки)
     for col, row in visited_set:
         for dc, dr in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
             nc, nr = col + dc, row + dr
@@ -418,11 +426,12 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
             ptype = _get_predicted_type(nkey, nr)
             fog[nkey] = _FOG_ICONS_NEAR.get(ptype, "🌫")
 
-    if cart_level >= 10:
-        layer1_keys = set(fog.keys())
-        for fkey in layer1_keys:
+    # Слои 2, 3, 4 — расширяем от предыдущего слоя (тусклые иконки)
+    for _layer in range(2, max_layers + 1):
+        prev_layer_keys = set(fog.keys())
+        for fkey in prev_layer_keys:
             fc, fr = map(int, fkey.split(","))
-            for dc, dr in [(-1,0),(1,0),(0,-1),(0,1)]:
+            for dc, dr in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
                 nc, nr = fc + dc, fr + dr
                 if not (0 <= nc <= 9 and 0 <= nr <= 9):
                     continue
