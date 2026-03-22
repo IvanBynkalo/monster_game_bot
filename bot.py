@@ -1663,10 +1663,38 @@ async def shop_inline_callback(callback: CallbackQuery):
 
         _update_player_field(uid, gold=player.gold - price)
         add_item(uid, slug, 1)
+        # Обновляем баланс игрока для отображения
+        updated_player = get_player(uid)
+        new_gold = getattr(updated_player, "gold", player.gold - price)
         await callback.answer(
-            f"✅ Куплено: {item.get('name', slug)} (-{price}з)",
+            f"✅ Куплено: {item.get('name', slug)} (-{price}з)\nОсталось золота: {new_gold}з",
             show_alert=True
         )
+        # Обновляем inline-меню чтобы отразить актуальный баланс
+        try:
+            from game.shop_service import ITEM_ORDER, get_market_item_price
+            LABELS = {
+                "small_potion":   ("🧪", "Малое зелье"),
+                "energy_capsule": ("⚡", "Капсула энергии"),
+                "basic_trap":     ("🪤", "Простая ловушка"),
+                "flee_elixir":    ("💨", "Эликсир побега"),
+                "revival_shard":  ("💎", "Осколок возрождения"),
+            }
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            rows = []
+            for _slug in ITEM_ORDER:
+                _emoji, _name = LABELS.get(_slug, ("🛒", _slug))
+                _price = get_market_item_price(_slug)
+                rows.append([InlineKeyboardButton(
+                    text=f"🛒 {_emoji} {_name} — {_price}з",
+                    callback_data=f"shop:buy:{_slug}"
+                )])
+            rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="shop:back")])
+            await callback.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+            )
+        except Exception:
+            pass
 
 
 
