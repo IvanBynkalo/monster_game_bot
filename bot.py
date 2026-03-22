@@ -29,7 +29,7 @@ from handlers.encounter import (
     poison_trap_handler,
 )
 from handlers.world_boss import boss_attack_handler, boss_flee_handler
-from handlers.monsters import monsters_handler, set_active_monster_handler, heal_monster_handler
+from handlers.monsters import monsters_handler, monster_callback, set_active_monster_handler, heal_monster_handler
 from handlers.inventory import (
     inventory_handler,
     use_small_potion_handler,
@@ -1454,6 +1454,7 @@ async def do_hunt_craft(message: Message):
         f"Потрачено: {recipe['gold_cost']} золота"
     )
 
+dp.callback_query.register(monster_callback, lambda c: c.data and c.data.startswith("mon:"))
 dp.message.register(equipment_handler, text_is("⚔️ Экипировка", "Экипировка"))
 dp.message.register(player_notifications_handler, text_is("🔔 Уведомления", "Уведомления"))
 dp.callback_query.register(admin_callback, lambda c: c.data and c.data.startswith("adm:"))
@@ -1576,12 +1577,22 @@ async def _notification_loop(bot_instance):
                 try:
                     update_player_location(uid, travel["to_slug"])
                     mark_notified(uid)
+                    # Получаем свежие данные игрока
+                    from database.repositories import get_player as _gp_arr
+                    _arr_player = _gp_arr(uid)
+                    from keyboards.main_menu import main_menu as _mm
+                    from game.map_service import LOCATIONS as _LOCS
+                    _loc = _LOCS.get(travel["to_slug"])
+                    _loc_desc = _loc.description if _loc else ""
+
+                    # Отправляем новое reply-меню (автообновление клавиатуры)
                     await bot_instance.send_message(
                         uid,
-                        f"✅ Ты прибыл в {to_name}!\n"
-                        f"Можно исследовать и сражаться."
+                        f"✅ Ты прибыл в {to_name}!\n{_loc_desc}\n\nМожно исследовать и сражаться.",
+                        reply_markup=_mm(travel["to_slug"],
+                                        _arr_player.current_district_slug if _arr_player else None)
                     )
-                    # Показываем inline меню
+                    # Показываем inline меню локации
                     from game.dungeon_service import DUNGEONS
                     from game.grid_exploration_service import is_dungeon_available
                     from keyboards.location_menu import location_actions_inline
