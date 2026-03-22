@@ -33,7 +33,20 @@ BAG_OFFERS = {
 
 
 def get_resource_label(slug: str) -> str:
-    return RESOURCE_LABELS.get(slug, slug)
+    """Возвращает читаемое название ресурса. Проверяет оба словаря."""
+    label = RESOURCE_LABELS.get(slug)
+    if label:
+        return label
+    # Проверяем craft_service (содержит охотничий лут)
+    try:
+        from game.craft_service import RESOURCE_LABELS as CRAFT_LABELS
+        label = CRAFT_LABELS.get(slug)
+        if label:
+            return label
+    except Exception:
+        pass
+    # Красиво форматируем slug как fallback
+    return slug.replace("_", " ").title()
 
 
 def make_sell_button_text(slug: str, city_slug: str, merchant_level: int, player_qty: int) -> str:
