@@ -381,6 +381,11 @@ async def explore_handler(message: Message, forced_direction: str = None):
         text = f"{intro}\n\n---\n\n{render_encounter_text(encounter, attacker_type=attacker_type)}"
         # Показываем изображение типа монстра
         _encounter_monster_type = encounter.get("monster_type", "void")
+    elif encounter["type"] == "wildlife":
+        # Зверь — сохраняем встречу и показываем карточку через render_wildlife_encounter
+        save_pending_encounter(message.from_user.id, encounter)
+        from game.wildlife_service import render_wildlife_encounter as _rwe
+        text = f"{intro}\n\n---\n\n{_rwe(encounter)}"
     else:
         event = world_event or encounter
         event_text = event.get("text") or event.get("title") or "Тишина окутывает местность."
