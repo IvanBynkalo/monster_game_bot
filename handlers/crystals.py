@@ -180,7 +180,8 @@ async def crystal_callback(callback: CallbackQuery):
             return
         _update_player_field(uid, gold=player.gold - tmpl["buy_price"])
         crystal = create_crystal(uid, code)
-        await callback.answer(f"✅ Куплен {crystal['name']}!", show_alert=False)
+        await callback.answer(f"✅ Куплен {crystal['name']}!", show_alert=True)
+        # Refresh list
         text = render_crystal_list(uid)
         try:
             await callback.message.edit_text(text, reply_markup=crystals_list_inline(uid))

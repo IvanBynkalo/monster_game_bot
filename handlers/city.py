@@ -394,18 +394,31 @@ def varg_main_inline(player_id: int) -> InlineKeyboardMarkup:
 
 
 def varg_buy_inline() -> InlineKeyboardMarkup:
+    """Список монстров — нажать для просмотра деталей."""
     rows = []
+    from game.shop_service import RARITY_LABELS, MOOD_LABELS, TYPE_LABELS
     for slug, offer in MONSTER_SHOP_OFFERS.items():
         price = offer.get("price", offer.get("base_price", 0))
-        rows.append([
-            InlineKeyboardButton(
-                text=f"🛒 {offer['name']} • {price}з",
-                callback_data=f"marketnpc:varg_buy:{slug}",
-            )
-        ])
-
+        rarity = RARITY_LABELS.get(offer.get("rarity","common"), "")
+        rows.append([InlineKeyboardButton(
+            text=f"🐲 {offer['name']} | {rarity} | {price}з",
+            callback_data=f"marketnpc:varg_detail:{slug}",
+        )])
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Варгу", callback_data="marketnpc:varg_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def varg_monster_detail_inline(slug: str) -> InlineKeyboardMarkup:
+    """Детальная карточка монстра перед покупкой."""
+    offer = MONSTER_SHOP_OFFERS.get(slug, {})
+    price = offer.get("price", offer.get("base_price", 0))
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"🛒 Купить за {price}з",
+            callback_data=f"marketnpc:varg_buy:{slug}"
+        )],
+        [InlineKeyboardButton(text="⬅️ Назад к списку", callback_data="marketnpc:varg_buy_menu")],
+    ])
 
 
 def _get_monster_sell_price(monster: dict) -> int:

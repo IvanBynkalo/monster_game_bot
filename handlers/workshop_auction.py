@@ -276,13 +276,14 @@ async def orders_callback(callback: CallbackQuery):
 
     elif data.startswith("ord:submit:"):
         order_id = data.split(":", 2)[-1]
-        ok, msg, new_gold = complete_order(uid, order_id, player.gold)
+        ok, msg, _ = complete_order(uid, order_id, player.gold)
+        # complete_order internally calls add_player_gold - no need to update field
         if ok:
-            _update_player_field(uid, gold=new_gold)
-        await callback.answer(msg, show_alert=True)
-        if ok:
+            await callback.message.answer(msg)  # показываем как обычное сообщение
             text = render_orders(uid)
             try:
                 await callback.message.edit_text(text, reply_markup=orders_inline(uid))
             except Exception:
-                pass
+                await callback.message.answer(text, reply_markup=orders_inline(uid))
+        else:
+            await callback.answer(msg, show_alert=True)
