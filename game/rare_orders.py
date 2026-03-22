@@ -59,24 +59,24 @@ RARE_ORDER_POOL = [
         "reward_exp": 200,
     },
     {
-        "id": "order_wolf_alive",
-        "title": "🐺 Живой волк",
+        "id": "order_rare_monster_instinct",
+        "title": "🎯 Монстр Инстинкта",
         "npc": "Мирна",
-        "desc": "«Зоопарк в столице заказал живого Матёрого волка. В кристалле.»",
-        "type": "wildlife_captured",
-        "require": {"name": "Матёрый волк"},
-        "reward_gold": 300,
-        "reward_exp": 150,
+        "desc": "«Нужен монстр с эмоцией Инстинкта — охотник ищет бойца.»",
+        "type": "monster_mood",
+        "require": {"mood": "instinct"},
+        "reward_gold": 220,
+        "reward_exp": 110,
     },
     {
-        "id": "order_eagle_alive",
-        "title": "🦅 Золотой орёл",
-        "npc": "Бортница",
-        "desc": "«Нужен Золотой орёл для питомника. Живым.»",
-        "type": "wildlife_captured",
-        "require": {"name": "Золотой орёл"},
-        "reward_gold": 280,
-        "reward_exp": 140,
+        "id": "order_uncommon_monster",
+        "title": "🟢 Необычный монстр",
+        "npc": "Варг",
+        "desc": "«Нужен монстр редкости Необычный или выше. Любой эмоции.»",
+        "type": "monster_rarity",
+        "require": {"rarity": "uncommon"},
+        "reward_gold": 180,
+        "reward_exp": 90,
     },
     {
         "id": "order_crystal_joy_filled",
@@ -219,8 +219,16 @@ def check_order_fulfillment(telegram_id: int, order: dict) -> bool:
         return any(m.get("mood") == req["mood"] and not m.get("is_dead") for m in monsters)
 
     elif otype == "monster_rarity":
+        # Подходит монстр с требуемой редкостью ИЛИ выше
+        RARITY_ORDER = ["common", "uncommon", "rare", "epic", "legendary", "mythic"]
+        req_idx = RARITY_ORDER.index(req["rarity"]) if req["rarity"] in RARITY_ORDER else 0
         monsters = get_player_monsters(telegram_id)
-        return any(m.get("rarity") == req["rarity"] and not m.get("is_dead") for m in monsters)
+        return any(
+            RARITY_ORDER.index(m.get("rarity","common")) >= req_idx
+            and not m.get("is_dead")
+            for m in monsters
+            if m.get("rarity","common") in RARITY_ORDER
+        )
 
     elif otype == "wildlife_captured":
         monsters = get_player_monsters(telegram_id)
