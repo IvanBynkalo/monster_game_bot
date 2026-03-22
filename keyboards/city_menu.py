@@ -63,12 +63,21 @@ def district_actions_menu(district_slug: str, telegram_id: int = None):
                 pass
 
         def _qi(base_text: str, guild_key: str) -> str:
-            """Quest indicator: NPC (❗ N) когда есть квесты."""
+            """Quest indicator на кнопке гильдии."""
             status = _q_done.get(guild_key)
             if status == "ready":
-                return f"{base_text} (✅ 1)"
+                return f"✅ {base_text}"
             elif status == "active":
-                return f"{base_text} (❗ 1)"
+                return f"❗ {base_text}"
+            # Проверяем есть ли доступные для взятия квесты
+            if telegram_id:
+                try:
+                    from game.guild_quests import get_available_quests
+                    available = get_available_quests(telegram_id, guild_key)
+                    if available:
+                        return f"📌 {base_text}"
+                except Exception:
+                    pass
             return base_text
 
         keyboard = [
