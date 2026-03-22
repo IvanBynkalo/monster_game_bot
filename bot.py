@@ -167,6 +167,107 @@ def has_admin_state(message: Message) -> bool:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+
+
+async def today_cmd(message):
+    """Экран Сегодня."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    uid = message.from_user.id
+    text = get_today_summary(uid)
+    daily = get_daily_status(uid)
+    rows = []
+    if daily.get("can_claim"):
+        rows.append([InlineKeyboardButton(
+            text=f"🎁 Получить награду ({daily.get('reward',{}).get('label','')})",
+            callback_data="daily:claim"
+        )])
+    rows.append([InlineKeyboardButton(text="🥚 Инкубатор", callback_data="egg:list")])
+    rows.append([InlineKeyboardButton(text="🏆 Достижения", callback_data="ach:list")])
+    await message.answer(text or "📅 Загружаю...",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
+
+
+
+
+async def hunt_cmd(message):
+    """Статус охоты недели."""
+    from game.roaming_monsters import render_hunt_status
+    text = render_hunt_status(message.from_user.id)
+    await message.answer(text)
+
+
+
+
+async def rift_cmd(message):
+    from game.rift_service import render_rift_status
+    await message.answer(render_rift_status(message.from_user.id))
+
+
+
+async def cooldown_cmd(message):
+    from game.crystal_service import get_player_crystals
+    from game.crystal_heat import get_heat_level, get_heat_modifiers, HEAT_STATUS_LABELS
+    from database.repositories import get_player
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    player = get_player(message.from_user.id)
+    if not player:
+        return
+    crystals = get_player_crystals(message.from_user.id)
+    hot = [(c, get_heat_level(c["id"])) for c in crystals if get_heat_level(c["id"]) > 0]
+    if not hot:
+        await message.answer("Все кристаллы в норме — перегрева нет.")
+        return
+    rows = []
+    for c, heat in hot:
+        cost = heat * 20
+        rows.append([InlineKeyboardButton(
+            text=f"Охладить {c['name']} (жар:{heat}) — {cost}з",
+            callback_data=f"cool:{c['id']}"
+        )])
+    text = "Перегретые кристаллы:\n" + "\n".join(
+        f"• {c['name']}: жар {h}" for c, h in hot
+    )
+    await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+async def guild_quest_callback(callback):
+    """Обрабатывает взятие/сдачу гильдейских поручений."""
+    from game.guild_quests import take_quest, claim_quest
+    uid = callback.from_user.id
+    data = callback.data
+    await callback.answer()
+    parts = data.split(":")
+
+    if data.startswith("guild:take:"):
+        profession = parts[2]
+        quest_id = parts[3]
+        ok, msg = take_quest(uid, quest_id, profession)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            # Обновляем панель гильдии
+            try:
+                from game.guild_quests import render_guild_panel
+                PROF_TITLES = {
+                    "hunter":    ("🎯 Гильдия ловцов",     "Здесь учат лучше чувствовать момент для поимки."),
+                    "gatherer":  ("🌿 Гильдия собирателей","Здесь учат находить полезные травы."),
+                    "geologist": ("⛏ Гильдия геологов",   "Здесь обучают находить жилы и руду."),
+                    "alchemist": ("⚗ Гильдия алхимиков",  "Здесь раскрывают секреты настоев."),
+                }
+                title, desc = PROF_TITLES.get(profession, ("Гильдия", ""))
+                await callback.message.answer(render_guild_panel(uid, profession, title, desc))
+            except Exception:
+                pass
+
+    elif data.startswith("guild:claim:"):
+        profession = parts[2]
+        quest_id = parts[3]
+        ok, msg = claim_quest(uid, quest_id, profession)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            await callback.message.answer(msg)
+
+
+
 dp.message.register(start_handler, Command("start"))
 
 dp.message.register(codex_handler, text_is("📖 Кодекс", "Кодекс"))
@@ -1494,29 +1595,166 @@ dp.message.register(admin_reply_handler, lambda m: m.reply_to_message is not Non
 dp.callback_query.register(notification_callback, lambda c: c.data and c.data.startswith("notif:"))
 
 dp.message.register(admin_cmd, Command("admin"))
-async def hunt_cmd(message):
-    """Статус охоты недели."""
-    from game.roaming_monsters import render_hunt_status
-    text = render_hunt_status(message.from_user.id)
-    await message.answer(text)
+@dp.callback_query(lambda c: c.data and c.data.startswith("daily:"))
+async def daily_callback(callback):
+    uid = callback.from_user.id
+    if callback.data == "daily:claim":
+        ok, msg, reward = claim_daily(uid)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            increment_stat(uid, "battle_count", 0)  # trigger achievement check
+            text = get_today_summary(uid)
+            try:
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                rows = [[InlineKeyboardButton(text="🥚 Инкубатор", callback_data="egg:list")]]
+                await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+            except Exception:
+                pass
 
 
-async def today_cmd(message):
-    """Экран Сегодня."""
+@dp.callback_query(lambda c: c.data and c.data.startswith("egg:"))
+async def egg_callback(callback):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    uid = message.from_user.id
-    text = get_today_summary(uid)
-    daily = get_daily_status(uid)
-    rows = []
-    if daily.get("can_claim"):
-        rows.append([InlineKeyboardButton(
-            text=f"🎁 Получить награду ({daily.get('reward',{}).get('label','')})",
-            callback_data="daily:claim"
-        )])
-    rows.append([InlineKeyboardButton(text="🥚 Инкубатор", callback_data="egg:list")])
-    rows.append([InlineKeyboardButton(text="🏆 Достижения", callback_data="ach:list")])
-    await message.answer(text or "📅 Загружаю...",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
+    uid = callback.from_user.id
+    data = callback.data
+    await callback.answer()
+    if data == "egg:list":
+        eggs = get_eggs(uid)
+        text = render_incubator(uid)
+        rows = []
+        for egg in eggs:
+            if egg["ready"]:
+                rows.append([InlineKeyboardButton(
+                    text=f"🐣 Вылупить {egg['name']}",
+                    callback_data=f"egg:hatch:{egg['id']}"
+                )])
+        rows.append([InlineKeyboardButton(text="🔄 Обновить", callback_data="egg:list")])
+        try:
+            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        except Exception:
+            await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    elif data.startswith("egg:hatch:"):
+        egg_id = int(data.split(":")[-1])
+        ok, msg, monster = hatch_egg(uid, egg_id)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            try:
+                from game.notification_service import create_notification
+                create_notification(uid, "🐣 Яйцо вылупилось!", msg)
+            except Exception:
+                pass
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("ach:"))
+async def ach_callback(callback):
+    uid = callback.from_user.id
+    await callback.answer()
+    if callback.data == "ach:list":
+        text = render_achievements(uid)
+        try:
+            await callback.message.edit_text(text)
+        except Exception:
+            await callback.message.answer(text)
+
+
+
+
+
+
+
+dp.message.register(rift_cmd,  text_is("🌌 Разлом", "Разлом"))
+dp.message.register(cooldown_cmd, text_is("♨️ Перегрев", "Перегрев"))
+
+dp.message.register(admin_cmd, text_is("🛠 Админ-панель", "Адмін-панель"))
+# Admin text handler — перехватывает ввод в диалогах (только для админов в активном состоянии)
+
+dp.callback_query.register(
+    guild_quest_callback,
+    lambda c: c.data and c.data.startswith("guild:")
+)
+dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
+dp.message.register(workshop_handler, text_is("🔨 Мастерская", "Мастерская Геммы"))
+dp.message.register(auction_handler, text_is("🏛 Аукцион", "Аукцион"))
+dp.callback_query.register(workshop_callback, lambda c: c.data and c.data.startswith("ws:"))
+dp.callback_query.register(auction_callback, lambda c: c.data and c.data.startswith("auc:"))
+dp.message.register(orders_handler, text_is("📋 Заказы", "Рынок заказов", "📋 Рынок заказов"))
+dp.callback_query.register(orders_callback, lambda c: c.data and c.data.startswith("ord:"))
+
+
+dp.callback_query.register(crystal_callback, lambda c: c.data and c.data.startswith("crystal:"))
+
+dp.callback_query.register(equipment_callback, lambda c: c.data and c.data.startswith("equip:"))
+
+
+
+
+
+
+dp.message.register(today_cmd, text_is("📅 Сегодня", "Сегодня"))
+dp.message.register(today_cmd, Command("today"))
+dp.message.register(hunt_cmd,  text_is("🎯 Охота недели", "Охота недели"))
+dp.message.register(hunt_cmd, Command("hunt"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("shop:"))
+async def shop_inline_callback(callback: CallbackQuery):
+    """Покупка товара через inline-кнопку."""
+    from database.repositories import get_player, add_item, _update_player_field
+    from game.shop_service import get_market_item_price
+    from game.item_service import ITEMS
+    uid = callback.from_user.id
+    data = callback.data
+    await callback.answer()
+
+    if data == "shop:back":
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        return
+
+    if data.startswith("shop:buy:"):
+        slug = data.split(":", 2)[-1]
+        player = get_player(uid)
+        if not player:
+            await callback.answer("Сначала /start", show_alert=True)
+            return
+
+        item = ITEMS.get(slug)
+        if not item:
+            await callback.answer("Товар не найден.", show_alert=True)
+            return
+
+        try:
+            price = get_market_item_price(slug)
+        except Exception:
+            price = 60  # default for new items
+
+        if player.gold < price:
+            await callback.answer(
+                f"Недостаточно золота! Нужно {price}з, у тебя {player.gold}з",
+                show_alert=True
+            )
+            return
+
+        _update_player_field(uid, gold=player.gold - price)
+        add_item(uid, slug, 1)
+        await callback.answer(
+            f"✅ Куплено: {item.get('name', slug)}",
+            show_alert=False
+        )
+
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("onb:"))
+async def onboarding_callback(callback):
+    uid = callback.from_user.id
+    await callback.answer()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    # Помечаем первый шаг как пройденный при просмотре монстров
+    # (шаг завершается через trigger в monsters_handler)
+
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("daily:"))
@@ -1585,34 +1823,6 @@ dp.message.register(today_cmd, text_is("📅 Сегодня", "Сегодня"))
 dp.message.register(today_cmd, Command("today"))
 dp.message.register(hunt_cmd,  text_is("🎯 Охота недели", "Охота недели"))
 dp.message.register(hunt_cmd, Command("hunt"))
-async def rift_cmd(message):
-    from game.rift_service import render_rift_status
-    await message.answer(render_rift_status(message.from_user.id))
-
-async def cooldown_cmd(message):
-    from game.crystal_service import get_player_crystals
-    from game.crystal_heat import get_heat_level, get_heat_modifiers, HEAT_STATUS_LABELS
-    from database.repositories import get_player
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    player = get_player(message.from_user.id)
-    if not player:
-        return
-    crystals = get_player_crystals(message.from_user.id)
-    hot = [(c, get_heat_level(c["id"])) for c in crystals if get_heat_level(c["id"]) > 0]
-    if not hot:
-        await message.answer("Все кристаллы в норме — перегрева нет.")
-        return
-    rows = []
-    for c, heat in hot:
-        cost = heat * 20
-        rows.append([InlineKeyboardButton(
-            text=f"Охладить {c['name']} (жар:{heat}) — {cost}з",
-            callback_data=f"cool:{c['id']}"
-        )])
-    text = "Перегретые кристаллы:\n" + "\n".join(
-        f"• {c['name']}: жар {h}" for c, h in hot
-    )
-    await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 dp.message.register(rift_cmd,  text_is("🌌 Разлом", "Разлом"))
 dp.message.register(cooldown_cmd, text_is("♨️ Перегрев", "Перегрев"))
@@ -1703,42 +1913,6 @@ async def onboarding_callback(callback):
     # (шаг завершается через trigger в monsters_handler)
 
 
-
-async def guild_quest_callback(callback):
-    """Обрабатывает взятие/сдачу гильдейских поручений."""
-    from game.guild_quests import take_quest, claim_quest
-    uid = callback.from_user.id
-    data = callback.data
-    await callback.answer()
-    parts = data.split(":")
-
-    if data.startswith("guild:take:"):
-        profession = parts[2]
-        quest_id = parts[3]
-        ok, msg = take_quest(uid, quest_id, profession)
-        await callback.answer(msg, show_alert=True)
-        if ok:
-            # Обновляем панель гильдии
-            try:
-                from game.guild_quests import render_guild_panel
-                PROF_TITLES = {
-                    "hunter":    ("🎯 Гильдия ловцов",     "Здесь учат лучше чувствовать момент для поимки."),
-                    "gatherer":  ("🌿 Гильдия собирателей","Здесь учат находить полезные травы."),
-                    "geologist": ("⛏ Гильдия геологов",   "Здесь обучают находить жилы и руду."),
-                    "alchemist": ("⚗ Гильдия алхимиков",  "Здесь раскрывают секреты настоев."),
-                }
-                title, desc = PROF_TITLES.get(profession, ("Гильдия", ""))
-                await callback.message.answer(render_guild_panel(uid, profession, title, desc))
-            except Exception:
-                pass
-
-    elif data.startswith("guild:claim:"):
-        profession = parts[2]
-        quest_id = parts[3]
-        ok, msg = claim_quest(uid, quest_id, profession)
-        await callback.answer(msg, show_alert=True)
-        if ok:
-            await callback.message.answer(msg)
 
 
 @dp.errors()
