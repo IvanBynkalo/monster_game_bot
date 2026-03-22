@@ -956,6 +956,16 @@ async def fight_inline_callback(callback: CallbackQuery):
             _rsm(uid, heal_in_home_crystal=_victory)
         except Exception:
             pass
+
+        # Помечаем ячейку как зачищенную если победили монстра/зверя
+        if result.get("victory") or result.get("captured"):
+            try:
+                _fresh_p = get_player(uid)
+                if _fresh_p:
+                    from game.grid_exploration_service import mark_cell_cleared as _mcc
+                    _mcc(uid, _fresh_p.location_slug)
+            except Exception:
+                pass
         # Жар кристалла после боя
         try:
             _fresh_active = __import__("database.repositories", fromlist=["get_active_monster"]).get_active_monster(uid)
