@@ -350,3 +350,64 @@ async def monster_callback(callback: CallbackQuery):
                 await callback.message.edit_text(
                     text, reply_markup=_monster_nav_inline(monsters, mid, uid)
                 )
+
+
+# ── Обратная совместимость (вызываются из bot.py) ─────────────────────────────
+
+async def set_active_monster_handler(message):
+    """Устанавливает активного монстра по кнопке с ID."""
+    from database.repositories import get_player, get_player_monsters, set_active_monster, get_monster_by_id
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    raw = (message.text or "").replace("✅", "").strip()
+    # Ищем имя монстра в тексте кнопки (формат: "Имя Ур.N HP:X/Y")
+    monsters = get_player_monsters(message.from_user.id)
+    target = None
+    for m in monsters:
+        btn_label = f"{m['name']} Ур.{m['level']}"
+        if btn_label in (message.text or "") or str(m["id"]) == raw:
+            target = m
+            break
+    if not target and raw.isdigit():
+        target = get_monster_by_id(message.from_user.id, int(raw))
+    if not target:
+        # Попробуем через monsters_handler просто показать список
+        await monsters_handler(message)
+        return
+    set_active_monster(message.from_user.id, target["id"])
+    try:
+        from game.crystal_service import summon_monster
+        summon_monster(message.from_user.id, target["id"])
+    except Exception:
+        pass
+    monsters = get_player_monsters(message.from_user.id)
+    active = next((m for m in monsters if m["id"] == target["id"]), target)
+    text = _render_monster_card_full(active, message.from_user.id)
+    await message.answer(
+        f"✅ Активный монстр: {active['name']}\n\n" + text,
+        reply_markup=_monster_nav_inline(monsters, active["id"], message.from_user.id)
+    )
+
+
+async def heal_monster_handler(message):
+    """Лечит активного монстра за золото."""
+    from database.repositories import get_player, get_active_monster, heal_active_monster, _update_player_field
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    if player.gold < 8:
+        await message.answer(f"Недостаточно золота. Лечение стоит 8з (у тебя {player.gold}з).")
+        return
+    active = heal_active_monster(message.from_user.id)
+    if not active:
+        await message.answer("Нет активного монстра.")
+        return
+    _update_player_field(message.from_user.id, gold=player.gold - 8)
+    await message.answer(
+        f"❤️ {active['name']} вылечен!\n"
+        f"HP: {active['current_hp']}/{active['max_hp']}\n"
+        f"Потрачено: 8з"
+    )
