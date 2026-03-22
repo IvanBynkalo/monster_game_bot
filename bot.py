@@ -2018,7 +2018,7 @@ async def main():
     asyncio.ensure_future(_notification_loop(bot))
     await _run_migration()
 
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, skip_updates=True)
 
 
 if __name__ == "__main__":
