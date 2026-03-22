@@ -3,6 +3,12 @@ monsters.py — Просмотр и управление монстрами.
 Показывает по одному монстру с полной информацией + кристалл + совместимость.
 """
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+try:
+    from game.error_tracker import log_logic_error, log_exception as _log_exc
+except Exception:
+    def log_logic_error(*a, **k): pass
+    def _log_exc(*a, **k): pass
+
 from database.repositories import (
     get_active_monster, get_monster_by_id, get_player,
     get_player_monsters, heal_active_monster, set_active_monster,
@@ -260,6 +266,7 @@ async def monster_callback(callback: CallbackQuery):
         mid = int(data.split(":")[-1])
         monster = next((m for m in monsters if m["id"] == mid), None)
         if not monster:
+            log_logic_error(f"mon:view:{mid}", f"Монстр {mid} не найден у игрока {uid}", uid)
             await callback.answer("Монстр не найден.", show_alert=True)
             return
         text = _render_monster_card_full(monster, uid)

@@ -4,6 +4,11 @@ crystals.py — Хендлеры системы кристаллов.
 from aiogram.types import Message, CallbackQuery
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database.repositories import get_player, _update_player_field
+try:
+    from game.error_tracker import log_logic_error, log_callback_error
+except Exception:
+    def log_logic_error(*a, **k): pass
+    def log_callback_error(*a, **k): pass
 from game.crystal_service import (
     CRYSTAL_TEMPLATES, get_player_crystals, get_crystal, get_monsters_in_crystal,
     create_crystal, render_crystal_list, render_crystal_detail,
