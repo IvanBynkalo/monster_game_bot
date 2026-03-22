@@ -291,6 +291,9 @@ def _ensure_energy_columns():
             conn.execute("ALTER TABLE players ADD COLUMN last_energy_time INTEGER DEFAULT NULL")
         if "energy_notified" not in cols:
             conn.execute("ALTER TABLE players ADD COLUMN energy_notified INTEGER NOT NULL DEFAULT 0")
+        if "bonus_energy" not in cols:
+            # Бонусная энергия — сверх лимита, не восстанавливается автоматически
+            conn.execute("ALTER TABLE players ADD COLUMN bonus_energy INTEGER NOT NULL DEFAULT 0")
         conn.commit()
 
 _energy_cols_ok = False
@@ -313,6 +316,39 @@ def get_max_energy(telegram_id: int) -> int:
     base = 12
     agility_bonus = getattr(p, "agility", 0) // 3
     return base + agility_bonus
+
+
+def get_bonus_energy(telegram_id: int) -> int:
+    """Бонусная энергия сверх лимита (от предметов/админа)."""
+    _lazy_energy()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT bonus_energy FROM players WHERE telegram_id=?", (telegram_id,)
+        ).fetchone()
+    return row["bonus_energy"] if row and row["bonus_energy"] else 0
+
+
+def add_bonus_energy(telegram_id: int, amount: int):
+    """Добавляет бонусную энергию сверх лимита."""
+    _lazy_energy()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET bonus_energy = bonus_energy + ? WHERE telegram_id=?",
+            (amount, telegram_id)
+        )
+        conn.commit()
+
+
+def get_total_energy_display(telegram_id: int) -> tuple[int, int, int]:
+    """Возвращает (текущая, базовый_макс, бонус) для отображения."""
+    _lazy_energy()
+    tick_energy_regen(telegram_id)
+    p = get_player(telegram_id)
+    if not p:
+        return 0, 12, 0
+    max_e = get_max_energy(telegram_id)
+    bonus = get_bonus_energy(telegram_id)
+    return p.energy, max_e, bonus
 
 
 def tick_energy_regen(telegram_id: int) -> tuple[int, bool]:
@@ -401,18 +437,38 @@ def mark_energy_notification_sent(telegram_id: int):
         conn.commit()
 
 def spend_player_energy(telegram_id: int, amount: int) -> bool:
-    # Сначала регенерируем накопленную энергию
+    """
+    Тратит энергию. Сначала расходует бонусную (сверх лимита),
+    затем обычную. Обычная восстанавливается, бонусная — нет.
+    """
     tick_energy_regen(telegram_id)
     import time as _t
     p = get_player(telegram_id)
-    if not p or p.energy < amount:
+    if not p:
         return False
-    # Фиксируем время траты (для последующего регена)
+
+    bonus = get_bonus_energy(telegram_id)
+    total_available = p.energy + bonus
+
+    if total_available < amount:
+        return False
+
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE players SET energy=energy-?, last_energy_time=COALESCE(last_energy_time,?), energy_notified=0 WHERE telegram_id=?",
-            (amount, int(_t.time()), telegram_id)
-        )
+        if bonus >= amount:
+            # Тратим только бонусную
+            conn.execute(
+                "UPDATE players SET bonus_energy=bonus_energy-? WHERE telegram_id=?",
+                (amount, telegram_id)
+            )
+        else:
+            # Сначала тратим всю бонусную, потом обычную
+            regular_spend = amount - bonus
+            conn.execute(
+                "UPDATE players SET bonus_energy=0, energy=energy-?,"
+                " last_energy_time=COALESCE(last_energy_time,?), energy_notified=0"
+                " WHERE telegram_id=?",
+                (regular_spend, int(_t.time()), telegram_id)
+            )
         conn.commit()
     return True
 
