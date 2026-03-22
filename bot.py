@@ -1600,6 +1600,7 @@ dp.message.register(admin_reply_handler, lambda m: m.reply_to_message is not Non
 dp.callback_query.register(notification_callback, lambda c: c.data and c.data.startswith("notif:"))
 
 dp.message.register(admin_cmd, Command("admin"))
+dp.message.register(admin_cmd, text_is("🛠 Админ-панель", "Адмін-панель"))
 @dp.callback_query(lambda c: c.data and c.data.startswith("daily:"))
 async def daily_callback(callback):
     uid = callback.from_user.id
