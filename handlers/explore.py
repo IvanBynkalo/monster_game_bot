@@ -220,9 +220,13 @@ async def explore_handler(message: Message, forced_direction: str = None):
     _season_done = progress_season(message.from_user.id, "explore")
     story_done = update_story_progress(message.from_user.id, "explore", player.location_slug)
 
-    district = get_district(player.location_slug, player.current_district_slug) if player.current_district_slug else None
+    # Проверяем что current_district_slug принадлежит текущей локации, а не старой (например городу)
+    from game.district_service import get_districts_for_location as _gdfl
+    _valid_district_slugs = {d["slug"] for d in _gdfl(player.location_slug)}
+    _district_slug = player.current_district_slug if player.current_district_slug in _valid_district_slugs else None
+    district = get_district(player.location_slug, _district_slug) if _district_slug else None
     district_mood = district["mood"] if district else None
-    intro = get_district_explore_text(player.location_slug, player.current_district_slug) if player.current_district_slug else "Ты исследуешь местность."
+    intro = get_district_explore_text(player.location_slug, _district_slug) if _district_slug else "Ты исследуешь местность."
     world_event = get_world_event(player.location_slug)
     weather = roll_weather(player.location_slug)
     treasure = roll_treasure()
@@ -316,7 +320,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
         ))
         return
 
-    encounter_slug = player.current_district_slug
+    encounter_slug = _district_slug
 
     if has_temp_effect(message.from_user.id, "elite_forest"):
         encounter_slug = "elite_forest"
