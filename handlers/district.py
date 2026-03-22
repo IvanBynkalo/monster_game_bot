@@ -99,7 +99,7 @@ async def district_move_handler(message: Message):
         return
 
     normalized = _normalize_district_text(message.text)
-    available_names = set(get_district_move_commands(player.location_slug))
+    available_names = set(get_district_move_commands(player.location_slug, telegram_id=message.from_user.id))
 
     if normalized not in available_names:
         await message.answer(
