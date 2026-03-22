@@ -201,6 +201,43 @@ async def admin_callback(callback: CallbackQuery):
     elif data == "adm:manage":
         await _edit(callback, "⚙️ Управление игроками", manage_kb())
 
+    elif data == "adm:main":
+        await _edit(callback, "🛠 Админ-панель Monster Emotions", admin_main_kb())
+
+    elif data == "adm:players":
+        # Список последних игроков
+        players = get_new_players(limit=15)
+        import datetime
+        lines = ["👥 Игроки (последние 15)\n"]
+        for p in players:
+            reg = datetime.datetime.fromtimestamp(p["created_at_ts"]).strftime("%d.%m %H:%M") if p.get("created_at_ts") else "?"
+            lines.append(f"• {p['name']} ур.{p['level']} | {reg} | ID:{p['telegram_id']}")
+        await _edit(callback, "\n".join(lines)[:4000],
+                    InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔍 Найти игрока", callback_data="adm:find_player")],
+                        [InlineKeyboardButton(text="⬅️ Назад", callback_data="adm:main")]
+                    ]))
+
+    elif data == "adm:errors":
+        from game.error_tracker import render_errors
+        text = render_errors(limit=15)
+        await _edit(callback, text[:4000],
+                    InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🗑 Сбросить все",  callback_data="adm:errors_clear"),
+                         InlineKeyboardButton(text="🔄 Обновить",      callback_data="adm:errors")],
+                        [InlineKeyboardButton(text="⬅️ Назад",         callback_data="adm:main")],
+                    ]))
+
+    elif data == "adm:errors_clear":
+        from game.error_tracker import mark_resolved
+        mark_resolved(all_errors=True)
+        await _edit(callback, "✅ Журнал ошибок сброшен.",
+                    InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="⬅️ Назад", callback_data="adm:main")]
+                    ]))
+
+    # adm:notif_menu handled in data in (...) block below
+
     # Каждое действие — запрашивает ID через ForceReply
     elif data in ("adm:find_player", "adm:give_gold", "adm:give_energy",
                   "adm:heal_player", "adm:reset_player", "adm:ban_player",
