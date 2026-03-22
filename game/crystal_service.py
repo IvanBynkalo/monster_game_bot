@@ -331,10 +331,13 @@ def recalculate_crystal_load(crystal_id: int):
 # ── Размещение монстров ───────────────────────────────────────────────────────
 
 def find_free_crystal(telegram_id: int, volume_needed: int) -> dict | None:
-    """Находит первый кристалл с достаточным свободным объёмом."""
+    """Находит первый кристалл НА РУКАХ с достаточным свободным объёмом."""
     _lazy()
     crystals = get_player_crystals(telegram_id)
     for c in crystals:
+        # Кристаллы у Варга нельзя использовать — только те что при себе
+        if c.get("location", "on_hand") != "on_hand":
+            continue
         if c["state"] != "normal":
             continue
         free_volume = c["max_volume"] - c["current_volume"]
