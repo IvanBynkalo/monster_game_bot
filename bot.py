@@ -785,10 +785,18 @@ async def fight_inline_callback(callback: CallbackQuery):
             )
         return
 
-    # Принимаем и monster и wildlife
-    if enc.get("type") not in ("monster", "wildlife"):
+    # Принимаем monster, wildlife и world_boss
+    if enc.get("type") not in ("monster", "wildlife", "world_boss"):
         await callback.message.answer("Встреча завершена.")
         return
+
+    # Нормализуем world_boss → обрабатываем как обычного монстра
+    if enc.get("type") == "world_boss":
+        enc["type"] = "monster"
+        if "monster_name" not in enc:
+            enc["monster_name"] = enc.get("name", "Мировой босс")
+        if "monster_type" not in enc:
+            enc["monster_type"] = "void"
 
     # Нормализуем зверей
     if enc.get("type") == "wildlife":
