@@ -1620,6 +1620,10 @@ dp.message.register(cooldown_cmd, text_is("♨️ Перегрев", "Перег
 dp.message.register(admin_cmd, text_is("🛠 Админ-панель", "Адмін-панель"))
 # Admin text handler — перехватывает ввод в диалогах (только для админов в активном состоянии)
 
+dp.callback_query.register(
+    guild_quest_callback,
+    lambda c: c.data and c.data.startswith("guild:")
+)
 dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
 dp.message.register(workshop_handler, text_is("🔨 Мастерская", "Мастерская Геммы"))
 dp.message.register(auction_handler, text_is("🏛 Аукцион", "Аукцион"))
@@ -1697,6 +1701,44 @@ async def onboarding_callback(callback):
         pass
     # Помечаем первый шаг как пройденный при просмотре монстров
     # (шаг завершается через trigger в monsters_handler)
+
+
+
+async def guild_quest_callback(callback):
+    """Обрабатывает взятие/сдачу гильдейских поручений."""
+    from game.guild_quests import take_quest, claim_quest
+    uid = callback.from_user.id
+    data = callback.data
+    await callback.answer()
+    parts = data.split(":")
+
+    if data.startswith("guild:take:"):
+        profession = parts[2]
+        quest_id = parts[3]
+        ok, msg = take_quest(uid, quest_id, profession)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            # Обновляем панель гильдии
+            try:
+                from game.guild_quests import render_guild_panel
+                PROF_TITLES = {
+                    "hunter":    ("🎯 Гильдия ловцов",     "Здесь учат лучше чувствовать момент для поимки."),
+                    "gatherer":  ("🌿 Гильдия собирателей","Здесь учат находить полезные травы."),
+                    "geologist": ("⛏ Гильдия геологов",   "Здесь обучают находить жилы и руду."),
+                    "alchemist": ("⚗ Гильдия алхимиков",  "Здесь раскрывают секреты настоев."),
+                }
+                title, desc = PROF_TITLES.get(profession, ("Гильдия", ""))
+                await callback.message.answer(render_guild_panel(uid, profession, title, desc))
+            except Exception:
+                pass
+
+    elif data.startswith("guild:claim:"):
+        profession = parts[2]
+        quest_id = parts[3]
+        ok, msg = claim_quest(uid, quest_id, profession)
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            await callback.message.answer(msg)
 
 
 @dp.errors()
