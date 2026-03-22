@@ -273,6 +273,87 @@ async def guild_quest_callback(callback):
 
 
 
+async def explore_direction_text(message):
+    """Обрабатывает нажатие кнопок направления из reply-клавиатуры."""
+    from database.repositories import get_player, spend_player_energy, get_grid as _gg
+    from game.grid_exploration_service import (
+        get_grid, explore_cell, render_exploration_result,
+        get_available_directions, get_current_cell_bonuses
+    )
+
+    text = (message.text or "").strip()
+
+    if text == "🏕 Остановиться":
+        player = get_player(message.from_user.id)
+        if player:
+            from keyboards.main_menu import main_menu
+            await message.answer(
+                "🏕 Ты остановился и осматриваешься.",
+                reply_markup=main_menu(player.location_slug,
+                                       player.current_district_slug,
+                                       telegram_id=message.from_user.id)
+            )
+        return
+
+    dir_map = {
+        "⬆️ Вперёд": "forward",
+        "⬅️ Влево":  "side_l",
+        "➡️ Вправо": "side_r",
+        "⬇️ Назад":  "back",
+    }
+    direction = dir_map.get(text)
+    if not direction:
+        return
+
+    # Simulate the explore:dir: callback by calling the same logic
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала /start")
+        return
+
+    if not spend_player_energy(message.from_user.id, 1):
+        await message.answer("⚡ Недостаточно энергии для исследования.")
+        return
+
+    _grid = get_grid(message.from_user.id, player.location_slug)
+    _expl_result = explore_cell(message.from_user.id, player.location_slug, direction)
+    _expl_text = render_exploration_result(_expl_result, player.location_slug)
+    _expl_bonuses = get_current_cell_bonuses(message.from_user.id, player.location_slug)
+
+    # Показываем следующие направления
+    _grid2 = get_grid(message.from_user.id, player.location_slug)
+    _directions2 = get_available_directions(_grid2)
+
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+    dir_labels = {d['dir']: d['label'] for d in _directions2}
+    kbd_rows = []
+    top_row = [KeyboardButton(text=dir_labels[d]) for d in ['side_l','forward','side_r'] if d in dir_labels]
+    if top_row:
+        kbd_rows.append(top_row)
+    if 'back' in dir_labels:
+        kbd_rows.append([KeyboardButton(text=dir_labels['back'])])
+    kbd_rows.append([KeyboardButton(text="🏕 Остановиться")])
+    _dir_kb = ReplyKeyboardMarkup(keyboard=kbd_rows, resize_keyboard=True)
+
+    # Мини-карта
+    try:
+        from game.grid_exploration_service import render_mini_map
+        from game.exploration_service import get_cartographer_level as _gcl2
+        _mini = render_mini_map(_grid2, cart_level=_gcl2(message.from_user.id))
+    except Exception:
+        _mini = ""
+
+    from game.grid_exploration_service import render_exploration_panel
+    _panel = render_exploration_panel(message.from_user.id, player.location_slug)
+    _next = "Куда дальше?\n\n" + _panel
+    if _mini:
+        _next += "\n\n" + _mini
+
+    await message.answer(_expl_text)
+    await message.answer(_next, reply_markup=_dir_kb)
+
+
+
 dp.message.register(start_handler, Command("start"))
 
 dp.message.register(codex_handler, text_is("📖 Кодекс", "Кодекс"))
@@ -305,6 +386,9 @@ dp.message.register(
     )
 )
 
+dp.message.register(explore_direction_text, text_is(
+    "⬆️ Вперёд", "⬅️ Влево", "➡️ Вправо", "⬇️ Назад", "🏕 Остановиться"
+))
 dp.message.register(explore_handler, text_is("Исследовать", "🌲 Исследовать"))
 dp.message.register(elite_expedition_handler, text_is("🔥 Элитная экспедиция", "Элитная экспедиция"))
 dp.message.register(dungeon_handler, text_is("🕳 Подземелье", "Подземелье"))
@@ -1768,6 +1852,13 @@ async def shop_inline_callback(callback: CallbackQuery):
             await callback.message.delete()
         except Exception:
             pass
+        # Показываем меню квартала
+        _player_back = get_player(uid)
+        if _player_back:
+            from keyboards.city_menu import district_actions_menu
+            from keyboards.main_menu import main_menu
+            _kb_back = district_actions_menu("market_square", uid)
+            await callback.message.answer("🏪 Торговый квартал", reply_markup=_kb_back)
         return
 
     if data.startswith("shop:buy:"):
@@ -1797,8 +1888,8 @@ async def shop_inline_callback(callback: CallbackQuery):
         _update_player_field(uid, gold=player.gold - price)
         add_item(uid, slug, 1)
         await callback.answer(
-            f"✅ Куплено: {item.get('name', slug)}",
-            show_alert=False
+            f"✅ Куплено: {item.get('name', slug)} (-{price}з)",
+            show_alert=True
         )
 
 
