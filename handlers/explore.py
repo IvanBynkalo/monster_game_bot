@@ -131,6 +131,20 @@ async def explore_handler(message: Message, forced_direction: str = None):
         await message.answer("☠️ Герой повержен. Сначала вылечи его в Сереброграде.", reply_markup=main_menu(player.location_slug))
         return
 
+    # Проверка путешествия — нельзя исследовать в пути
+    from game.travel_service import is_traveling as _is_tr, get_travel as _get_tr, render_travel_status as _rts, check_arrival as _check_arr
+    _arrival = _check_arr(message.from_user.id)
+    if _arrival and _arrival.get("arrived"):
+        # Только что прибыли — обновляем игрока и продолжаем
+        player = get_player(message.from_user.id)
+    elif _is_tr(message.from_user.id):
+        _td = _get_tr(message.from_user.id)
+        await message.answer(
+            f"🚶 Ты в пути — нельзя исследовать во время перемещения.\n{_rts(_td)}",
+            reply_markup=main_menu(player.location_slug, player.current_district_slug, is_traveling=True)
+        )
+        return
+
     # Антиспам (рек. #2)
     if not await cooldown_guard(message, kind="explore", seconds=1.5):
         return
@@ -316,6 +330,20 @@ async def explore_handler(message: Message, forced_direction: str = None):
         encounter_slug = "elite_marsh"
         clear_temp_effect(message.from_user.id, "elite_marsh")
         extras.append("🕸 Элитный маршрут уводит в сердце мёртвого болота.")
+
+    # Если ячейка зачищена — только сбор, без монстров и событий боя
+    if _expl_bonuses.get("is_cleared"):
+        _player_cleared = get_player(message.from_user.id)
+        _cleared_text = (
+            f"🟢 Зачищенная территория.\n"
+            f"Монстры сюда ещё не вернулись.\n"
+            f"Здесь можно собирать ресурсы — нажми 🧺 Собирать."
+        )
+        await message.answer(
+            _cleared_text,
+            reply_markup=main_menu(_player_cleared.location_slug, _player_cleared.current_district_slug)
+        )
+        return
 
     # Распределение встреч: звери > события >> монстры
     # Монстры — редкость, их ценность в уникальности

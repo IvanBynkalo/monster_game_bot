@@ -56,6 +56,20 @@ async def map_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+
+    # Проверяем прибытие / статус пути
+    arrival = check_arrival(message.from_user.id)
+    if arrival and arrival.get("arrived"):
+        player = get_player(message.from_user.id)
+    elif is_traveling(message.from_user.id):
+        travel_data = get_travel(message.from_user.id)
+        if travel_data:
+            await message.answer(
+                render_travel_status(travel_data),
+                reply_markup=main_menu(player.location_slug, player.current_district_slug, is_traveling=True)
+            )
+        return
+
     set_ui_screen(message.from_user.id, "main")
     caption = build_map_caption(player.location_slug)
 
@@ -94,6 +108,20 @@ async def location_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+
+    # Проверяем прибытие / статус пути
+    arrival = check_arrival(message.from_user.id)
+    if arrival and arrival.get("arrived"):
+        player = get_player(message.from_user.id)
+    elif is_traveling(message.from_user.id):
+        travel_data = get_travel(message.from_user.id)
+        if travel_data:
+            await message.answer(
+                render_travel_status(travel_data),
+                reply_markup=main_menu(player.location_slug, player.current_district_slug, is_traveling=True)
+            )
+        return
+
     set_ui_screen(message.from_user.id, "main")
     loc_text = render_location_card(player.location_slug)
     # Добавляем панель рождения если в нужном месте
@@ -133,7 +161,18 @@ async def move_handler(message: Message):
         )
         return
 
-    if is_traveling(message.from_user.id):
+    # Сначала проверяем — может уже прибыли?
+    _mv_arrival = check_arrival(message.from_user.id)
+    if _mv_arrival and _mv_arrival.get("arrived"):
+        # Прибыли — обновляем игрока и продолжаем к выбору следующего перехода
+        player = get_player(message.from_user.id)
+        if player:
+            await message.answer(
+                f"✅ Ты прибыл в {LOCATION_NAMES.get(_mv_arrival['to_slug'], _mv_arrival['to_slug'])}!",
+                reply_markup=main_menu(player.location_slug, player.current_district_slug)
+            )
+        return
+    elif is_traveling(message.from_user.id):
         travel_data = get_travel(message.from_user.id)
         if travel_data:
             await message.answer(render_travel_status(travel_data))

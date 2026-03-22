@@ -43,6 +43,21 @@ async def gather_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+
+    # Проверка путешествия
+    from game.travel_service import is_traveling as _is_tr_g, get_travel as _get_tr_g, render_travel_status as _rts_g, check_arrival as _check_arr_g
+    from keyboards.main_menu import main_menu as _mm_g
+    _arrival_g = _check_arr_g(message.from_user.id)
+    if _arrival_g and _arrival_g.get("arrived"):
+        player = get_player(message.from_user.id)
+    elif _is_tr_g(message.from_user.id):
+        _td_g = _get_tr_g(message.from_user.id)
+        await message.answer(
+            f"🚶 Ты в пути — нельзя собирать ресурсы во время перемещения.\n{_rts_g(_td_g)}",
+            reply_markup=_mm_g(player.location_slug, player.current_district_slug, is_traveling=True)
+        )
+        return
+
     if not await cooldown_guard(message, kind="gather", seconds=1.5):
         return
 
