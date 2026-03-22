@@ -1,7 +1,7 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 from game.map_service import get_move_commands, get_connected_locations
-from game.district_service import get_district_move_commands
+from game.district_service import get_district_move_commands, get_unlocked_districts
 from game.location_rules import is_city, check_location_access
 
 # Локации доступные с самого начала без исследования
@@ -42,7 +42,7 @@ def navigation_menu(location_slug: str, district_slug: str | None = None,
     buttons = []
 
     if is_city(location_slug):
-        for cmd in get_district_move_commands(location_slug):
+        for cmd in get_district_move_commands(location_slug, telegram_id=telegram_id):
             buttons.append([KeyboardButton(text=cmd)])
 
         if district_slug == "main_gate":
@@ -74,7 +74,7 @@ def navigation_menu(location_slug: str, district_slug: str | None = None,
             cmd = f"🚶 {location.name}"
             buttons.append([KeyboardButton(text=cmd)])
 
-        for cmd in get_district_move_commands(location_slug):
+        for cmd in get_district_move_commands(location_slug, telegram_id=telegram_id):
             buttons.append([KeyboardButton(text=cmd)])
 
         buttons.append([KeyboardButton(text="🗺 Карта")])
