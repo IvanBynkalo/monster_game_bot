@@ -343,10 +343,27 @@ async def explore_handler(message: Message, forced_direction: str = None):
             f"Монстры сюда ещё не вернулись.\n"
             f"Здесь можно собирать ресурсы — нажми 🧺 Собирать."
         )
-        await message.answer(
-            _cleared_text,
-            reply_markup=main_menu(_player_cleared.location_slug, _player_cleared.current_district_slug)
-        )
+        # Показываем следующие направления — не теряем контекст навигации
+        if forced_direction:
+            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+            _grid_cl = get_grid(message.from_user.id, _player_cleared.location_slug)
+            _dirs_cl = get_available_directions(_grid_cl)
+            _dlabels = {d["dir"]: d["label"] for d in _dirs_cl}
+            _crow = []
+            for _dd in ["side_l", "forward", "side_r"]:
+                if _dd in _dlabels:
+                    _crow.append(KeyboardButton(text=_dlabels[_dd]))
+            _ckbd = []
+            if _crow:
+                _ckbd.append(_crow)
+            if "back" in _dlabels:
+                _ckbd.append([KeyboardButton(text=_dlabels["back"])])
+            _ckbd.append([KeyboardButton(text="🏕 Остановиться")])
+            await message.answer(_cleared_text,
+                reply_markup=ReplyKeyboardMarkup(keyboard=_ckbd, resize_keyboard=True))
+        else:
+            await message.answer(_cleared_text,
+                reply_markup=main_menu(_player_cleared.location_slug, _player_cleared.current_district_slug))
         return
 
     # Распределение встреч: звери > события >> монстры
