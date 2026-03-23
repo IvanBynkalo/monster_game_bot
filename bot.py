@@ -377,11 +377,17 @@ dp.message.register(
         "Торговая лавка",
     ),
 )
-dp.message.register(city_bags_handler, text_is("🎒 Лавка сумок", "Лавка сумок"))
-dp.message.register(city_monsters_handler, text_is("🐲 Рынок монстров", "Рынок монстров"))
-dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов"))
-dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов"))
-dp.message.register(city_guilds_handler, text_is("🏛 Гильдии", "Гильдии"))
+dp.message.register(city_bags_handler, text_is(
+    "🎒 Лавка сумок", "Лавка сумок",
+    "🎒 Лавка сумок (❗)", "Лавка сумок (❗)",
+))
+dp.message.register(city_monsters_handler, text_is(
+    "🐲 Рынок монстров", "Рынок монстров",
+    "🐲 Рынок монстров (❗)", "Рынок монстров (❗)",
+))
+dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов", "💰 Скупщик ресурсов (❗)", "Скупщик ресурсов (❗)"))
+dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов", "📜 Доска заказов (❗)", "Доска заказов (❗)"))
+dp.message.register(city_guilds_handler, text_is("🏛 Гильдии", "Гильдии", "🏛 Гильдии (❗)", "Гильдии (❗)"))
 dp.message.register(city_craft_quarter_handler, text_is("⚒ Ремесленный квартал", "Ремесленный квартал"))
 dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
 dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
@@ -389,10 +395,10 @@ dp.message.register(my_board_orders_handler, text_is("📒 Мои заказы")
 dp.message.register(back_to_city_from_board_handler, text_is("⬅️ Назад в город"))
 dp.message.register(city_alchemy_handler, text_is("⚗ Алхимическая лаборатория", "Алхимическая лаборатория"))
 dp.message.register(city_traps_handler, text_is("🪤 Мастер ловушек", "Мастер ловушек"))
-dp.message.register(guild_hunters_handler, text_is("🎯 Гильдия ловцов", "Гильдия ловцов"))
-dp.message.register(guild_gatherers_handler, text_is("🌿 Гильдия собирателей", "Гильдия собирателей"))
-dp.message.register(guild_geologists_handler, text_is("⛏ Гильдия геологов", "Гильдия геологов"))
-dp.message.register(guild_alchemists_handler, text_is("⚗ Гильдия алхимиков", "Гильдия алхимиков"))
+dp.message.register(guild_hunters_handler, text_is("🎯 Гильдия ловцов", "Гильдия ловцов", "🎯 Гильдия ловцов (❗)", "Гильдия ловцов (❗)"))
+dp.message.register(guild_gatherers_handler, text_is("🌿 Гильдия собирателей", "Гильдия собирателей", "🌿 Гильдия собирателей (❗)", "Гильдия собирателей (❗)"))
+dp.message.register(guild_geologists_handler, text_is("⛏ Гильдия геологов", "Гильдия геологов", "⛏ Гильдия геологов (❗)", "Гильдия геологов (❗)"))
+dp.message.register(guild_alchemists_handler, text_is("⚗ Гильдия алхимиков", "Гильдия алхимиков", "⚗ Гильдия алхимиков (❗)", "Гильдия алхимиков (❗)"))
 dp.message.register(city_guard_handler, text_is("🛡 Городская стража", "Городская стража"))
 dp.message.register(leave_city_handler, text_is("🚶 Покинуть город", "Покинуть город"))
 
@@ -1556,7 +1562,7 @@ dp.callback_query.register(
     lambda c: c.data and c.data.startswith("guild:")
 )
 dp.message.register(crystals_handler, text_is("💎 Кристаллы", "Кристаллы"))
-dp.message.register(workshop_handler, text_is("🔨 Мастерская", "Мастерская Геммы"))
+dp.message.register(workshop_handler, text_is("🔨 Мастерская", "Мастерская Геммы", "🔨 Мастерская (❗)", "Мастерская (❗)"))
 dp.message.register(auction_handler, text_is("🏛 Аукцион", "Аукцион"))
 dp.callback_query.register(workshop_callback, lambda c: c.data and c.data.startswith("ws:"))
 dp.callback_query.register(auction_callback, lambda c: c.data and c.data.startswith("auc:"))
@@ -1668,9 +1674,16 @@ async def shop_inline_callback(callback: CallbackQuery):
             return
 
         try:
+            from database.repositories import _ensure_market_defaults
+            _ensure_market_defaults()
+        except Exception:
+            pass
+
+        try:
             price = get_market_item_price(slug)
         except Exception:
-            price = 60  # default for new items
+            # Базовые цены если таблица ещё не создана
+            price = {"small_potion": 14, "energy_capsule": 18, "basic_trap": 20}.get(slug, 30)
 
         if player.gold < price:
             await callback.answer(
