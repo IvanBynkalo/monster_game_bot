@@ -246,12 +246,12 @@ async def explore_handler(message: Message, forced_direction: str = None):
     extras = []
     if dungeon_key:
         add_item(message.from_user.id, dungeon_key, 1)
-        extras.append(f"🗝 Найден ключ подземелья: {get_key_name(dungeon_key)}")
+        extras.append(f"🗝 {get_key_name(dungeon_key)} — ключ от подземелья")  # компактно
+    # weather и secret_location — только в событиях (не в бою)
+    _weather_str = _weather_text(weather) if weather else ""
+    _secret_str = ""
     if secret_location:
-        extras.append(secret_location['name'])
-        extras.append(secret_location['text'])
-    if weather:
-        extras.append(_weather_text(weather))
+        _secret_str = f"{secret_location['name']}: {secret_location['text']}"
     injury_warning = render_injury_warning(player)
     if injury_warning:
         extras.append(injury_warning)
@@ -413,14 +413,13 @@ async def explore_handler(message: Message, forced_direction: str = None):
         if capture_bonus:
             encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + capture_bonus
         save_pending_encounter(message.from_user.id, encounter)
-        text = f"{intro}\n\n---\n\n{render_encounter_text(encounter, attacker_type=attacker_type)}"
-        # Показываем изображение типа монстра
+        # Картинка монстра будет заголовком — описание района не нужно
+        text = render_encounter_text(encounter, attacker_type=attacker_type)
         _encounter_monster_type = encounter.get("monster_type", "void")
     elif encounter["type"] == "wildlife":
-        # Зверь — сохраняем встречу и показываем карточку через render_wildlife_encounter
         save_pending_encounter(message.from_user.id, encounter)
         from game.wildlife_service import render_wildlife_encounter as _rwe
-        text = f"{intro}\n\n---\n\n{_rwe(encounter)}"
+        text = _rwe(encounter)
     else:
         event = world_event or encounter
         event_text = event.get("text") or event.get("title") or "Тишина окутывает местность."
@@ -462,16 +461,28 @@ async def explore_handler(message: Message, forced_direction: str = None):
         extras.append(born)
     _born_emotion = _born_monster.get("mood") if _born_monster else None
 
-    # ── Исследование и эффекты ───────────────────────────────────────────────
+    # ── Исследование и эффекты (только для событий, не для боя) ─────────────
+    extras_event_only = []
     if _expl_text:
-        extras.append(_expl_text)
+        extras_event_only.append(_expl_text)
     if effect_text and "нет" not in effect_text.lower():
-        extras.append(effect_text)
+        extras_event_only.append(effect_text)
     if expired_text:
-        extras.append(expired_text)
+        extras_event_only.append(expired_text)
+    if _weather_str:
+        extras_event_only.append(_weather_str)
+    if _secret_str:
+        extras_event_only.append(_secret_str)
 
-    # Разбиваем текст на основной и extras для красивого отображения
-    extras_clean = [e for e in extras if e and e.strip()]
+    is_battle = encounter["type"] in ("monster", "wildlife")
+
+    # В бою показываем только: ключ подземелья, эмоции, рождение монстра
+    # В событии — всё
+    if is_battle:
+        extras_clean = [e for e in extras if e and e.strip()]
+    else:
+        extras_clean = [e for e in extras + extras_event_only if e and e.strip()]
+
     full_text = text
     if extras_clean:
         full_text += "\n\n" + "\n\n".join(extras_clean)
@@ -502,16 +513,21 @@ async def explore_handler(message: Message, forced_direction: str = None):
         else:
             # Зверь — поймать нельзя, только бой
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            wildlife_kb = InlineKeyboardMarkup(inline_keyboard=[
+            # Зверь — без поимки, но 2x2
+            _wl_rows = [
                 [
                     InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
                     InlineKeyboardButton(text="✨ Навык",      callback_data="fight:skill"),
                 ],
-                [InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")] if has_any_trap else [],
-                [InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")],
-            ])
-            # Убираем пустые ряды
-            wildlife_kb.inline_keyboard = [r for r in wildlife_kb.inline_keyboard if r]
+            ]
+            if has_any_trap:
+                _wl_rows.append([
+                    InlineKeyboardButton(text="🪤 Ловушка",  callback_data="fight:trap"),
+                    InlineKeyboardButton(text="🏃 Убежать",  callback_data="fight:flee"),
+                ])
+            else:
+                _wl_rows.append([InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
+            wildlife_kb = InlineKeyboardMarkup(inline_keyboard=_wl_rows)
             await message.answer(full_text, reply_markup=wildlife_kb)
     else:
         # ── СОБЫТИЕ: текст + меню ──
