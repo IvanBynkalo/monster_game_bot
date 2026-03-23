@@ -120,7 +120,17 @@ def get_birth_panel(telegram_id: int, location_slug: str) -> str:
     if has_ready and not is_birth_done(telegram_id):
         lines.append("\nНажми /birth чтобы провести ритуал рождения.")
     elif is_birth_done(telegram_id):
-        lines.append("\n⏳ Ритуал недавно проводился. Нужно время для восстановления.")
+        # Показываем сколько исследований осталось до следующего ритуала
+        try:
+            from database.repositories import get_player as _gp_bd
+            _p_bd = _gp_bd(telegram_id)
+            _left = getattr(_p_bd, "birth_cooldown_actions", 0) if _p_bd else 0
+        except Exception:
+            _left = 0
+        if _left > 0:
+            lines.append(f"\n⏳ Ритуал восстанавливается: ещё {_left} исследований / вылазок.")
+        else:
+            lines.append("\n✅ Ритуал готов к повторению!")
     
     return "\n".join(lines)
 
@@ -213,5 +223,5 @@ def render_birth_text(monster: dict | None) -> str:
         f"Редкость: {rarity_lbl}\n"
         f"Эмоция: {mood_lbl}\n"
         f"HP: {monster['max_hp']} | Атака: {monster['attack']}\n\n"
-        f"Следующий ритуал доступен через 10 действий."
+        f"Следующий ритуал доступен через 10 исследований или вылазок."
     )
