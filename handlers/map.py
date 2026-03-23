@@ -214,7 +214,7 @@ async def move_handler(message: Message):
     from_name = LOCATION_NAMES.get(player.location_slug, player.location_slug)
     to_name   = LOCATION_NAMES.get(target.slug, target.slug)
 
-    if travel["seconds"] <= 30:
+    if travel["seconds"] <= 10:  # мгновенный переход только для очень коротких дистанций
         # Короткий переход — мгновенно
         update_player_location(message.from_user.id, target.slug)
         story_done = update_story_progress(message.from_user.id, "move", target.slug)
