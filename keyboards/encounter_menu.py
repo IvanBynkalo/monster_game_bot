@@ -11,27 +11,27 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 
 
 def encounter_inline_menu(has_trap: bool = True, has_poison_trap: bool = True) -> InlineKeyboardMarkup:
-    """Inline-меню боя. Показывается только в сообщении о встрече."""
+    """Inline-меню боя — 2 ряда по 2 кнопки + ловушки если есть."""
+    # Ряд 1: Атака + Навык
+    # Ряд 2: Поймать + Убежать
+    # Ряд 3 (опционально): Ловушка + Яд. ловушка
     rows = [
         [
-            InlineKeyboardButton(text="⚔️ Атаковать",  callback_data="fight:attack"),
-            InlineKeyboardButton(text="✨ Навык",       callback_data="fight:skill"),
+            InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
+            InlineKeyboardButton(text="✨ Навык",      callback_data="fight:skill"),
         ],
         [
-            InlineKeyboardButton(text="🎯 Поймать",    callback_data="fight:capture"),
+            InlineKeyboardButton(text="🎯 Поймать",   callback_data="fight:capture"),
+            InlineKeyboardButton(text="🏃 Убежать",   callback_data="fight:flee"),
         ],
     ]
     trap_row = []
     if has_trap:
-        trap_row.append(InlineKeyboardButton(text="🪤 Ловушка",         callback_data="fight:trap"))
+        trap_row.append(InlineKeyboardButton(text="🪤 Ловушка",      callback_data="fight:trap"))
     if has_poison_trap:
-        trap_row.append(InlineKeyboardButton(text="☠️ Яд. ловушка",    callback_data="fight:poison_trap"))
+        trap_row.append(InlineKeyboardButton(text="☠️ Яд. ловушка", callback_data="fight:poison_trap"))
     if trap_row:
         rows.append(trap_row)
-
-    rows.append([
-        InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee"),
-    ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
