@@ -1208,38 +1208,27 @@ async def leave_city_handler(message: Message):
         await message.answer("Ты и так не в городе.")
         return
 
-    # Выходим напрямую — без требования идти в главные ворота
-    update_player_location(message.from_user.id, "dark_forest")
-    update_player_district(message.from_user.id, "mushroom_path")
-    set_ui_screen(message.from_user.id, "main")
+    # Запускаем путешествие через travel_service с таймером
+    from game.travel_service import start_travel, render_travel_status, LOCATION_NAMES
+    from keyboards.main_menu import main_menu as _mm
 
-    from game.map_service import render_location_card
-    from game.dungeon_service import DUNGEONS
-    from keyboards.location_menu import location_actions_inline
+    travel = start_travel(
+        message.from_user.id,
+        player.location_slug,
+        "dark_forest",
+        agility=player.agility,
+    )
 
-    loc_card = render_location_card("dark_forest")
-    try:
-        from game.grid_exploration_service import render_exploration_panel as _grid_panel
-        _expl = _grid_panel(message.from_user.id, "dark_forest")
-    except Exception:
-        _expl = ""
+    from_name = LOCATION_NAMES.get(player.location_slug, "Сереброград")
+    to_name   = LOCATION_NAMES.get("dark_forest", "Тёмный лес")
 
-    loc_text = "🚶 Ты покидаешь Сереброград и выходишь в Тёмный лес.\n\n" + loc_card
-    if _expl:
-        loc_text += "\n\n" + _expl
-
-    try:
-        from game.grid_exploration_service import is_dungeon_available
-        has_dungeon = "dark_forest" in DUNGEONS and is_dungeon_available(message.from_user.id, "dark_forest")
-    except Exception:
-        has_dungeon = False
-
-    from utils.images import send_location_image
-    await send_location_image(message, "dark_forest", loc_text,
-                               reply_markup=main_menu("dark_forest", "mushroom_path"))
     await message.answer(
-        "Что делать:",
-        reply_markup=location_actions_inline("dark_forest", has_dungeon=has_dungeon)
+        f"🚶 Ты покидаешь {from_name}.\n"
+        f"{from_name} → {to_name}\n"
+        f"⏱ Время в пути: {travel['time_text']}\n\n"
+        f"Во время перехода нельзя исследовать и сражаться.\n"
+        f"Нажми 🚫 Отменить перемещение если хочешь остаться.",
+        reply_markup=_mm(player.location_slug, player.current_district_slug, is_traveling=True),
     )
 
 
@@ -1896,11 +1885,12 @@ async def market_inline_callback(callback: CallbackQuery):
         if slug in _WLI:
             # Охотничий лут — прямая продажа по sell_price
             sell_price = _WLI[slug].get("sell_price", 0)
-            from database.repositories import add_player_gold as _apg, _update_player_field as _upf
+            from database.repositories import add_player_gold as _apg
             from database.repositories import get_connection as _gc_sell
             with _gc_sell() as _conn:
+                # Поле называется amount (не qty)
                 _conn.execute(
-                    "UPDATE player_resources SET qty = qty - 1 WHERE telegram_id=? AND slug=?",
+                    "UPDATE player_resources SET amount = MAX(0, amount - 1) WHERE telegram_id=? AND slug=?",
                     (callback.from_user.id, slug)
                 )
                 _conn.commit()
