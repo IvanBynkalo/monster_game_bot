@@ -390,19 +390,23 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
     if cart_level < 4:
         return {}
 
-    # Количество кругов по уровню
+    # Количество кругов по уровню картографа
     max_layers = min(4, (cart_level - 4) // 3 + 1)
 
     cells = grid["cells"]
+    col_cur, row_cur = grid["current_pos"]
+
+    # Набор всех посещённых клеток — они не получают предсказания (уже известны)
     visited_set = set()
     for key, cell in cells.items():
         if cell.get("visited"):
-            col, row = map(int, key.split(","))
-            visited_set.add((col, row))
+            c, r = map(int, key.split(","))
+            visited_set.add((c, r))
 
-    fog = {}
+    predictions = {}
 
     def _get_predicted_type(key: str, row: int) -> str:
+        """Берём сохранённое предсказание или генерируем новое."""
         cell = cells.get(key, {})
         if cell.get("predicted_type"):
             return cell["predicted_type"]
@@ -411,34 +415,34 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
         cell["predicted_type"] = ctype
         return ctype
 
-    # Слой 1 — все 8 соседей посещённых клеток (полные иконки)
-    for col, row in visited_set:
-        for dc, dr in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
-            nc, nr = col + dc, row + dr
-            if not (0 <= nc <= 9 and 0 <= nr <= 9):
-                continue
-            nkey = f"{nc},{nr}"
-            if (nc, nr) in visited_set or nkey in fog:
-                continue
-            ptype = _get_predicted_type(nkey, nr)
-            fog[nkey] = _FOG_ICONS_NEAR.get(ptype, "🌫")
+    # Слой 1 — соседи ТОЛЬКО текущей позиции игрока (не всех посещённых)
+    start_cells = {(col_cur, row_cur)}
+    for dc, dr in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
+        nc, nr = col_cur + dc, row_cur + dr
+        if not (0 <= nc <= 9 and 0 <= nr <= 9):
+            continue
+        nkey = f"{nc},{nr}"
+        if (nc, nr) in visited_set or nkey in predictions:
+            continue
+        ptype = _get_predicted_type(nkey, nr)
+        predictions[nkey] = _FOG_ICONS_NEAR.get(ptype, "🔳")
 
-    # Слои 2, 3, 4 — расширяем от предыдущего слоя (тусклые иконки)
+    # Слои 2, 3, 4 — расширяем от предыдущего слоя
     for _layer in range(2, max_layers + 1):
-        prev_layer_keys = set(fog.keys())
-        for fkey in prev_layer_keys:
+        prev_keys = set(predictions.keys())
+        for fkey in prev_keys:
             fc, fr = map(int, fkey.split(","))
             for dc, dr in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
                 nc, nr = fc + dc, fr + dr
                 if not (0 <= nc <= 9 and 0 <= nr <= 9):
                     continue
                 nkey = f"{nc},{nr}"
-                if (nc, nr) in visited_set or nkey in fog:
+                if (nc, nr) in visited_set or nkey in predictions:
                     continue
                 ptype = _get_predicted_type(nkey, nr)
-                fog[nkey] = _FOG_ICONS_FAR.get(ptype, "░")
+                predictions[nkey] = _FOG_ICONS_FAR.get(ptype, "▫️")
 
-    return fog
+    return predictions
 
 
 # ── Рендер карты ──────────────────────────────────────────────────────────────
@@ -473,9 +477,14 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
         "cleared":   "🟢",
     }
 
-    # Получаем предсказания картографа (словарь {key: icon})
-    # При cart_level < 4 вернёт пустой словарь — предсказаний нет
+    # Предсказания картографа — только вокруг текущей позиции
     predictions = _get_fog_cells(grid, cart_level, grid.get("location_slug", ""))
+
+    # Радиус прямой видимости от игрока (клетки в этом радиусе видны с реальным типом)
+    # Уровень 1-3: видит только свою клетку (radius=0 — нет, базовый radius=1)
+    # Но показываем реальный тип только для клеток В радиусе предсказаний (== predictions)
+    # Посещённые вне радиуса — серые ⬜ (были, но уже не видно)
+    # Зачищенные (cleared) — исключение: всегда показываем 🟢 чтобы игрок знал что безопасно
 
     # Полная сетка 10×10 снизу вверх (row 9 = глубина вверху, row 0 = вход внизу)
     lines = []
@@ -484,18 +493,27 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
         for col in range(10):
             key = f"{col},{row}"
             cell = cells.get(key, {})
+            is_cleared = cell.get("cleared", False) or cell.get("type") == "cleared"
 
             if col == col_cur and row == row_cur:
+                # Игрок
                 row_str += "👣"
-            elif cell.get("visited"):
-                ctype = cell.get("type", "normal")
-                if cell.get("cleared") and ctype != "cleared":
-                    ctype = "cleared"
-                row_str += ICONS.get(ctype, "🟩")
+            elif is_cleared:
+                # Зачищенные — всегда видны как 🟢 (маркер безопасной зоны)
+                row_str += "🟢"
             elif key in predictions:
-                # Предсказание картографа — без тумана, сразу иконка типа
-                row_str += predictions[key]
+                # В зоне предсказания картографа — показываем иконку предсказания
+                # Если клетка посещена И в зоне предсказания — показываем реальный тип
+                if cell.get("visited"):
+                    ctype = cell.get("type", "normal")
+                    row_str += ICONS.get(ctype, "🟩")
+                else:
+                    row_str += predictions[key]
+            elif cell.get("visited"):
+                # Посещена но вне зоны видимости — серая, игрок там уже не видит
+                row_str += "⬜"
             else:
+                # Не посещена и вне зоны — неизвестно
                 row_str += "⬜"
         lines.append(row_str)
 
