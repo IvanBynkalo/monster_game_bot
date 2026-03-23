@@ -445,10 +445,23 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
 
 def render_mini_map(grid: dict, cart_level: int = 1) -> str:
     """
-    Карта: всегда 10 столбцов в ширину, 3 строки вперёд от позиции + 1 назад.
-    Предсказания картографа подписаны одним словом в легенде.
+    Карта 10×10 — полная сетка, всегда все 100 клеток.
+
+    Логика отображения каждой клетки:
+    1. Игрок          → 👣
+    2. Посещено       → реальный тип (🟩🟦🟥🟨🟢🕳💀)
+    3. Предсказание   → иконка картографа (зависит от уровня, без тумана)
+    4. Неизвестно     → ⬜
+
+    Предсказания картографа (уровень 4+):
+    - Уровень 4-6:  1 круг вокруг посещённых клеток
+    - Уровень 7-9:  2 круга
+    - Уровень 10-12: 3 круга
+    - Уровень 13+:  4 круга
+    Тумана нет — предсказание показывает иконку предполагаемого типа.
     """
     col_cur, row_cur = grid["current_pos"]
+    cells = grid["cells"]
 
     ICONS = {
         "normal":    "🟩",
@@ -460,52 +473,46 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
         "cleared":   "🟢",
     }
 
-    row_start = max(0, row_cur - 1)
-    row_end   = min(9, row_cur + 3)
+    # Получаем предсказания картографа (словарь {key: icon})
+    # При cart_level < 4 вернёт пустой словарь — предсказаний нет
+    predictions = _get_fog_cells(grid, cart_level, grid.get("location_slug", ""))
 
-    fog = _get_fog_cells(grid, cart_level, grid.get("location_slug", ""))
-
+    # Полная сетка 10×10 снизу вверх (row 9 = глубина вверху, row 0 = вход внизу)
     lines = []
-    header = f"🗺 Карта [1–10 / гл.{row_start+1}–{row_end+1}]"
-    lines.append(header)
-
-    for row in range(row_end, row_start - 1, -1):
+    for row in range(9, -1, -1):
         row_str = ""
         for col in range(10):
             key = f"{col},{row}"
-            cell = grid["cells"].get(key, {})
+            cell = cells.get(key, {})
+
             if col == col_cur and row == row_cur:
-                row_str += "📍"
+                row_str += "👣"
             elif cell.get("visited"):
                 ctype = cell.get("type", "normal")
                 if cell.get("cleared") and ctype != "cleared":
                     ctype = "cleared"
                 row_str += ICONS.get(ctype, "🟩")
-            elif key in fog:
-                row_str += fog[key]
+            elif key in predictions:
+                # Предсказание картографа — без тумана, сразу иконка типа
+                row_str += predictions[key]
             else:
                 row_str += "⬜"
-        suffix = f" ← гл.{row+1}" if row == row_cur else ""
-        if row == 0:
-            suffix = " ← вход"
-        lines.append(row_str + suffix)
+        lines.append(row_str)
 
-    # Базовая легенда ячеек
-    lines.append("📍ты  🟩норм  🟦сбор  🟥опасно  🟨находка  🟢зачищ  🕳подзем  💀босс")
+    # Легенда
+    lines.append("👣ты  🟩норм  🟦сбор  🟥опасно  🟨находка  🟢зачищ  🕳подзем  💀босс")
 
-    # Предсказания картографа — только иконки что реально есть на карте
-    if cart_level >= 4:
-        fog_icons_used = set(fog.values())
-        fog_parts = []
+    # Подпись предсказаний — только уникальные иконки что реально есть
+    if cart_level >= 4 and predictions:
+        used_icons = set(predictions.values())
+        parts = []
         for icon in ["🔳","🟫","🟧","🟡","⬛","🔴","▫️","▪️"]:
-            if icon in fog_icons_used:
+            if icon in used_icons:
                 word = _FOG_LEGEND.get(icon, "?")
-                fog_parts.append(f"{icon}{word}")
-
+                parts.append(f"{icon}{word}")
         layers = min(4, (cart_level - 4) // 3 + 1)
-        prefix = f"🗺 Картограф ур.{cart_level} ({layers} кр.):"
-        if fog_parts:
-            lines.append(f"{prefix} {' · '.join(fog_parts)}")
+        if parts:
+            lines.append(f"🗺 Картограф ур.{cart_level} · {layers} кр.: {' · '.join(parts)}")
 
     return "\n".join(lines)
 
@@ -599,11 +606,8 @@ def render_exploration_panel(telegram_id: int, location_slug: str) -> str:
         f"📐 Картограф {cart_level} ур. | Глубина [{depth_bar}] {row+1}/10",
     ]
 
-    if pct >= THRESHOLDS["dungeon_unlocks"]:
-        lines.append("🕳 Подземелье доступно")
-    else:
-        lines.append(f"🕳 Подземелье откроется на {THRESHOLDS['dungeon_unlocks']}%")
-
+    # Подземелье появляется на карте как клетка 🕳 при 45% исследования
+    # Строку-подсказку убираем — игрок должен найти его сам на карте
     if pct >= 100:
         lines.append("✅ Регион полностью исследован!")
 
