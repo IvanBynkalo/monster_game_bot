@@ -1006,6 +1006,37 @@ async def fight_inline_callback(callback: CallbackQuery):
             for lu in lvlups:
                 lines.append(f"⬆️ Монстр достиг уровня {lu['level']}!")
 
+            # Поимка монстра — добавляем в коллекцию игрока
+            if result.get("captured") and enc.get("type") == "monster":
+                try:
+                    from database.repositories import add_captured_monster as _acm
+                    from game.crystal_service import auto_store_new_monster, get_player_crystals, get_monsters_in_crystal
+                    _new_mon = _acm(
+                        telegram_id=uid,
+                        name=enc.get("monster_name", enc.get("name", "Монстр")),
+                        rarity=enc.get("rarity", "common"),
+                        mood=enc.get("mood", "instinct"),
+                        hp=enc.get("max_hp", enc.get("hp", 20)),
+                        attack=enc.get("attack", 5),
+                        source_type="поимка",
+                    )
+                    # Пытаемся разместить в кристалл автоматически
+                    _placed, _placed_msg = auto_store_new_monster(uid, _new_mon["id"])
+                    if _placed:
+                        _crystals = get_player_crystals(uid)
+                        _cname = next(
+                            (c["name"] for c in _crystals
+                             if any(m["id"] == _new_mon["id"] for m in get_monsters_in_crystal(c["id"]))),
+                            "кристалл"
+                        )
+                        lines.append(f"✨ {_new_mon['name']} пойман и помещён в {_cname}!")
+                    else:
+                        lines.append(f"✨ {_new_mon['name']} пойман! Нужно место в кристалле.")
+                except Exception as _ce:
+                    import logging
+                    logging.getLogger(__name__).error(f"capture add_monster error: {_ce}")
+                    lines.append("✨ Монстр пойман! (ошибка размещения)")
+
             # Лут с зверя + квесты охоты
             if enc.get("type") == "wildlife":
                 from game.bestiary_service import register_bestiary_seen, check_trophy_drop
