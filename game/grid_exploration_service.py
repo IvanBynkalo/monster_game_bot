@@ -118,8 +118,8 @@ def _get_zone(row: int) -> str:
 def _weighted_cell_type(row: int, explored_pct: int) -> str:
     zone = _get_zone(row)
     weights = dict(ZONE_WEIGHTS[zone])
-    if explored_pct < THRESHOLDS["dungeon_unlocks"]:
-        weights["dungeon"] = 0
+    # Подземелье может появиться в любой момент на средней/глубокой зоне
+    # boss_zone только после 60% (территория всё равно сложная)
     if explored_pct < THRESHOLDS["boss_zone_unlocks"]:
         weights["boss_zone"] = 0
     total = sum(weights.values())
@@ -367,7 +367,7 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
         "is_cleared": is_cleared,
         "direction": chosen["label"],
         "threshold_reward": threshold_reward,
-        "dungeon_available": pct >= THRESHOLDS["dungeon_unlocks"],
+        "dungeon_available": current_type == "dungeon",  # доступно только на клетке подземелья
         "boss_zone": current_type == "boss_zone",
         "is_dungeon": current_type == "dungeon",
         "cart_level": cart_level,
@@ -496,25 +496,29 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
             cell = cells.get(key, {})
             is_cleared = cell.get("cleared", False) or cell.get("type") == "cleared"
 
+            # Радиус 1 вокруг игрока — ближайшие клетки всегда показываем с типом
+            in_radius1 = abs(col - col_cur) <= 1 and abs(row - row_cur) <= 1
+
             if col == col_cur and row == row_cur:
-                # Игрок
                 row_str += "👣"
             elif is_cleared:
-                # Зачищенные — всегда видны как 🟢 (маркер безопасной зоны)
+                # Зачищенные — всегда видны 🟢
                 row_str += "🟢"
+            elif in_radius1 and cell.get("visited"):
+                # Посещённые в радиусе 1 — всегда показываем реальный тип
+                ctype = cell.get("type", "normal")
+                row_str += ICONS.get(ctype, "🟩")
             elif key in predictions:
-                # В зоне предсказания картографа — показываем иконку предсказания
-                # Если клетка посещена И в зоне предсказания — показываем реальный тип
+                # В зоне предсказания картографа
                 if cell.get("visited"):
                     ctype = cell.get("type", "normal")
                     row_str += ICONS.get(ctype, "🟩")
                 else:
                     row_str += predictions[key]
             elif cell.get("visited"):
-                # Посещена но вне зоны видимости — серая, игрок там уже не видит
+                # Посещена но далеко — серая
                 row_str += "⬜"
             else:
-                # Не посещена и вне зоны — неизвестно
                 row_str += "⬜"
         lines.append(row_str)
 
@@ -634,8 +638,12 @@ def render_exploration_panel(telegram_id: int, location_slug: str) -> str:
 
 
 def is_dungeon_available(telegram_id: int, location_slug: str) -> bool:
+    """Подземелье доступно когда игрок стоит на ячейке типа 'dungeon'."""
     grid = get_grid(telegram_id, location_slug)
-    return grid["visited_count"] >= THRESHOLDS["dungeon_unlocks"]
+    col, row = grid["current_pos"]
+    key = f"{col},{row}"
+    cell = grid["cells"].get(key, {})
+    return cell.get("type") == "dungeon"
 
 
 def is_world_boss_available(telegram_id: int, location_slug: str) -> bool:
