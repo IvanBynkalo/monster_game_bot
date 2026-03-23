@@ -42,7 +42,11 @@ BAG_OFFERS = {
 
 
 def get_resource_label(slug: str) -> str:
-    return RESOURCE_LABELS.get(slug, slug)
+    """Возвращает читаемое название ресурса. Для неизвестных slug — очищаем подчёркивания."""
+    if slug in RESOURCE_LABELS:
+        return RESOURCE_LABELS[slug]
+    # Неизвестный slug — делаем читаемым: shadow_wolf_fang → Shadow Wolf Fang
+    return slug.replace("_", " ").title()
 
 
 def make_sell_button_text(slug: str, city_slug: str, merchant_level: int, player_qty: int) -> str:
