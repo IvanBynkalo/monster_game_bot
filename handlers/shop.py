@@ -125,12 +125,17 @@ async def item_shop_handler(message: Message):
         "flee_elixir":    ("💨", "Эликсир побега"),
         "revival_shard":  ("💎", "Осколок возрождения"),
     }
+    from database.repositories import get_inventory as _get_inv
+    _inv = _get_inv(message.from_user.id)
+
     rows = []
     for slug in ITEM_ORDER:
         emoji, name = LABELS.get(slug, ("🛒", slug))
         price = get_market_item_price(slug)
+        have = _inv.get(slug, 0)
+        have_str = f" · у тебя: {have}" if have > 0 else ""
         rows.append([InlineKeyboardButton(
-            text=f"🛒 {emoji} {name} — {price}з",
+            text=f"🛒 {emoji} {name} — {price}з{have_str}",
             callback_data=f"shop:buy:{slug}"
         )])
     # Extra items
@@ -139,8 +144,10 @@ async def item_shop_handler(message: Message):
             from game.item_service import ITEMS
             if slug in ITEMS:
                 emoji, name = LABELS.get(slug, ("🛒", slug))
+                have = _inv.get(slug, 0)
+                have_str = f" · у тебя: {have}" if have > 0 else ""
                 rows.append([InlineKeyboardButton(
-                    text=f"🛒 {emoji} {name} — 60з",
+                    text=f"🛒 {emoji} {name} — 60з{have_str}",
                     callback_data=f"shop:buy:{slug}"
                 )])
         except Exception:

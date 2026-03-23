@@ -1869,36 +1869,32 @@ async def market_inline_callback(callback: CallbackQuery):
 
     if data.startswith("marketnpc:bort_sell:"):
         slug = data.split(":")[-1]
-        # Продаём напрямую по slug — не через парсер текста кнопки
         from database.repositories import get_resources as _get_res, sell_resource_to_city_market as _sell_res
         resources = _get_res(callback.from_user.id)
         if resources.get(slug, 0) <= 0:
             await callback.answer("У тебя нет этого ресурса.", show_alert=True)
             return
 
-        # Проверяем охотничий лут — он продаётся по фиксированной цене из wildlife_loot
         try:
             from game.wildlife_loot import WILDLIFE_LOOT_ITEMS as _WLI
         except Exception:
             _WLI = {}
 
+        label = get_resource_label(slug)
+
         if slug in _WLI:
-            # Охотничий лут — прямая продажа по sell_price
             sell_price = _WLI[slug].get("sell_price", 0)
             from database.repositories import add_player_gold as _apg
             from database.repositories import get_connection as _gc_sell
             with _gc_sell() as _conn:
-                # Поле называется amount (не qty)
                 _conn.execute(
                     "UPDATE player_resources SET amount = MAX(0, amount - 1) WHERE telegram_id=? AND slug=?",
                     (callback.from_user.id, slug)
                 )
                 _conn.commit()
             _apg(callback.from_user.id, sell_price)
-            label = get_resource_label(slug)
-            await callback.answer(f"✅ Продано: {label} +{sell_price}з", show_alert=True)
+            gold = sell_price
         else:
-            # Обычный ресурс рынка
             gold = _sell_res(
                 telegram_id=callback.from_user.id,
                 city_slug=player.location_slug,
@@ -1908,24 +1904,23 @@ async def market_inline_callback(callback: CallbackQuery):
             if gold is None:
                 await callback.answer("Не удалось продать ресурс.", show_alert=True)
                 return
-            label = get_resource_label(slug)
-            await callback.answer(f"✅ Продано: {label} +{gold}з", show_alert=True)
 
-        # Обновляем меню Борта после продажи
+        # Показываем тост с результатом продажи
+        updated_player = get_player(callback.from_user.id)
+        new_gold = getattr(updated_player, "gold", 0)
+        await callback.answer(
+            f"✅ Продано: {label} +{gold}з\n💰 Золото: {new_gold}з",
+            show_alert=True
+        )
+
+        # Обновляем сообщение — список с актуальными остатками
         try:
-            updated_player = get_player(callback.from_user.id)
             await callback.message.edit_text(
                 render_bort_sell_text(player.location_slug, callback.from_user.id),
                 reply_markup=bort_sell_inline(callback.from_user.id, player.location_slug),
             )
         except Exception:
-            try:
-                await callback.message.answer(
-                    render_bort_sell_text(player.location_slug, callback.from_user.id),
-                    reply_markup=bort_sell_inline(callback.from_user.id, player.location_slug),
-                )
-            except Exception:
-                pass
+            pass
         return
 
     if data == "marketnpc:bort_quest_menu":
