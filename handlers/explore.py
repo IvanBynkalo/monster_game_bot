@@ -556,8 +556,18 @@ async def explore_handler(message: Message, forced_direction: str = None):
             _next_prompt = "Куда дальше?\n\n" + _panel_ev
             if _mini_ev:
                 _next_prompt += "\n\n" + _mini_ev
+            # Проверяем: стоим ли на ячейке подземелья?
+            _is_on_dungeon = _expl_result.get("is_dungeon") or _expl_result.get("cell_type") == "dungeon"
             await message.answer(full_text)
             await message.answer(_next_prompt, reply_markup=_dir_kb_next)
+            if _is_on_dungeon:
+                from keyboards.location_menu import location_actions_inline as _lai
+                from game.dungeon_service import DUNGEONS
+                _dng_has = player.location_slug in DUNGEONS
+                await message.answer(
+                    "🕳 Ты нашёл вход в подземелье!",
+                    reply_markup=_lai(player.location_slug, has_dungeon=_dng_has)
+                )
         else:
             # Обычное исследование — возвращаем главное меню
             await message.answer(
