@@ -1694,16 +1694,23 @@ async def shop_inline_callback(callback: CallbackQuery):
 
         _update_player_field(uid, gold=player.gold - price)
         add_item(uid, slug, 1)
-        # Обновляем баланс игрока для отображения
+        # Обновляем данные игрока
         updated_player = get_player(uid)
         new_gold = getattr(updated_player, "gold", player.gold - price)
+        item_name = item.get("name", slug)
+        item_emoji = item.get("emoji", "🛒")
+
+        # Тост с результатом покупки
         await callback.answer(
-            f"✅ Куплено: {item.get('name', slug)} (-{price}з)\nОсталось золота: {new_gold}з",
+            f"✅ Куплено: {item_emoji} {item_name} (-{price}з)\n💰 Золото: {new_gold}з",
             show_alert=True
         )
-        # Обновляем inline-меню чтобы отразить актуальный баланс
+
+        # Обновляем inline-меню с актуальными остатками у покупателя
         try:
             from game.shop_service import ITEM_ORDER, get_market_item_price
+            from database.repositories import get_inventory as _get_inv_upd
+            _inv_upd = _get_inv_upd(uid)
             LABELS = {
                 "small_potion":   ("🧪", "Малое зелье"),
                 "energy_capsule": ("⚡", "Капсула энергии"),
@@ -1716,8 +1723,10 @@ async def shop_inline_callback(callback: CallbackQuery):
             for _slug in ITEM_ORDER:
                 _emoji, _name = LABELS.get(_slug, ("🛒", _slug))
                 _price = get_market_item_price(_slug)
+                _have = _inv_upd.get(_slug, 0)
+                _have_str = f" · у тебя: {_have}" if _have > 0 else ""
                 rows.append([InlineKeyboardButton(
-                    text=f"🛒 {_emoji} {_name} — {_price}з",
+                    text=f"🛒 {_emoji} {_name} — {_price}з{_have_str}",
                     callback_data=f"shop:buy:{_slug}"
                 )])
             rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="shop:back")])
