@@ -891,6 +891,8 @@ async def fight_inline_callback(callback: CallbackQuery):
             has_flee_elixir=flee_elixir)
 
     if result is None:
+        # Действие не дало результата — показываем меню заново
+        await callback.answer("Действие недоступно.", show_alert=True)
         return
 
     lines = [result.get("text", "")]
@@ -1068,12 +1070,18 @@ async def fight_inline_callback(callback: CallbackQuery):
 
     if enc.get("type") == "wildlife":
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = InlineKeyboardMarkup(inline_keyboard=[
+        _wl_rows = [
             [InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
              InlineKeyboardButton(text="✨ Навык",      callback_data="fight:skill")],
-            *([[InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")]] if has_trap else []),
-            [InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")],
-        ])
+        ]
+        if has_trap:
+            _wl_rows.append([
+                InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap"),
+                InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee"),
+            ])
+        else:
+            _wl_rows.append([InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
+        kb = InlineKeyboardMarkup(inline_keyboard=_wl_rows)
     else:
         kb = encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap)
 
