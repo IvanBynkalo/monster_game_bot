@@ -76,35 +76,33 @@ LOCATION_COMPLETION_BONUSES = {
 # Иконки тумана войны — все двухширокие квадраты для ровного выравнивания в сетке
 # Слой 1 (ближний круг): цветные квадраты, отличные от посещённых
 _FOG_ICONS_NEAR = {
-    "normal":    "🔳",   # белый квадрат в рамке — неизвестная обычная зона
-    "gathering": "🟫",   # коричневый — намёк на ресурсы/земля
-    "danger":    "🟧",   # оранжевый — предупреждение, не такой яркий как красный
-    "discovery": "🟡",   # жёлтый кружок — что-то особенное
-    "dungeon":   "⬛",   # чёрный — тёмная глубина
-    "boss_zone": "🔴",   # красный кружок — угроза
-    "cleared":   "🟢",   # зелёный — зачищено (уже известно)
+    "normal":    None,   # обычная зона — не показываем, нечего предсказывать
+    "gathering": "🟫",   # ресурсы — намёк что здесь можно собирать
+    "danger":    "🟧",   # опасно — монстр или зверь
+    "discovery": "🟡",   # находка — предмет, сундук, подземелье, развалины
+    "dungeon":   "🟡",   # подземелье — особая находка
+    "boss_zone": "🔴",   # территория босса — серьёзная угроза
+    "cleared":   "🟢",   # зачищено — безопасно
 }
 # Слои 2+ (дальние круги): более тусклые/нейтральные
 _FOG_ICONS_FAR = {
-    "normal":    "▫️",   # маленький белый квадрат
-    "gathering": "▫️",
-    "danger":    "▪️",   # маленький тёмный квадрат — что-то тёмное
-    "discovery": "▫️",
-    "dungeon":   "▪️",
+    "normal":    None,   # обычная — не показываем
+    "gathering": "▫️",   # слабый намёк на ресурсы
+    "danger":    "▪️",   # слабый намёк на опасность
+    "discovery": "▫️",   # слабый намёк на находку
+    "dungeon":   "▫️",
     "boss_zone": "▪️",
-    "cleared":   "▫️",
+    "cleared":   None,   # зачищенное вдали не показываем
 }
 # Однословные подписи для легенды (по иконке ближнего круга)
 _FOG_LEGEND = {
-    "🔳": "неизв",
     "🟫": "ресурсы",
     "🟧": "опасно",
     "🟡": "находка",
-    "⬛": "подзем",
     "🔴": "босс",
     "🟢": "зачищ",
-    "▫️": "даль",
-    "▪️": "угроза",
+    "▫️": "ресурсы?",
+    "▪️": "опасно?",
 }
 
 
@@ -416,7 +414,6 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
         return ctype
 
     # Слой 1 — соседи ТОЛЬКО текущей позиции игрока (не всех посещённых)
-    start_cells = {(col_cur, row_cur)}
     for dc, dr in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
         nc, nr = col_cur + dc, row_cur + dr
         if not (0 <= nc <= 9 and 0 <= nr <= 9):
@@ -425,7 +422,9 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
         if (nc, nr) in visited_set or nkey in predictions:
             continue
         ptype = _get_predicted_type(nkey, nr)
-        predictions[nkey] = _FOG_ICONS_NEAR.get(ptype, "🔳")
+        icon = _FOG_ICONS_NEAR.get(ptype)
+        if icon is not None:   # None = обычная зона, не показываем
+            predictions[nkey] = icon
 
     # Слои 2, 3, 4 — расширяем от предыдущего слоя
     for _layer in range(2, max_layers + 1):
@@ -440,7 +439,9 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
                 if (nc, nr) in visited_set or nkey in predictions:
                     continue
                 ptype = _get_predicted_type(nkey, nr)
-                predictions[nkey] = _FOG_ICONS_FAR.get(ptype, "▫️")
+                icon = _FOG_ICONS_FAR.get(ptype)
+                if icon is not None:   # None = не показываем
+                    predictions[nkey] = icon
 
     return predictions
 
@@ -524,7 +525,7 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
     if cart_level >= 4 and predictions:
         used_icons = set(predictions.values())
         parts = []
-        for icon in ["🔳","🟫","🟧","🟡","⬛","🔴","▫️","▪️"]:
+        for icon in ["🟫","🟧","🟡","🔴","🟢","▫️","▪️"]:
             if icon in used_icons:
                 word = _FOG_LEGEND.get(icon, "?")
                 parts.append(f"{icon}{word}")
