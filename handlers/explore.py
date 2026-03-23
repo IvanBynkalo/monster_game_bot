@@ -184,11 +184,12 @@ async def explore_handler(message: Message, forced_direction: str = None):
         kbd_rows.append([KeyboardButton(text="🏕 Остановиться")])
         _dir_kb = ReplyKeyboardMarkup(keyboard=kbd_rows, resize_keyboard=True)
 
-        # Мини-карта в тексте
+        # Мини-карта в тексте — загружаем свежую сетку с актуальной позицией героя
         try:
             from game.grid_exploration_service import render_mini_map
             from game.exploration_service import get_cartographer_level as _gcl
-            _mini = render_mini_map(_grid, cart_level=_gcl(message.from_user.id))
+            _grid_fresh = get_grid(message.from_user.id, player.location_slug)
+            _mini = render_mini_map(_grid_fresh, cart_level=_gcl(message.from_user.id))
         except Exception:
             _mini = ""
 
@@ -338,32 +339,45 @@ async def explore_handler(message: Message, forced_direction: str = None):
     # Если ячейка зачищена — только сбор, без монстров и событий боя
     if _expl_bonuses.get("is_cleared"):
         _player_cleared = get_player(message.from_user.id)
+
+        # Загружаем ОБНОВЛЁННУЮ сетку (после explore_cell) для правильной позиции на карте
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        _grid_cl = get_grid(message.from_user.id, _player_cleared.location_slug)
+        _dirs_cl = get_available_directions(_grid_cl)
+        _dlabels = {d["dir"]: d["label"] for d in _dirs_cl}
+
+        # Строим клавиатуру: направления + Собирать + Остановиться
+        _ckbd = []
+        _crow = []
+        for _dd in ["side_l", "forward", "side_r"]:
+            if _dd in _dlabels:
+                _crow.append(KeyboardButton(text=_dlabels[_dd]))
+        if _crow:
+            _ckbd.append(_crow)
+        if "back" in _dlabels:
+            _ckbd.append([KeyboardButton(text=_dlabels["back"])])
+        _ckbd.append([KeyboardButton(text="🧺 Собирать ресурсы")])   # ← кнопка сбора
+        _ckbd.append([KeyboardButton(text="🏕 Остановиться")])
+        _cl_kb = ReplyKeyboardMarkup(keyboard=_ckbd, resize_keyboard=True)
+
+        # Мини-карта с ОБНОВЛЁННОЙ позицией героя
+        try:
+            from game.grid_exploration_service import render_mini_map as _rmap_cl
+            from game.exploration_service import get_cartographer_level as _gcl_cl
+            _mini_cl = _rmap_cl(_grid_cl, cart_level=_gcl_cl(message.from_user.id))
+        except Exception:
+            _mini_cl = ""
+
+        _panel_cl = render_exploration_panel(message.from_user.id, _player_cleared.location_slug)
         _cleared_text = (
             f"🟢 Зачищенная территория.\n"
-            f"Монстры сюда ещё не вернулись.\n"
-            f"Здесь можно собирать ресурсы — нажми 🧺 Собирать."
+            f"Монстры сюда ещё не вернулись. Можно собирать ресурсы.\n\n"
+            f"{_panel_cl}"
         )
-        # Показываем следующие направления — не теряем контекст навигации
-        if forced_direction:
-            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-            _grid_cl = get_grid(message.from_user.id, _player_cleared.location_slug)
-            _dirs_cl = get_available_directions(_grid_cl)
-            _dlabels = {d["dir"]: d["label"] for d in _dirs_cl}
-            _crow = []
-            for _dd in ["side_l", "forward", "side_r"]:
-                if _dd in _dlabels:
-                    _crow.append(KeyboardButton(text=_dlabels[_dd]))
-            _ckbd = []
-            if _crow:
-                _ckbd.append(_crow)
-            if "back" in _dlabels:
-                _ckbd.append([KeyboardButton(text=_dlabels["back"])])
-            _ckbd.append([KeyboardButton(text="🏕 Остановиться")])
-            await message.answer(_cleared_text,
-                reply_markup=ReplyKeyboardMarkup(keyboard=_ckbd, resize_keyboard=True))
-        else:
-            await message.answer(_cleared_text,
-                reply_markup=main_menu(_player_cleared.location_slug, _player_cleared.current_district_slug))
+        if _mini_cl:
+            _cleared_text += f"\n\n{_mini_cl}"
+
+        await message.answer(_cleared_text, reply_markup=_cl_kb)
         return
 
     # Распределение встреч: звери > события >> монстры
