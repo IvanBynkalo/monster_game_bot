@@ -16,24 +16,24 @@ from database.repositories import get_connection
 # Расстояния в секундах (базовое время без ловкости)
 # Минимум 4 секунды
 DISTANCES: dict[tuple[str, str], int] = {
-    # Стартовая зона (ур.1-3)
-    ("silver_city",    "dark_forest"):    20,   # ~20 сек — почти мгновенно
-    ("dark_forest",    "emerald_fields"): 30,   # 30 сек
+    # Стартовая зона (ур.1-3) — ощутимое время пути
+    ("silver_city",    "dark_forest"):    90,    # 1.5 мин
+    ("dark_forest",    "emerald_fields"): 120,   # 2 мин
 
     # Средняя зона (ур.4-6)
-    ("dark_forest",    "shadow_marsh"):   60,   # 1 мин
-    ("emerald_fields", "stone_hills"):    60,   # 1 мин
-    ("shadow_marsh",   "shadow_swamp"):   90,   # 1.5 мин
-    ("stone_hills",    "ancient_ruins"):  90,   # 1.5 мин
+    ("dark_forest",    "shadow_marsh"):   180,   # 3 мин
+    ("emerald_fields", "stone_hills"):    180,   # 3 мин
+    ("shadow_marsh",   "shadow_swamp"):   240,   # 4 мин
+    ("stone_hills",    "ancient_ruins"):  240,   # 4 мин
 
     # Дальняя зона (ур.7-9)
-    ("shadow_swamp",   "bone_desert"):    150,  # 2.5 мин
-    ("ancient_ruins",  "bone_desert"):    150,  # 2.5 мин
+    ("shadow_swamp",   "bone_desert"):    360,   # 6 мин
+    ("ancient_ruins",  "bone_desert"):    360,   # 6 мин
 
     # Эндгейм (ур.10+)
-    ("bone_desert",    "volcano_wrath"):  240,  # 4 мин
-    ("volcano_wrath",  "storm_ridge"):    180,  # 3 мин
-    ("storm_ridge",    "emotion_rift"):   300,  # 5 мин
+    ("bone_desert",    "volcano_wrath"):  480,   # 8 мин
+    ("volcano_wrath",  "storm_ridge"):    420,   # 7 мин
+    ("storm_ridge",    "emotion_rift"):   600,   # 10 мин
 }
 
 LOCATION_NAMES = {
