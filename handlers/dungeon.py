@@ -139,7 +139,7 @@ async def dungeon_next_room_handler(message: Message):
         if current_room["type"] == "event_choice":
             await message.answer(
                 "Сначала сделай выбор в текущем событии.",
-                reply_markup=dungeon_choice_menu(current_room["choices"]),
+                reply_markup=dungeon_choice_menu(room["choices"], player),
             )
             return
 
