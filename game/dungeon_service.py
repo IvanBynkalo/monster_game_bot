@@ -7,64 +7,263 @@ DUNGEONS = {
         "name": "🕳 Корни забытой чащи",
         "rooms": 5,
         "theme": "forest",
-        "boss": {"name": "🌲 Хозяин корней", "hp": 172, "attack": 13, "reward_gold": 85, "reward_exp": 34},
+        "boss": {
+            "name": "🌲 Хозяин корней",
+            "hp": 72,
+            "attack": 13,
+            "reward_gold": 85,
+            "reward_exp": 34,
+        },
     },
     "stone_hills": {
         "name": "🕳 Глубинная жила",
         "rooms": 5,
         "theme": "stone",
-        "boss": {"name": "⛰ Сердце монолита", "hp": 178, "attack": 14, "reward_gold": 92, "reward_exp": 36},
+        "boss": {
+            "name": "⛰ Сердце монолита",
+            "hp": 78,
+            "attack": 14,
+            "reward_gold": 92,
+            "reward_exp": 36,
+        },
     },
     "shadow_marsh": {
         "name": "🕳 Омут безмолвия",
         "rooms": 5,
         "theme": "marsh",
-        "boss": {"name": "🕸 Тёмный омутник", "hp": 176, "attack": 14, "reward_gold": 90, "reward_exp": 36},
+        "boss": {
+            "name": "🕸 Тёмный омутник",
+            "hp": 76,
+            "attack": 14,
+            "reward_gold": 90,
+            "reward_exp": 36,
+        },
     },
 }
 
 THEME_TREASURES = {
     "forest": [
-        {"gold": 14, "items": {"small_potion": 1}, "text": "Ты находишь тайник под корнями и старый охотничий набор."},
-        {"gold": 18, "items": {"small_potion": 1, "basic_trap": 1}, "text": "За треснувшей плитой скрыт схрон лесных следопытов."},
+        {
+            "gold": 14,
+            "items": {"small_potion": 1},
+            "text": "Ты находишь тайник под корнями и старый охотничий набор.",
+        },
+        {
+            "gold": 18,
+            "items": {"small_potion": 1, "basic_trap": 1},
+            "text": "За треснувшей плитой скрыт схрон лесных следопытов.",
+        },
     ],
     "stone": [
-        {"gold": 16, "items": {"energy_capsule": 1}, "text": "В нише скалы лежит запечатанный контейнер шахтёров."},
-        {"gold": 20, "items": {"small_potion": 1}, "text": "Под обвалившейся колонной спрятан кошель и походный запас."},
+        {
+            "gold": 16,
+            "items": {"energy_capsule": 1},
+            "text": "В нише скалы лежит запечатанный контейнер шахтёров.",
+        },
+        {
+            "gold": 20,
+            "items": {"small_potion": 1},
+            "text": "Под обвалившейся колонной спрятан кошель и походный запас.",
+        },
     ],
     "marsh": [
-        {"gold": 15, "items": {"swamp_antidote": 1}, "text": "В ржавом ларце лежит набор болотного путника."},
-        {"gold": 19, "items": {"small_potion": 1, "swamp_antidote": 1}, "text": "Ты поднимаешь из грязи герметичный футляр с редкими припасами."},
+        {
+            "gold": 15,
+            "items": {"swamp_antidote": 1},
+            "text": "В ржавом ларце лежит набор болотного путника.",
+        },
+        {
+            "gold": 19,
+            "items": {"small_potion": 1, "swamp_antidote": 1},
+            "text": "Ты поднимаешь из грязи герметичный футляр с редкими припасами.",
+        },
     ],
 }
 
 THEME_EVENTS = {
     "forest": [
-        {"title": "🌿 Шепчущие корни", "text": "Живые корни сжимаются вокруг ног, но ты вырываешься и находишь жилу древней силы.", "reward_gold": 8, "reward_exp": 12},
-        {"title": "🪵 Забытый лагерь", "text": "Следы старого лагеря подсказывают безопасный путь вперёд.", "reward_gold": 10, "reward_exp": 10},
+        {
+            "title": "🌿 Шепчущие корни",
+            "text": "Живые корни сжимаются вокруг ног, но ты вырываешься и находишь жилу древней силы.",
+            "reward_gold": 8,
+            "reward_exp": 12,
+        },
+        {
+            "title": "🪵 Забытый лагерь",
+            "text": "Следы старого лагеря подсказывают безопасный путь вперёд.",
+            "reward_gold": 10,
+            "reward_exp": 10,
+        },
     ],
     "stone": [
-        {"title": "⛏ Рудная жила", "text": "Ты замечаешь прожилки ценной руды и собираешь часть добычи.", "reward_gold": 12, "reward_exp": 10},
-        {"title": "📜 Карта штрека", "text": "На стене высечены метки шахтёров. Они помогают избежать лишних тупиков.", "reward_gold": 8, "reward_exp": 12},
+        {
+            "title": "⛏ Рудная жила",
+            "text": "Ты замечаешь прожилки ценной руды и собираешь часть добычи.",
+            "reward_gold": 12,
+            "reward_exp": 10,
+        },
+        {
+            "title": "📜 Карта штрека",
+            "text": "На стене высечены метки шахтёров. Они помогают избежать лишних тупиков.",
+            "reward_gold": 8,
+            "reward_exp": 12,
+        },
     ],
     "marsh": [
-        {"title": "🫧 Синий омут", "text": "Странный свет выводит тебя к древнему алтарю, где сохранились ценные вещи.", "reward_gold": 9, "reward_exp": 12},
-        {"title": "🪷 След болотника", "text": "Ты обходишь опасную трясину и находишь тайный проход.", "reward_gold": 11, "reward_exp": 10},
+        {
+            "title": "🫧 Синий омут",
+            "text": "Странный свет выводит тебя к древнему алтарю, где сохранились ценные вещи.",
+            "reward_gold": 9,
+            "reward_exp": 12,
+        },
+        {
+            "title": "🪷 След болотника",
+            "text": "Ты обходишь опасную трясину и находишь тайный проход.",
+            "reward_gold": 11,
+            "reward_exp": 10,
+        },
     ],
 }
 
 CHOICE_EVENTS = {
     "forest": [
         {
-            "title": "🌿 Шепчущие корни",
-            "text": "Ты видишь корни, наполненные энергией.",
+            "title": "🌿 Сердце корней",
+            "text": "Перед тобой живая сердцевина чащи. Она пульсирует силой и манит добычей.",
             "choices": [
-                {"id": "attack", "text": "⚔️ Прорваться", "success": {"gold": 12}, "fail": {"damage": 8}},
-                {"id": "careful", "text": "🧠 Осмотреть", "success": {"exp": 12}, "fail": {"damage": 4}},
-                {"id": "leave", "text": "🏃 Уйти", "success": {}, "fail": {}},
+                {
+                    "id": "force",
+                    "text": "⚔️ Прорваться силой",
+                    "success_chance": 0.65,
+                    "success": {
+                        "gold": 16,
+                        "items": {"small_potion": 1},
+                        "text": "Ты разрубаешь корни и добираешься до спрятанного тайника.",
+                    },
+                    "fail": {
+                        "damage": 8,
+                        "text": "Корни оплетают тебя и жалят острыми шипами.",
+                    },
+                },
+                {
+                    "id": "study",
+                    "text": "🧠 Осмотреть осторожно",
+                    "success_chance": 0.8,
+                    "success": {
+                        "exp": 14,
+                        "text": "Ты замечаешь слабое место и обходишь опасность без лишнего шума.",
+                    },
+                    "fail": {
+                        "damage": 4,
+                        "text": "Ты почти справляешься, но задеваешь ловчий побег.",
+                    },
+                },
+                {
+                    "id": "leave",
+                    "text": "🏃 Пройти мимо",
+                    "success_chance": 1.0,
+                    "success": {
+                        "text": "Ты решаешь не рисковать и идёшь дальше.",
+                    },
+                    "fail": {
+                        "text": "Ты решаешь не рисковать и идёшь дальше.",
+                    },
+                },
             ],
         }
-    ]
+    ],
+    "stone": [
+        {
+            "title": "⛏ Запечатанная шахта",
+            "text": "Ты находишь старую дверь в штрек. За ней может быть добыча или обвал.",
+            "choices": [
+                {
+                    "id": "break",
+                    "text": "🔨 Вскрыть дверь",
+                    "success_chance": 0.7,
+                    "success": {
+                        "gold": 18,
+                        "items": {"energy_capsule": 1},
+                        "text": "Ты вскрываешь штрек и находишь запасы шахтёров.",
+                    },
+                    "fail": {
+                        "damage": 7,
+                        "text": "Дверь поддаётся, но сверху сыплются камни.",
+                    },
+                },
+                {
+                    "id": "inspect",
+                    "text": "🧠 Проверить крепления",
+                    "success_chance": 0.8,
+                    "success": {
+                        "exp": 14,
+                        "text": "Ты находишь безопасный способ открыть проход и запоминаешь схему штрека.",
+                    },
+                    "fail": {
+                        "damage": 4,
+                        "text": "Один из крепежей трещит и ранит тебя осколками.",
+                    },
+                },
+                {
+                    "id": "skip",
+                    "text": "🚶 Идти дальше",
+                    "success_chance": 1.0,
+                    "success": {
+                        "text": "Ты оставляешь сомнительный проход позади.",
+                    },
+                    "fail": {
+                        "text": "Ты оставляешь сомнительный проход позади.",
+                    },
+                },
+            ],
+        }
+    ],
+    "marsh": [
+        {
+            "title": "🫧 Дышащий омут",
+            "text": "В центре комнаты булькает вязкий омут. Внутри поблёскивает что-то ценное.",
+            "choices": [
+                {
+                    "id": "grab",
+                    "text": "🪝 Вытащить добычу",
+                    "success_chance": 0.68,
+                    "success": {
+                        "gold": 15,
+                        "items": {"swamp_antidote": 1},
+                        "text": "Ты подцепляешь добычу и быстро отходишь назад.",
+                    },
+                    "fail": {
+                        "damage": 8,
+                        "text": "Омут выплёвывает едкий пар и обжигает тебя.",
+                    },
+                },
+                {
+                    "id": "observe",
+                    "text": "👀 Выждать момент",
+                    "success_chance": 0.8,
+                    "success": {
+                        "exp": 13,
+                        "text": "Ты замечаешь ритм всплесков и проходишь безопаснее.",
+                    },
+                    "fail": {
+                        "damage": 4,
+                        "text": "Ты затягиваешь паузу и ловишь всплеск ядовитой жижи.",
+                    },
+                },
+                {
+                    "id": "retreat",
+                    "text": "🏃 Не рисковать",
+                    "success_chance": 1.0,
+                    "success": {
+                        "text": "Ты решаешь не испытывать судьбу.",
+                    },
+                    "fail": {
+                        "text": "Ты решаешь не испытывать судьбу.",
+                    },
+                },
+            ],
+        }
+    ],
 }
 
 THEME_TRAPS = {
@@ -123,9 +322,19 @@ def get_dungeon(location_slug: str):
 
 def _build_room_plan(rooms_total: int) -> list[str]:
     plan = ["combat"]
-    pool = ["combat", "combat", "treasure", "trap", "event", "elite", "rest"]
+    pool = [
+        "combat",
+        "combat",
+        "treasure",
+        "trap",
+        "event",
+        "event_choice",
+        "elite",
+        "rest",
+    ]
     treasure_count = 0
     rest_count = 0
+    choice_count = 0
 
     while len(plan) < rooms_total - 1:
         candidates = []
@@ -136,19 +345,24 @@ def _build_room_plan(rooms_total: int) -> list[str]:
                 continue
             if room_type == "rest" and rest_count >= 1:
                 continue
+            if room_type == "event_choice" and choice_count >= 1:
+                continue
             candidates.append(room_type)
 
         if len(plan) >= rooms_total - 2:
-            weighted = [r for r in candidates if r in {"combat", "elite", "trap", "event"}] or candidates
+            weighted = [r for r in candidates if r in {"combat", "elite", "trap", "event", "event_choice"}] or candidates
         else:
             weighted = candidates
 
         room_type = random.choice(weighted)
         plan.append(room_type)
+
         if room_type == "treasure":
             treasure_count += 1
         elif room_type == "rest":
             rest_count += 1
+        elif room_type == "event_choice":
+            choice_count += 1
 
     plan.append("boss")
     return plan
@@ -250,16 +464,16 @@ def generate_room(state: dict):
             "text": trap["text"],
             "damage": trap["damage"],
         }
-        
-if room_type == "event_choice":
-    event = random.choice(CHOICE_EVENTS[theme])
-    return {
-        "type": "event_choice",
-        "title": event["title"],
-        "text": event["text"],
-        "choices": event["choices"],
-    }
-    
+
+    if room_type == "event_choice":
+        event = random.choice(CHOICE_EVENTS[theme])
+        return {
+            "type": "event_choice",
+            "title": event["title"],
+            "text": event["text"],
+            "choices": event["choices"],
+        }
+
     event = random.choice(THEME_EVENTS[theme])
     return {
         "type": "event",
@@ -305,14 +519,27 @@ def render_dungeon_state(state: dict):
         "",
         f"Комната: {state['room_index']} / {state['rooms_total']}",
     ]
+
     if room:
         lines.extend(["", room["title"], room["text"]])
+
+        if room["type"] == "event_choice":
+            lines.extend(
+                [
+                    "",
+                    "Что будешь делать?",
+                ]
+            )
+
         if room["type"] in {"combat", "elite", "boss"}:
             danger = "🔥 Сильный противник" if room["type"] == "elite" else ""
             if danger:
                 lines.append(danger)
-            lines.append(f"Враг: {room['enemy']['name']} | HP: {room['enemy']['hp']} | Атака: {room['enemy']['attack']}")
+            lines.append(
+                f"Враг: {room['enemy']['name']} | HP: {room['enemy']['hp']} | Атака: {room['enemy']['attack']}"
+            )
     else:
         lines.append("")
         lines.append("Подземелье замерло. Решай, что делать дальше.")
+
     return "\n".join(lines)
