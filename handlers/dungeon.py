@@ -672,14 +672,6 @@ async def dungeon_leave_handler(message: Message):
         )
 
     try:
-        from handlers.map import show_location_screen
-
-        await show_location_screen(message, player.location_slug)
-        return
-    except Exception:
-        pass
-
-    try:
         from game.grid_exploration_service import is_dungeon_available
         from game.location_rules import is_city
         from game.map_service import render_location_card
