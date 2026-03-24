@@ -129,7 +129,7 @@ async def district_move_handler(message: Message):
 
     update_player_district(message.from_user.id, new_slug)
 
-    transition_text = _district_transition_text(old_slug, new_slug)
+    transition_text = _district_transition_text(player.location_slug, old_slug, new_slug)
     district_card = render_district_card(player.location_slug, new_slug)
 
     # В городе — показать меню действий района
