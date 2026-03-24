@@ -104,45 +104,7 @@ async def map_handler(message: Message):
 
 
 async def location_handler(message: Message):
-    player = get_player(message.from_user.id)
-    if not player:
-        from services.ui_service import show_location_screen
-        
-async def location_handler(message: Message):
-await show_location_screen(message, message.from_user.id)
-        return
-
-    # Проверяем прибытие / статус пути
-    arrival = check_arrival(message.from_user.id)
-    if arrival and arrival.get("arrived"):
-        player = get_player(message.from_user.id)
-    elif is_traveling(message.from_user.id):
-        travel_data = get_travel(message.from_user.id)
-        if travel_data:
-            await message.answer(
-                render_travel_status(travel_data),
-                reply_markup=main_menu(player.location_slug, player.current_district_slug, is_traveling=True)
-            )
-        return
-
-    set_ui_screen(message.from_user.id, "main")
-    loc_text = render_location_card(player.location_slug)
-    # Добавляем панель рождения если в нужном месте
-    from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
-    if player.location_slug in BIRTH_LOCATIONS:
-        birth_p = get_birth_panel(message.from_user.id, player.location_slug)
-        if birth_p:
-            loc_text += f"\n\n{birth_p}"
-    await message.answer(
-        loc_text,
-        reply_markup=main_menu(player.location_slug, player.current_district_slug)
-    )
-    # Inline-меню действий локации отдельным сообщением
-    from game.dungeon_service import DUNGEONS
-    from game.grid_exploration_service import is_dungeon_available
-    has_dungeon = player.location_slug in DUNGEONS and is_dungeon_available(message.from_user.id, player.location_slug)
-    inline_kb = location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
-    await message.answer("Действия:", reply_markup=inline_kb)
+    await show_location_screen(message, message.from_user.id)
 
 
 async def move_handler(message: Message):
