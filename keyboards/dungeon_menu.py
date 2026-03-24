@@ -35,19 +35,15 @@ def dungeon_menu(in_room_type: str | None = None, completed: bool = False):
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def dungeon_choice_menu(choices: list[dict], player=None):
-   from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
-
 def _get_risk_emoji(chance: float) -> str:
     percent = int(chance * 100)
 
     if percent < 50:
-        return "🔴"  # опасно
+        return "🔴"
     elif percent < 75:
-        return "🟡"  # риск
+        return "🟡"
     else:
-        return "🟢"  # безопасно
+        return "🟢"
 
 
 def dungeon_choice_menu(choices: list[dict], player=None):
@@ -62,7 +58,6 @@ def dungeon_choice_menu(choices: list[dict], player=None):
             chance = calculate_choice_chance(player, choice)
             percent = int(chance * 100)
             risk = _get_risk_emoji(chance)
-
             text = f"{risk} {text} ({percent}%)"
 
         rows.append(
@@ -74,7 +69,6 @@ def dungeon_choice_menu(choices: list[dict], player=None):
             ]
         )
 
-    # кнопка выхода
     rows.append(
         [
             InlineKeyboardButton(
