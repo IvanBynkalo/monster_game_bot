@@ -106,8 +106,8 @@ GUILD_QUEST_POOL = {
          "type": "craft_any", "target": 5,
          "reward_gold": 90, "reward_exp": 40, "reward_skill": 2},
         {"id": "alc_elixir_1", "min_level": 4, "max_level": 7,
-         "title": "Мастер эликсиров", "desc": "Создай 2 эликсира побега.",
-         "type": "craft_specific", "target": 2, "item_slug": "flee_elixir",
+         "title": "Мастер эликсиров", "desc": "Создай 2 эликсира лугов.",
+         "type": "craft_specific", "target": 2, "item_slug": "field_elixir",
          "reward_gold": 110, "reward_exp": 48, "reward_skill": 2},
         {"id": "alc_craft_3", "min_level": 8, "max_level": 99,
          "title": "Великий алхимик", "desc": "Создай 10 предметов разных видов.",
@@ -290,6 +290,31 @@ def take_quest(telegram_id: int, quest_id: str, profession: str) -> tuple[bool, 
     return True, f"✅ Поручение взято: {quest['title']}"
 
 
+def _quest_matches_extra(quest: dict, extra: dict | None) -> bool:
+    extra = extra or {}
+    qtype = quest.get("type")
+
+    if qtype == "gather_resource":
+        return extra.get("resource") == quest.get("resource")
+    if qtype == "gather_resource_type":
+        return extra.get("res_type") == quest.get("res_type")
+    if qtype == "gather_rare":
+        return bool(extra.get("rare"))
+    if qtype == "craft_type":
+        return extra.get("item_type") == quest.get("item_type")
+    if qtype == "craft_specific":
+        return extra.get("item_slug") == quest.get("item_slug")
+    if qtype == "capture_rare":
+        rarity = str(extra.get("rarity", "common"))
+        order = {"common": 1, "rare": 2, "epic": 3, "legendary": 4, "mythic": 5}
+        return order.get(rarity, 0) >= order.get("rare", 2)
+    if qtype == "capture_rarity_exact":
+        return extra.get("rarity") == quest.get("rarity")
+    if qtype == "kill_wildlife_loc":
+        return extra.get("location") == quest.get("location")
+    return True
+
+
 def progress_quest(telegram_id: int, profession: str, action_type: str,
                    amount: int = 1, extra: dict = None) -> list[dict]:
     """Обновляет прогресс квестов. Возвращает завершённые."""
@@ -302,26 +327,32 @@ def progress_quest(telegram_id: int, profession: str, action_type: str,
             WHERE telegram_id=? AND guild_key=? AND completed=0
         """, (telegram_id, profession)).fetchall()
 
+    pool = {q["id"]: q for q in GUILD_QUEST_POOL.get(profession, [])}
+    weekly = WEEKLY_GUILD_QUESTS.get(profession)
+    if weekly:
+        pool[weekly["id"]] = weekly
+
     completed = []
     for row in rows:
+        quest = pool.get(row["quest_id"], {})
         if row["action_type"] != action_type:
             continue
+        if not _quest_matches_extra(quest, extra):
+            continue
         new_progress = row["progress"] + amount
-        if new_progress >= row["count"]:
-            with get_connection() as conn:
-                conn.execute(
-                    "UPDATE player_guild_quests SET progress=?, completed=1 WHERE telegram_id=? AND quest_id=?",
-                    (new_progress, telegram_id, row["quest_id"])
-                )
-                conn.commit()
-            completed.append(dict(row))
-        else:
-            with get_connection() as conn:
-                conn.execute(
-                    "UPDATE player_guild_quests SET progress=? WHERE telegram_id=? AND quest_id=?",
-                    (new_progress, telegram_id, row["quest_id"])
-                )
-                conn.commit()
+        is_done = new_progress >= row["count"]
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE player_guild_quests SET progress=?, completed=? WHERE telegram_id=? AND quest_id=?",
+                (new_progress, int(is_done), telegram_id, row["quest_id"])
+            )
+            conn.commit()
+        if is_done:
+            payload = dict(row)
+            payload.update(quest)
+            payload["progress"] = new_progress
+            payload["completed"] = 1
+            completed.append(payload)
     return completed
 
 
