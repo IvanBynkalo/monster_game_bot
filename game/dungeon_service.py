@@ -131,31 +131,48 @@ CHOICE_EVENTS = {
             "title": "🌿 Сердце корней",
             "text": "Перед тобой живая сердцевина чащи. Она пульсирует силой и манит добычей.",
             "choices": [
-    {
-        "id": "force",
-        "text": "⚔️ Прорваться",
-        "stat": "strength",
-        "base_chance": 0.5,
-        "success": {"gold": 16},
-        "fail": {"damage": 8},
-    },
-    {
-        "id": "study",
-        "text": "🧠 Осмотреть",
-        "stat": "intellect",
-        "base_chance": 0.6,
-        "success": {"exp": 14},
-        "fail": {"damage": 4},
-    },
-    {
-        "id": "leave",
-        "text": "🏃 Уйти",
-        "stat": None,
-        "base_chance": 1.0,
-        "success": {},
-        "fail": {},
-    },
-],
+                {
+                    "id": "force",
+                    "text": "⚔️ Прорваться силой",
+                    "stat": "strength",
+                    "base_chance": 0.50,
+                    "success": {
+                        "gold": 16,
+                        "items": {"small_potion": 1},
+                        "text": "Ты разрубаешь корни и добираешься до спрятанного тайника.",
+                    },
+                    "fail": {
+                        "damage": 8,
+                        "text": "Корни оплетают тебя и жалят острыми шипами.",
+                    },
+                },
+                {
+                    "id": "study",
+                    "text": "🧠 Осмотреть осторожно",
+                    "stat": "intellect",
+                    "base_chance": 0.60,
+                    "success": {
+                        "exp": 14,
+                        "text": "Ты замечаешь слабое место и обходишь опасность без лишнего шума.",
+                    },
+                    "fail": {
+                        "damage": 4,
+                        "text": "Ты почти справляешься, но задеваешь ловчий побег.",
+                    },
+                },
+                {
+                    "id": "leave",
+                    "text": "🏃 Пройти мимо",
+                    "stat": None,
+                    "base_chance": 1.0,
+                    "success": {
+                        "text": "Ты решаешь не рисковать и идёшь дальше.",
+                    },
+                    "fail": {
+                        "text": "Ты решаешь не рисковать и идёшь дальше.",
+                    },
+                },
+            ],
         }
     ],
     "stone": [
@@ -166,7 +183,8 @@ CHOICE_EVENTS = {
                 {
                     "id": "break",
                     "text": "🔨 Вскрыть дверь",
-                    "success_chance": 0.7,
+                    "stat": "strength",
+                    "base_chance": 0.70,
                     "success": {
                         "gold": 18,
                         "items": {"energy_capsule": 1},
@@ -180,7 +198,8 @@ CHOICE_EVENTS = {
                 {
                     "id": "inspect",
                     "text": "🧠 Проверить крепления",
-                    "success_chance": 0.8,
+                    "stat": "intellect",
+                    "base_chance": 0.80,
                     "success": {
                         "exp": 14,
                         "text": "Ты находишь безопасный способ открыть проход и запоминаешь схему штрека.",
@@ -193,7 +212,8 @@ CHOICE_EVENTS = {
                 {
                     "id": "skip",
                     "text": "🚶 Идти дальше",
-                    "success_chance": 1.0,
+                    "stat": None,
+                    "base_chance": 1.0,
                     "success": {
                         "text": "Ты оставляешь сомнительный проход позади.",
                     },
@@ -212,7 +232,8 @@ CHOICE_EVENTS = {
                 {
                     "id": "grab",
                     "text": "🪝 Вытащить добычу",
-                    "success_chance": 0.68,
+                    "stat": "strength",
+                    "base_chance": 0.68,
                     "success": {
                         "gold": 15,
                         "items": {"swamp_antidote": 1},
@@ -226,7 +247,8 @@ CHOICE_EVENTS = {
                 {
                     "id": "observe",
                     "text": "👀 Выждать момент",
-                    "success_chance": 0.8,
+                    "stat": "intellect",
+                    "base_chance": 0.80,
                     "success": {
                         "exp": 13,
                         "text": "Ты замечаешь ритм всплесков и проходишь безопаснее.",
@@ -239,7 +261,8 @@ CHOICE_EVENTS = {
                 {
                     "id": "retreat",
                     "text": "🏃 Не рисковать",
-                    "success_chance": 1.0,
+                    "stat": None,
+                    "base_chance": 1.0,
                     "success": {
                         "text": "Ты решаешь не испытывать судьбу.",
                     },
@@ -510,12 +533,7 @@ def render_dungeon_state(state: dict):
         lines.extend(["", room["title"], room["text"]])
 
         if room["type"] == "event_choice":
-            lines.extend(
-                [
-                    "",
-                    "Что будешь делать?",
-                ]
-            )
+            lines.extend(["", "Что будешь делать?"])
 
         if room["type"] in {"combat", "elite", "boss"}:
             danger = "🔥 Сильный противник" if room["type"] == "elite" else ""
