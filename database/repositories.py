@@ -149,148 +149,6 @@ def _monster_row_to_dict(row) -> dict:
     d["is_listed"] = bool(d.get("is_listed", 0))
     return _migrate_monster(d)
 
-
-# ─── Сумки ────────────────────────────────────────────────────────────────────
-
-def _ensure_player_bags_seed(telegram_id: int):
-    """Backfill for старых игроков, у которых ещё нет таблицы сумок."""
-    player = get_player(telegram_id)
-    if not player:
-        return
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM player_bags WHERE telegram_id=? LIMIT 1",
-            (telegram_id,),
-        ).fetchone()
-        if row:
-            return
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO player_bags
-            (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
-            VALUES (?, ?, ?, ?, 'starter', 1, 0)
-            """,
-            (telegram_id, f'starter_{player.bag_capacity}', f'Стартовая сумка ({player.bag_capacity})', int(player.bag_capacity)),
-        )
-        conn.commit()
-
-
-def get_player_bags(telegram_id: int) -> list[dict]:
-    _ensure_player_bags_seed(telegram_id)
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM player_bags WHERE telegram_id=? ORDER BY capacity DESC, created_at ASC",
-            (telegram_id,),
-        ).fetchall()
-    return [dict(r) | {"is_equipped": bool(r["is_equipped"])} for r in rows]
-
-
-def get_equipped_bag(telegram_id: int) -> dict | None:
-    _ensure_player_bags_seed(telegram_id)
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM player_bags WHERE telegram_id=? AND is_equipped=1 LIMIT 1",
-            (telegram_id,),
-        ).fetchone()
-    if not row:
-        return None
-    d = dict(row)
-    d["is_equipped"] = bool(d.get("is_equipped", 0))
-    return d
-
-
-def grant_bag(telegram_id: int, bag_slug: str, bag_name: str, capacity: int, *, source: str = 'shop', sell_price: int = 0, auto_equip: bool = True) -> tuple[bool, dict]:
-    _ensure_player_bags_seed(telegram_id)
-    capacity = int(capacity)
-    with get_connection() as conn:
-        existing = conn.execute(
-            "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
-        ).fetchone()
-        if existing:
-            d = dict(existing)
-            d["is_equipped"] = bool(d.get("is_equipped", 0))
-            return False, d
-
-        equipped = conn.execute(
-            "SELECT capacity FROM player_bags WHERE telegram_id=? AND is_equipped=1 LIMIT 1",
-            (telegram_id,),
-        ).fetchone()
-        eq_cap = int(equipped["capacity"]) if equipped else 0
-        should_equip = bool(auto_equip and capacity > eq_cap)
-
-        if should_equip:
-            conn.execute("UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?", (telegram_id,))
-
-        conn.execute(
-            """
-            INSERT INTO player_bags
-            (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (telegram_id, bag_slug, bag_name, capacity, source, 1 if should_equip else 0, int(sell_price)),
-        )
-
-        if should_equip:
-            conn.execute("UPDATE players SET bag_capacity=? WHERE telegram_id=?", (capacity, telegram_id))
-
-        conn.commit()
-
-    return True, {
-        "telegram_id": telegram_id,
-        "bag_slug": bag_slug,
-        "bag_name": bag_name,
-        "capacity": capacity,
-        "source": source,
-        "is_equipped": should_equip,
-        "sell_price": int(sell_price),
-    }
-
-
-def equip_bag(telegram_id: int, bag_slug: str) -> bool:
-    _ensure_player_bags_seed(telegram_id)
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT capacity FROM player_bags WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
-        ).fetchone()
-        if not row:
-            return False
-        capacity = int(row["capacity"])
-        current_total = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) AS total FROM player_resources WHERE telegram_id=?",
-            (telegram_id,),
-        ).fetchone()["total"]
-        if current_total > capacity:
-            return False
-        conn.execute("UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?", (telegram_id,))
-        conn.execute(
-            "UPDATE player_bags SET is_equipped=1 WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
-        )
-        conn.execute("UPDATE players SET bag_capacity=? WHERE telegram_id=?", (capacity, telegram_id))
-        conn.commit()
-    return True
-
-
-def sell_bag(telegram_id: int, bag_slug: str) -> int | None:
-    _ensure_player_bags_seed(telegram_id)
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT bag_slug, sell_price, is_equipped FROM player_bags WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
-        ).fetchone()
-        if not row:
-            return None
-        if int(row["is_equipped"]):
-            return None
-        price = int(row["sell_price"] or 0)
-        conn.execute("DELETE FROM player_bags WHERE telegram_id=? AND bag_slug=?", (telegram_id, bag_slug))
-        if price:
-            conn.execute("UPDATE players SET gold=gold+? WHERE telegram_id=?", (price, telegram_id))
-        conn.commit()
-    return price
-
 # ─── Игрок ────────────────────────────────────────────────────────────────────
 
 def get_player(telegram_id: int) -> Player | None:
@@ -305,14 +163,6 @@ def create_player(telegram_id: int, name: str) -> Player:
             (telegram_id, name)
         )
         # Default items
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO player_bags
-            (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
-            VALUES (?, 'starter_satchel', 'Стартовая сумка', 12, 'starter', 1, 0)
-            """,
-            (telegram_id,),
-        )
         for slug, amt in [("small_potion",2),("energy_capsule",1),("basic_trap",3)]:
             conn.execute("INSERT OR IGNORE INTO player_items (telegram_id,item_slug,amount) VALUES (?,?,?)", (telegram_id,slug,amt))
         # Default emotions
@@ -359,7 +209,6 @@ def reset_player_state(telegram_id: int, name: str = "Игрок") -> Player:
         conn.execute("DELETE FROM player_monsters WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_emotions WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_items WHERE telegram_id=?", (telegram_id,))
-        conn.execute("DELETE FROM player_bags WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_resources WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_quests WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_story WHERE telegram_id=?", (telegram_id,))
@@ -384,11 +233,6 @@ def reset_player_state(telegram_id: int, name: str = "Игрок") -> Player:
             is_defeated=0,injury_turns=0,daily_streak=0,last_login_date=\'\',
             last_energy_time=NULL,energy_notified=0,cartographer_level=1,cartographer_exp=0
             WHERE telegram_id=?""", (name, telegram_id))
-        conn.execute("""
-            INSERT OR IGNORE INTO player_bags
-            (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
-            VALUES (?, 'starter_satchel', 'Стартовая сумка', 12, 'starter', 1, 0)
-            """, (telegram_id,))
         # Сбрасываем исследование локаций (картограф)
         conn.execute("DELETE FROM player_exploration WHERE telegram_id=?", (telegram_id,))
         conn.execute("DELETE FROM player_grid_exploration WHERE telegram_id=?", (telegram_id,))
@@ -415,12 +259,31 @@ def _update_player_field(telegram_id: int, **fields):
         conn.commit()
 
 def update_player_location(telegram_id: int, location_slug: str) -> Player | None:
-    defaults = {
-        "dark_forest":"mushroom_path","shadow_swamp":"black_water",
-        "volcano_wrath":"ash_slope","silver_city":"market_square",
-    }
-    district = defaults.get(location_slug, "")
-    _update_player_field(telegram_id, location_slug=location_slug, current_district_slug=district)
+    """Обновляет текущую локацию и выставляет корректный район по умолчанию.
+
+    Для любой локации с районами выбирается валидный стартовый район.
+    Это устраняет баг, когда после перехода в полевую локацию у игрока
+    оставался пустой или район от предыдущей зоны, из-за чего неверно
+    работали сбор, навигация и отображение карточки локации.
+    """
+    district = ""
+    try:
+        from game.district_service import get_default_district_slug
+        district = get_default_district_slug(location_slug) or ""
+    except Exception:
+        defaults = {
+            "dark_forest": "mushroom_path",
+            "shadow_swamp": "black_water",
+            "volcano_wrath": "ash_slope",
+            "silver_city": "market_square",
+        }
+        district = defaults.get(location_slug, "")
+
+    _update_player_field(
+        telegram_id,
+        location_slug=location_slug,
+        current_district_slug=district,
+    )
     return get_player(telegram_id)
 
 def update_player_district(telegram_id: int, district_slug: str) -> Player | None:
