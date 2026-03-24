@@ -40,10 +40,9 @@ def _get_risk_emoji(chance: float) -> str:
 
     if percent < 50:
         return "🔴"
-    elif percent < 75:
+    if percent < 75:
         return "🟡"
-    else:
-        return "🟢"
+    return "🟢"
 
 
 def dungeon_choice_menu(choices: list[dict], player=None):
