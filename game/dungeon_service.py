@@ -7,19 +7,19 @@ DUNGEONS = {
         "name": "🕳 Корни забытой чащи",
         "rooms": 5,
         "theme": "forest",
-        "boss": {"name": "🌲 Хозяин корней", "hp": 72, "attack": 13, "reward_gold": 85, "reward_exp": 34},
+        "boss": {"name": "🌲 Хозяин корней", "hp": 172, "attack": 13, "reward_gold": 85, "reward_exp": 34},
     },
     "stone_hills": {
         "name": "🕳 Глубинная жила",
         "rooms": 5,
         "theme": "stone",
-        "boss": {"name": "⛰ Сердце монолита", "hp": 78, "attack": 14, "reward_gold": 92, "reward_exp": 36},
+        "boss": {"name": "⛰ Сердце монолита", "hp": 178, "attack": 14, "reward_gold": 92, "reward_exp": 36},
     },
     "shadow_marsh": {
         "name": "🕳 Омут безмолвия",
         "rooms": 5,
         "theme": "marsh",
-        "boss": {"name": "🕸 Тёмный омутник", "hp": 76, "attack": 14, "reward_gold": 90, "reward_exp": 36},
+        "boss": {"name": "🕸 Тёмный омутник", "hp": 176, "attack": 14, "reward_gold": 90, "reward_exp": 36},
     },
 }
 
