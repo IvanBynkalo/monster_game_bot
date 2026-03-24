@@ -137,6 +137,7 @@ def normalize_text(value: str | None) -> str:
     text = value.strip().lower()
     text = re.sub(r"[\u200b-\u200d\ufe0f]", "", text)
     text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s*\((?:\d+\s*)?[✅❗]\)\s*$", "", text)
     return text
 
 
