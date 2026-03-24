@@ -928,7 +928,7 @@ async def city_handler(message: Message):
         "market_square": "city_square.png",
         "craft_quarter": "alchemy_lab.png",
         "guild_quarter": "guild_hall.png",
-        "main_gate": "city_gate.png",
+        "main_gate": "city_square.png",
     }
 
     await _answer_with_city_image(
@@ -961,7 +961,7 @@ async def city_board_handler(message: Message):
     set_ui_screen(message.from_user.id, "board")
     await _answer_with_city_image(
         message,
-        "city_board.png",
+        "bag_market.png",
         text,
         board_menu(),
     )
@@ -1117,8 +1117,63 @@ async def guild_alchemists_handler(message: Message):
         "⚗ Гильдия алхимиков",
         "Здесь раскрывают секреты настоев, эссенций и устойчивых смесей.",
         "alchemist",
-        "alchemy_lab.png",
+        "guild_hall.png",
     )
+
+
+def _guild_meta(profession: str) -> tuple[str, str]:
+    mapping = {
+        "hunter": (
+            "🎯 Гильдия ловцов",
+            "Здесь учат чувствовать момент для поимки и обращаться с ловушками.",
+        ),
+        "gatherer": (
+            "🌿 Гильдия собирателей",
+            "Здесь учат находить полезные травы и безопасно ходить в экспедиции.",
+        ),
+        "geologist": (
+            "⛏ Гильдия геологов",
+            "Здесь учат видеть жилы руды, камень и редкие кристаллы.",
+        ),
+        "alchemist": (
+            "⚗ Гильдия алхимиков",
+            "Здесь раскрывают секреты настоев, зелий и полевых эликсиров.",
+        ),
+    }
+    return mapping.get(profession, ("Гильдия", ""))
+
+
+
+def build_guild_inline_markup(telegram_id: int, profession: str):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from game.guild_quests import get_active_quests, get_available_quests, WEEKLY_GUILD_QUESTS
+
+    rows = []
+
+    available = get_available_quests(telegram_id, profession)
+    for q in available:
+        rows.append([InlineKeyboardButton(
+            text=f"📌 Взять: {q['title']}",
+            callback_data=f"guild:take:{profession}:{q['id']}"
+        )])
+
+    active = get_active_quests(telegram_id, profession)
+    for q in active:
+        if q.get("completed"):
+            rows.append([InlineKeyboardButton(
+                text=f"✅ Сдать: {q['title']}",
+                callback_data=f"guild:claim:{profession}:{q['id']}"
+            )])
+
+    weekly = WEEKLY_GUILD_QUESTS.get(profession, {})
+    active_ids = {q["id"] for q in active}
+    if weekly and weekly["id"] not in active_ids:
+        rows.append([InlineKeyboardButton(
+            text=f"🌟 Взять недельное: {weekly['title']}",
+            callback_data=f"guild:take:{profession}:{weekly['id']}"
+        )])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
 
 async def _guild_handler(
@@ -1136,49 +1191,19 @@ async def _guild_handler(
     set_ui_screen(message.from_user.id, "district")
     uid = message.from_user.id
 
-    text = render_guild_panel(uid, profession, title, description)
-
-    # Inline кнопки: взять поручение / сдать выполненное
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from game.guild_quests import get_active_quests, get_available_quests, WEEKLY_GUILD_QUESTS
-    rows = []
-
-    # Кнопки "Взять" для доступных
-    available = get_available_quests(uid, profession)
-    for q in available:
-        rows.append([InlineKeyboardButton(
-            text=f"📌 Взять: {q['title']}",
-            callback_data=f"guild:take:{profession}:{q['id']}"
-        )])
-
-    # Кнопки "Сдать" для выполненных
-    active = get_active_quests(uid, profession)
-    for q in active:
-        if q.get("completed"):
-            rows.append([InlineKeyboardButton(
-                text=f"✅ Сдать: {q['title']}",
-                callback_data=f"guild:claim:{profession}:{q['id']}"
-            )])
-
-    # Еженедельное
-    weekly = WEEKLY_GUILD_QUESTS.get(profession, {})
-    active_ids = {q["id"] for q in active}
-    if weekly and weekly["id"] not in active_ids:
-        rows.append([InlineKeyboardButton(
-            text=f"🌟 Взять недельное: {weekly['title']}",
-            callback_data=f"guild:take:{profession}:{weekly['id']}"
-        )])
-
-    kb = InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+    panel_text = render_guild_panel(uid, profession, title, description)
+    kb = build_guild_inline_markup(uid, profession)
 
     await _answer_with_city_image(
         message,
         image_name,
-        text,
+        panel_text,
         district_actions_menu("guild_quarter", message.from_user.id),
     )
-    if kb:
-        await message.answer("Действия:", reply_markup=kb)
+    await message.answer(
+        "📌 Поручения гильдии\nНажми кнопку ниже, чтобы взять или сдать поручение.",
+        reply_markup=kb,
+    )
 
 
 async def city_guard_handler(message: Message):
@@ -1196,7 +1221,7 @@ async def city_guard_handler(message: Message):
     set_ui_screen(message.from_user.id, "district")
     await _answer_with_city_image(
         message,
-        "city_gate.png",
+        "city_square.png",
         text,
         district_actions_menu("main_gate", message.from_user.id),
     )
@@ -1271,7 +1296,7 @@ async def city_bags_handler(message: Message):
     set_ui_screen(message.from_user.id, "district")
     await _answer_with_city_image(
         message,
-        "mirna_shop.png",
+        "bag_market.png",
         render_mirna_text(message.from_user.id),
         mirna_main_inline(message.from_user.id),
     )
@@ -1286,7 +1311,7 @@ async def city_monsters_handler(message: Message):
     set_ui_screen(message.from_user.id, "district")
     await _answer_with_city_image(
         message,
-        "varg_shop.png",
+        "bag_market.png",
         render_varg_text(message.from_user.id),
         varg_main_inline(message.from_user.id),
     )
@@ -1299,11 +1324,9 @@ async def city_buyer_handler(message: Message):
         return
 
     set_ui_screen(message.from_user.id, "district")
-    await _answer_with_city_image(
-        message,
-        "bort_shop.png",
+    await message.answer(
         render_bort_text(player.location_slug, message.from_user.id),
-        bort_main_inline(message.from_user.id),
+        reply_markup=bort_main_inline(message.from_user.id),
     )
 
 
