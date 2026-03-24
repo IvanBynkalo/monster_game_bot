@@ -51,6 +51,52 @@ def _add_summary_items(state: dict, items: dict):
         summary_items[slug] = summary_items.get(slug, 0) + amount
 
 
+def _read_value(obj, key: str, default=0):
+    if obj is None:
+        return default
+
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+
+    return getattr(obj, key, default)
+
+
+def _get_monster_choice_bonus(active_monster, stat: str | None) -> float:
+    """
+    Бонус от активного монстра к выбору в подземелье.
+
+    Логика мягкая:
+    - если нужных полей нет, просто возвращается 0 или fallback на level
+    - бонус ограничен, чтобы не ломать баланс
+    """
+    if not active_monster or not stat:
+        return 0.0
+
+    level = _read_value(active_monster, "level", 1)
+    attack = _read_value(active_monster, "attack", 0)
+    defense = _read_value(active_monster, "defense", 0)
+    agility = _read_value(active_monster, "agility", 0)
+    intellect = _read_value(active_monster, "intellect", 0)
+
+    if stat == "strength":
+        base_value = max(attack, level)
+        return min(0.18, base_value * 0.015)
+
+    if stat == "intellect":
+        base_value = max(intellect, level)
+        return min(0.18, base_value * 0.015)
+
+    if stat == "agility":
+        base_value = max(agility, level)
+        return min(0.18, base_value * 0.015)
+
+    if stat == "defense":
+        base_value = max(defense, level)
+        return min(0.18, base_value * 0.015)
+
+    return min(0.10, level * 0.01)
+
+
 def calculate_choice_chance(player, choice: dict) -> float:
     base = choice.get("base_chance", choice.get("success_chance", 0.5))
     stat = choice.get("stat")
@@ -58,9 +104,13 @@ def calculate_choice_chance(player, choice: dict) -> float:
     if not stat:
         return min(0.95, max(0.1, base))
 
-    value = getattr(player, stat, 5)
-    bonus = value * 0.03
-    chance = base + bonus
+    player_stat = getattr(player, stat, 5)
+    player_bonus = player_stat * 0.03
+
+    active_monster = get_active_monster(player.telegram_id)
+    monster_bonus = _get_monster_choice_bonus(active_monster, stat)
+
+    chance = base + player_bonus + monster_bonus
     return min(0.95, max(0.1, chance))
 
 
@@ -73,14 +123,20 @@ async def dungeon_handler(message: Message):
     if player.is_defeated:
         await message.answer(
             "☠️ Герой повержен. Сначала вылечи его в городе.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
     if getattr(player, "injury_turns", 0) > 0:
         await message.answer(
             render_injury_warning(player),
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -88,7 +144,10 @@ async def dungeon_handler(message: Message):
     if not dungeon:
         await message.answer(
             "В этой локации подземелье пока недоступно.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -98,14 +157,20 @@ async def dungeon_handler(message: Message):
         await message.answer(
             f"🔒 Вход в подземелье ещё не найден.\n"
             f"Исследуй локацию до {THRESHOLDS['dungeon_unlocks']}% — тогда найдёшь вход.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
     if not spend_player_energy(message.from_user.id, 2):
         await message.answer(
             "⚡ Для входа в подземелье нужно 2 энергии.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -136,7 +201,10 @@ async def dungeon_next_room_handler(message: Message):
     if not state:
         await message.answer(
             "Сейчас ты не в подземелье.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -148,7 +216,12 @@ async def dungeon_next_room_handler(message: Message):
         return
 
     current_room = state.get("current_room")
-    if current_room and current_room.get("type") in {"combat", "elite", "boss", "event_choice"}:
+    if current_room and current_room.get("type") in {
+        "combat",
+        "elite",
+        "boss",
+        "event_choice",
+    }:
         if current_room["type"] == "event_choice":
             await message.answer(
                 "Сначала сделай выбор в текущем событии.",
@@ -242,7 +315,10 @@ async def dungeon_next_room_handler(message: Message):
         active = get_active_monster(message.from_user.id)
         hp_line = ""
         if active:
-            hp_line = f"\n🩸 HP активного монстра: {active['current_hp']}/{active['max_hp']}"
+            hp_line = (
+                f"\n🩸 HP активного монстра: "
+                f"{active['current_hp']}/{active['max_hp']}"
+            )
 
         _set_dungeon_state(player, state)
 
@@ -276,7 +352,10 @@ async def dungeon_fight_handler(message: Message):
     if not state:
         await message.answer(
             "Сейчас ты не в подземелье.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -292,14 +371,20 @@ async def dungeon_fight_handler(message: Message):
     if not active:
         await message.answer(
             "У тебя нет активного монстра.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
     if active["current_hp"] <= 0:
         await message.answer(
             "☠️ Активный монстр повержен. Сначала вылечи его.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -366,7 +451,10 @@ async def dungeon_fight_handler(message: Message):
             f"Герой тоже повержен и едва выбирается наружу.\n"
             f"Потеряно золота: {gold_loss}\n"
             f"Ты возвращаешься в Сереброград.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -462,7 +550,10 @@ async def dungeon_choice_handler(callback: CallbackQuery):
                 f"☠️ {fallen_name} пал после рискованного выбора.\n"
                 f"Герой едва выбирается из подземелья.\n"
                 f"Потеряно золота: {gold_loss}",
-                reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+                reply_markup=main_menu(
+                    player.location_slug,
+                    getattr(player, "current_district_slug", None),
+                ),
             )
             await callback.answer()
             return
@@ -487,7 +578,10 @@ async def dungeon_leave_handler(message: Message):
     if not state:
         await message.answer(
             "Ты сейчас не в подземелье.",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
         return
 
@@ -500,7 +594,10 @@ async def dungeon_leave_handler(message: Message):
 
     await message.answer(
         "🏃 Ты покидаешь подземелье и возвращаешься наружу." + summary_text,
-        reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+        reply_markup=main_menu(
+            player.location_slug,
+            getattr(player, "current_district_slug", None),
+        ),
     )
 
     try:
@@ -524,7 +621,10 @@ async def dungeon_leave_handler(message: Message):
             message,
             player.location_slug,
             loc_text,
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
 
         if not is_city(player.location_slug):
@@ -547,5 +647,8 @@ async def dungeon_leave_handler(message: Message):
     except Exception:
         await message.answer(
             f"📍 Ты сейчас находишься в локации: {player.location_slug}",
-            reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
         )
