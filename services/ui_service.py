@@ -7,7 +7,7 @@ from game.grid_exploration_service import is_dungeon_available
 from keyboards.main_menu import main_menu
 from keyboards.location_menu import location_actions_inline
 from utils.images import send_location_image
-from game.dungeon_data import DUNGEONS
+from game.dungeon_service import DUNGEONS
 
 
 async def show_location_screen(message: Message, user_id: int):
