@@ -150,7 +150,7 @@ async def dungeon_handler(message: Message):
     cooldown = get_dungeon_cooldown_status(message.from_user.id, player.location_slug)
     if not cooldown["available"]:
         remaining_text = format_duration_ru(cooldown["remaining_seconds"])
-        reopen_at = cooldown["cooldown_until"]
+        reopen_at = cooldown.get("cooldown_until", "скоро")
 
         await message.answer(
             "🕳 Это подземелье уже зачищено.\n"
@@ -639,7 +639,7 @@ async def dungeon_leave_handler(message: Message):
         from keyboards.location_menu import location_actions_inline
         from utils.images import send_location_image
 
-        loc_text = render_location_card(player.location_slug)
+        loc_text = render_location_card(player.location_slug, player.telegram_id)
 
         await send_location_image(
             message,
