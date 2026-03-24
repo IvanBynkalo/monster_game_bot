@@ -7,11 +7,12 @@ DUNGEONS = {
         "name": "🕳 Корни забытой чащи",
         "rooms": 5,
         "theme": "forest",
+        "respawn_hours": 72,
         "boss": {
             "name": "🌲 Хозяин корней",
-            "hp": 72,
+            "hp": 172,
             "attack": 13,
-            "reward_gold": 85,
+            "reward_gold": 185,
             "reward_exp": 34,
         },
     },
@@ -19,11 +20,12 @@ DUNGEONS = {
         "name": "🕳 Глубинная жила",
         "rooms": 5,
         "theme": "stone",
+        "respawn_hours": 72,
         "boss": {
             "name": "⛰ Сердце монолита",
-            "hp": 78,
+            "hp": 178,
             "attack": 14,
-            "reward_gold": 92,
+            "reward_gold": 192,
             "reward_exp": 36,
         },
     },
@@ -31,11 +33,12 @@ DUNGEONS = {
         "name": "🕳 Омут безмолвия",
         "rooms": 5,
         "theme": "marsh",
+        "respawn_hours": 72,
         "boss": {
             "name": "🕸 Тёмный омутник",
-            "hp": 76,
+            "hp": 176,
             "attack": 14,
-            "reward_gold": 90,
+            "reward_gold": 190,
             "reward_exp": 36,
         },
     },
@@ -44,19 +47,19 @@ DUNGEONS = {
 THEME_TREASURES = {
     "forest": [
         {
-            "gold": 14,
+            "gold": 44,
             "items": {"small_potion": 1},
             "text": "Ты находишь тайник под корнями и старый охотничий набор.",
         },
         {
-            "gold": 18,
+            "gold": 58,
             "items": {"small_potion": 1, "basic_trap": 1},
             "text": "За треснувшей плитой скрыт схрон лесных следопытов.",
         },
     ],
     "stone": [
         {
-            "gold": 16,
+            "gold": 36,
             "items": {"energy_capsule": 1},
             "text": "В нише скалы лежит запечатанный контейнер шахтёров.",
         },
