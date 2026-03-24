@@ -87,6 +87,19 @@ def init_db() -> None:
             PRIMARY KEY (telegram_id, item_slug)
         );
 
+
+        CREATE TABLE IF NOT EXISTS player_bags (
+            telegram_id     INTEGER NOT NULL,
+            bag_slug        TEXT NOT NULL,
+            bag_name        TEXT NOT NULL,
+            capacity        INTEGER NOT NULL,
+            source          TEXT NOT NULL DEFAULT 'shop',
+            is_equipped     INTEGER NOT NULL DEFAULT 0,
+            sell_price      INTEGER NOT NULL DEFAULT 0,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (telegram_id, bag_slug)
+        );
+
         CREATE TABLE IF NOT EXISTS player_resources (
             telegram_id     INTEGER NOT NULL,
             slug            TEXT NOT NULL,
