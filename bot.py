@@ -117,6 +117,8 @@ from handlers.city import (
     my_board_orders_handler,
     back_to_city_from_board_handler,
     market_inline_callback,
+    build_guild_inline_markup,
+    _guild_meta,
 )
 # old admin handlers removed
 
@@ -242,55 +244,37 @@ async def cooldown_cmd(message):
 
 
 async def guild_quest_callback(callback):
-    """Обрабатывает взятие/сдачу гильдейских поручений."""
-    from game.guild_quests import take_quest, claim_quest
+    """Обрабатывает взятие/сдачу гильдейских поручений и обновляет ту же inline-панель."""
+    from game.guild_quests import take_quest, claim_quest, render_guild_panel
+
     uid = callback.from_user.id
-    data = callback.data
-    await callback.answer()
+    data = callback.data or ""
     parts = data.split(":")
+    if len(parts) < 4:
+        await callback.answer()
+        return
+
+    profession = parts[2]
+    quest_id = parts[3]
 
     if data.startswith("guild:take:"):
-        profession = parts[2]
-        quest_id = parts[3]
         ok, msg = take_quest(uid, quest_id, profession)
-        await callback.answer(msg, show_alert=True)
-        if ok:
-            # Обновляем панель гильдии
-            try:
-                from game.guild_quests import render_guild_panel
-                PROF_TITLES = {
-                    "hunter":    ("🎯 Гильдия ловцов",     "Здесь учат лучше чувствовать момент для поимки."),
-                    "gatherer":  ("🌿 Гильдия собирателей","Здесь учат находить полезные травы."),
-                    "geologist": ("⛏ Гильдия геологов",   "Здесь обучают находить жилы и руду."),
-                    "alchemist": ("⚗ Гильдия алхимиков",  "Здесь раскрывают секреты настоев."),
-                }
-                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                from game.guild_quests import get_active_quests, get_available_quests, WEEKLY_GUILD_QUESTS
-                title, desc = PROF_TITLES.get(profession, ("Гильдия", ""))
-                panel = render_guild_panel(uid, profession, title, desc)
-                rows = []
-                available = get_available_quests(uid, profession)
-                for q in available:
-                    rows.append([InlineKeyboardButton(text=f"📌 Взять: {q['title']}", callback_data=f"guild:take:{profession}:{q['id']}")])
-                active = get_active_quests(uid, profession)
-                for q in active:
-                    if q.get("completed"):
-                        rows.append([InlineKeyboardButton(text=f"✅ Сдать: {q['title']}", callback_data=f"guild:claim:{profession}:{q['id']}")])
-                weekly = WEEKLY_GUILD_QUESTS.get(profession, {})
-                active_ids = {q["id"] for q in active}
-                if weekly and weekly["id"] not in active_ids:
-                    rows.append([InlineKeyboardButton(text=f"🌟 Взять недельное: {weekly['title']}", callback_data=f"guild:take:{profession}:{weekly['id']}")])
-                await callback.message.answer(panel, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
-            except Exception:
-                pass
-
     elif data.startswith("guild:claim:"):
-        profession = parts[2]
-        quest_id = parts[3]
         ok, msg = claim_quest(uid, quest_id, profession)
-        await callback.answer(msg, show_alert=True)
-        if ok:
-            await callback.message.answer(msg)
+    else:
+        await callback.answer()
+        return
+
+    await callback.answer(msg, show_alert=not ok)
+
+    title, desc = _guild_meta(profession)
+    panel_text = render_guild_panel(uid, profession, title, desc)
+    kb = build_guild_inline_markup(uid, profession)
+
+    try:
+        await callback.message.edit_text(panel_text, reply_markup=kb)
+    except Exception:
+        await callback.message.answer(panel_text, reply_markup=kb)
 
 
 
