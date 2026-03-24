@@ -26,6 +26,7 @@ from game.craft_service import (
 from game.location_rules import is_city
 from keyboards.craft_menu import craft_menu
 from keyboards.main_menu import main_menu
+from game.guild_quests import progress_quest as _gq_progress
 
 
 async def craft_handler(message: Message):

@@ -20,6 +20,7 @@ from utils.cooldown import cooldown_guard
 from utils.analytics import track_battle_win, track_capture
 from game.daily_service import progress_daily_tasks
 from game.season_pass_service import progress_season
+from game.guild_quests import progress_quest as _gq_progress
 
 def _district_mood_from_player(player):
     district = get_district(player.location_slug, player.current_district_slug)
@@ -131,6 +132,30 @@ async def _handle_finished_result(message: Message, player, result: dict, emotio
     elif emotion_key == "capture_success":
         extras = _render_completed_quests(message.from_user.id, progress_quests(message.from_user.id, "capture"))
         guild_done = progress_guild_quests(message.from_user.id, "capture", 1)
+        try:
+            guild_done += _gq_progress(
+                message.from_user.id,
+                "hunter",
+                "capture",
+                1,
+                {"rarity": encounter.get("rarity"), "location": player.location_slug},
+            )
+            guild_done += _gq_progress(
+                message.from_user.id,
+                "hunter",
+                "capture_rare",
+                1,
+                {"rarity": encounter.get("rarity"), "location": player.location_slug},
+            )
+            guild_done += _gq_progress(
+                message.from_user.id,
+                "hunter",
+                "capture_rarity_exact",
+                1,
+                {"rarity": encounter.get("rarity"), "location": player.location_slug},
+            )
+        except Exception:
+            pass
         if guild_done:
             extras.extend([f"📜 Квест выполнен: {q['title']}\n💰 Награда: +{q['reward_gold']} золота\n✨ Награда: +{q['reward_exp']} опыта" for q in guild_done])
             for q in guild_done:
@@ -392,6 +417,30 @@ async def capture_handler(message: Message):
         )
 
         guild_done = progress_guild_quests(message.from_user.id, "capture", 1)
+        try:
+            guild_done += _gq_progress(
+                message.from_user.id,
+                "hunter",
+                "capture",
+                1,
+                {"rarity": encounter.get("rarity"), "location": player.location_slug},
+            )
+            guild_done += _gq_progress(
+                message.from_user.id,
+                "hunter",
+                "capture_rare",
+                1,
+                {"rarity": encounter.get("rarity"), "location": player.location_slug},
+            )
+            guild_done += _gq_progress(
+                message.from_user.id,
+                "hunter",
+                "capture_rarity_exact",
+                1,
+                {"rarity": encounter.get("rarity"), "location": player.location_slug},
+            )
+        except Exception:
+            pass
         if guild_done:
             extras.extend(
                 [

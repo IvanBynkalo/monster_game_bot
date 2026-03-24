@@ -10,6 +10,7 @@ from game.dungeon_service import DUNGEONS
 from utils.cooldown import cooldown_guard
 from game.daily_service import progress_daily_tasks as _pdt_gather
 from game.season_pass_service import progress_season as _ps_gather
+from game.guild_quests import progress_quest as _gq_progress
 
 
 PROFESSION_TITLES = {
@@ -19,6 +20,17 @@ PROFESSION_TITLES = {
     "alchemist": "⚗ Алхимик",
     "merchant": "💼 Торговец",
 }
+
+STONE_RESOURCE_SLUGS = {"raw_ore", "granite_shard", "ember_stone"}
+CRYSTAL_RESOURCE_SLUGS = {"dew_crystal", "sky_crystal", "magma_core"}
+
+
+def _detect_resource_type(slug: str) -> str | None:
+    if slug in STONE_RESOURCE_SLUGS:
+        return "stone"
+    if slug in CRYSTAL_RESOURCE_SLUGS:
+        return "crystal"
+    return None
 
 
 def _render_profession_gain(gain: dict | None) -> str:
@@ -71,19 +83,55 @@ async def gather_handler(message: Message):
         return
 
     extra = ""
-    guild_completed = progress_guild_quests(message.from_user.id, "gather", result.get("amount", 1)) if not result.get("rare") else []
+    amount = result.get("amount", 1)
+    resource_slug = result.get("slug")
+    resource_type = _detect_resource_type(resource_slug)
+
+    guild_completed = progress_guild_quests(message.from_user.id, "gather", amount) if not result.get("rare") else []
     if result.get("kind") == "geologist":
-        guild_completed += progress_guild_quests(message.from_user.id, "geology", result.get("amount", 1))
-    # Новая система гильдейских квестов
+        guild_completed += progress_guild_quests(message.from_user.id, "geology", amount)
+
     try:
-        _gq_done = _gq_progress(message.from_user.id, "gatherer", "gather", result.get("amount", 1))
-        for _cq in _gq_done:
-            guild_completed.append(_cq)
+        guild_completed += _gq_progress(
+            message.from_user.id,
+            "gatherer",
+            "gather",
+            amount,
+            {"resource": resource_slug, "rare": result.get("rare", False), "res_type": resource_type},
+        )
+        guild_completed += _gq_progress(
+            message.from_user.id,
+            "gatherer",
+            "gather_resource",
+            amount,
+            {"resource": resource_slug},
+        )
+        if result.get("rare"):
+            guild_completed += _gq_progress(
+                message.from_user.id,
+                "gatherer",
+                "gather_rare",
+                amount,
+                {"resource": resource_slug, "rare": True},
+            )
+
         if result.get("kind") == "geologist":
-            _gq_done2 = _gq_progress(message.from_user.id, "geologist", "gather_resource_type",
-                                      result.get("amount", 1), {"res_type": "stone"})
-            for _cq in _gq_done2:
-                guild_completed.append(_cq)
+            if resource_type:
+                guild_completed += _gq_progress(
+                    message.from_user.id,
+                    "geologist",
+                    "gather_resource_type",
+                    amount,
+                    {"res_type": resource_type, "resource": resource_slug, "rare": result.get("rare", False)},
+                )
+            if result.get("rare"):
+                guild_completed += _gq_progress(
+                    message.from_user.id,
+                    "geologist",
+                    "gather_rare",
+                    amount,
+                    {"resource": resource_slug, "rare": True, "res_type": resource_type},
+                )
     except Exception:
         pass
 
