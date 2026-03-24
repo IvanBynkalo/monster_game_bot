@@ -53,6 +53,20 @@ THEME_EVENTS = {
     ],
 }
 
+CHOICE_EVENTS = {
+    "forest": [
+        {
+            "title": "🌿 Шепчущие корни",
+            "text": "Ты видишь корни, наполненные энергией.",
+            "choices": [
+                {"id": "attack", "text": "⚔️ Прорваться", "success": {"gold": 12}, "fail": {"damage": 8}},
+                {"id": "careful", "text": "🧠 Осмотреть", "success": {"exp": 12}, "fail": {"damage": 4}},
+                {"id": "leave", "text": "🏃 Уйти", "success": {}, "fail": {}},
+            ],
+        }
+    ]
+}
+
 THEME_TRAPS = {
     "forest": [
         {"title": "🪤 Колючий проход", "text": "Из стен выстреливают шипастые лозы.", "damage": 8},
@@ -236,7 +250,16 @@ def generate_room(state: dict):
             "text": trap["text"],
             "damage": trap["damage"],
         }
-
+        
+if room_type == "event_choice":
+    event = random.choice(CHOICE_EVENTS[theme])
+    return {
+        "type": "event_choice",
+        "title": event["title"],
+        "text": event["text"],
+        "choices": event["choices"],
+    }
+    
     event = random.choice(THEME_EVENTS[theme])
     return {
         "type": "event",
