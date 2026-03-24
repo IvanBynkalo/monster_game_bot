@@ -484,7 +484,7 @@ dp.callback_query.register(
     bestiary_callback,
     lambda c: c.data and c.data.startswith("bestiary:"),
 )
-
+dp.callback_query.register(dungeon_choice_handler, F.data.startswith("dungeon:choice"))
 
 
 
