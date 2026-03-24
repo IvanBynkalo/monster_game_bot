@@ -106,7 +106,9 @@ async def map_handler(message: Message):
 async def location_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
-        await message.answer("Сначала напиши /start")
+        from services.ui_service import show_location_screen
+
+await show_location_screen(message, message.from_user.id)
         return
 
     # Проверяем прибытие / статус пути
@@ -145,7 +147,7 @@ async def location_handler(message: Message):
 async def move_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
-        await message.answer("Сначала напиши /start")
+        await show_location_screen(message, message.from_user.id)
         return
 
     # Проверяем не в пути ли уже герой
