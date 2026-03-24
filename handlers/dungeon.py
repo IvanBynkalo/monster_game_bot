@@ -9,10 +9,13 @@ from database.repositories import (
     add_player_gold,
     damage_active_monster,
     defeat_player_state,
+    format_duration_ru,
     get_active_monster,
+    get_dungeon_cooldown_status,
     get_player,
     get_ui_state,
     heal_active_monster,
+    mark_dungeon_cleared,
     restore_player_energy,
     set_ui_screen,
     spend_player_energy,
@@ -62,13 +65,6 @@ def _read_value(obj, key: str, default=0):
 
 
 def _get_monster_choice_bonus(active_monster, stat: str | None) -> float:
-    """
-    Бонус от активного монстра к выбору в подземелье.
-
-    Логика мягкая:
-    - если нужных полей нет, просто возвращается 0 или fallback на level
-    - бонус ограничен, чтобы не ломать баланс
-    """
     if not active_monster or not stat:
         return 0.0
 
@@ -144,6 +140,22 @@ async def dungeon_handler(message: Message):
     if not dungeon:
         await message.answer(
             "В этой локации подземелье пока недоступно.",
+            reply_markup=main_menu(
+                player.location_slug,
+                getattr(player, "current_district_slug", None),
+            ),
+        )
+        return
+
+    cooldown = get_dungeon_cooldown_status(message.from_user.id, player.location_slug)
+    if not cooldown["available"]:
+        remaining_text = format_duration_ru(cooldown["remaining_seconds"])
+        reopen_at = cooldown["cooldown_until"]
+
+        await message.answer(
+            "🕳 Это подземелье уже зачищено.\n"
+            f"⏳ Откроется через: {remaining_text}\n"
+            f"🗓 Следующее открытие: {reopen_at}",
             reply_markup=main_menu(
                 player.location_slug,
                 getattr(player, "current_district_slug", None),
@@ -415,6 +427,18 @@ async def dungeon_fight_handler(message: Message):
 
         if room["type"] == "boss":
             state["completed"] = True
+
+            dungeon_cfg = get_dungeon(state["location_slug"])
+            respawn_hours = 72
+            if dungeon_cfg:
+                respawn_hours = dungeon_cfg.get("respawn_hours", 72)
+
+            mark_dungeon_cleared(
+                telegram_id=message.from_user.id,
+                dungeon_slug=state["location_slug"],
+                cooldown_hours=respawn_hours,
+            )
+
             _set_dungeon_state(player, state)
             await message.answer(
                 f"👑 Босс повержен: {enemy['name']}\n"
