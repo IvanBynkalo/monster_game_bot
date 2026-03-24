@@ -398,7 +398,7 @@ async def dungeon_choice_handler(callback: CallbackQuery):
         await callback.answer("Выбор не найден.", show_alert=True)
         return
 
-    success_chance = choice.get("success_chance", 0.7)
+    success_chance = calculate_choice_chance(player, choice)
     success = random.random() < success_chance
     result = choice["success"] if success else choice["fail"]
 
@@ -536,3 +536,19 @@ async def dungeon_leave_handler(message: Message):
             f"📍 Ты сейчас находишься в локации: {player.location_slug}",
             reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
         )
+def calculate_choice_chance(player, choice):
+    base = choice.get("base_chance", 0.5)
+    stat = choice.get("stat")
+
+    if not stat:
+        return base
+
+    # берём статы игрока (адаптируй под свою модель!)
+    value = getattr(player, stat, 5)
+
+    # формула
+    bonus = value * 0.03  # 3% за каждую единицу
+
+    chance = base + bonus
+
+    return min(0.95, max(0.1, chance))
