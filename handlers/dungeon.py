@@ -346,7 +346,7 @@ async def dungeon_leave_handler(message: Message):
     if not state:
         await message.answer(
             "Ты сейчас не в подземелье.",
-            reply_markup=main_menu(player.location_slug),
+            reply_markup=main_menu(player.location_slug, player.current_district_slug),
         )
         return
 
@@ -355,7 +355,48 @@ async def dungeon_leave_handler(message: Message):
         summary_text = "\n\n" + render_dungeon_summary(state)
 
     _clear_dungeon_state(player)
+
+    # Обновляем игрока после очистки UI state
+    player = get_player(message.from_user.id)
+
+    # 1. Сообщение о выходе + итоги
     await message.answer(
         "🏃 Ты покидаешь подземелье и возвращаешься наружу." + summary_text,
-        reply_markup=main_menu(player.location_slug),
+        reply_markup=main_menu(player.location_slug, player.current_district_slug),
     )
+
+    # 2. Сразу показываем текущую локацию, чтобы игрок понимал где он и что делать дальше
+    from game.map_service import render_location_card
+    from keyboards.location_menu import location_actions_inline
+    from utils.images import send_location_image
+    from game.location_rules import is_city
+    from game.dungeon_service import DUNGEONS
+    from game.grid_exploration_service import is_dungeon_available
+
+    loc_text = render_location_card(player.location_slug)
+
+    await send_location_image(
+        message,
+        player.location_slug,
+        loc_text,
+        reply_markup=main_menu(player.location_slug, player.current_district_slug),
+    )
+
+    # Для полевых локаций отдельно показываем inline-действия
+    if not is_city(player.location_slug):
+        has_dungeon = False
+        try:
+            has_dungeon = (
+                player.location_slug in DUNGEONS
+                and is_dungeon_available(message.from_user.id, player.location_slug)
+            )
+        except Exception:
+            has_dungeon = False
+
+        await message.answer(
+            "Действия в локации:",
+            reply_markup=location_actions_inline(
+                player.location_slug,
+                has_dungeon=has_dungeon,
+            ),
+        )
