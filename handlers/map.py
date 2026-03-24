@@ -107,7 +107,8 @@ async def location_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
         from services.ui_service import show_location_screen
-
+        
+async def location_handler(message: Message):
 await show_location_screen(message, message.from_user.id)
         return
 
