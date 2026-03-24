@@ -264,8 +264,23 @@ async def guild_quest_callback(callback):
                     "geologist": ("⛏ Гильдия геологов",   "Здесь обучают находить жилы и руду."),
                     "alchemist": ("⚗ Гильдия алхимиков",  "Здесь раскрывают секреты настоев."),
                 }
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                from game.guild_quests import get_active_quests, get_available_quests, WEEKLY_GUILD_QUESTS
                 title, desc = PROF_TITLES.get(profession, ("Гильдия", ""))
-                await callback.message.answer(render_guild_panel(uid, profession, title, desc))
+                panel = render_guild_panel(uid, profession, title, desc)
+                rows = []
+                available = get_available_quests(uid, profession)
+                for q in available:
+                    rows.append([InlineKeyboardButton(text=f"📌 Взять: {q['title']}", callback_data=f"guild:take:{profession}:{q['id']}")])
+                active = get_active_quests(uid, profession)
+                for q in active:
+                    if q.get("completed"):
+                        rows.append([InlineKeyboardButton(text=f"✅ Сдать: {q['title']}", callback_data=f"guild:claim:{profession}:{q['id']}")])
+                weekly = WEEKLY_GUILD_QUESTS.get(profession, {})
+                active_ids = {q["id"] for q in active}
+                if weekly and weekly["id"] not in active_ids:
+                    rows.append([InlineKeyboardButton(text=f"🌟 Взять недельное: {weekly['title']}", callback_data=f"guild:take:{profession}:{weekly['id']}")])
+                await callback.message.answer(panel, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
             except Exception:
                 pass
 
