@@ -51,6 +51,19 @@ def _add_summary_items(state: dict, items: dict):
         summary_items[slug] = summary_items.get(slug, 0) + amount
 
 
+def calculate_choice_chance(player, choice: dict) -> float:
+    base = choice.get("base_chance", choice.get("success_chance", 0.5))
+    stat = choice.get("stat")
+
+    if not stat:
+        return min(0.95, max(0.1, base))
+
+    value = getattr(player, stat, 5)
+    bonus = value * 0.03
+    chance = base + bonus
+    return min(0.95, max(0.1, chance))
+
+
 async def dungeon_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -139,7 +152,7 @@ async def dungeon_next_room_handler(message: Message):
         if current_room["type"] == "event_choice":
             await message.answer(
                 "Сначала сделай выбор в текущем событии.",
-                reply_markup=dungeon_choice_menu(room["choices"], player),
+                reply_markup=dungeon_choice_menu(current_room["choices"], player),
             )
             return
 
@@ -243,7 +256,7 @@ async def dungeon_next_room_handler(message: Message):
     if room["type"] == "event_choice":
         await message.answer(
             render_dungeon_state(state),
-            reply_markup=dungeon_choice_menu(room["choices"]),
+            reply_markup=dungeon_choice_menu(room["choices"], player),
         )
         return
 
@@ -536,19 +549,3 @@ async def dungeon_leave_handler(message: Message):
             f"📍 Ты сейчас находишься в локации: {player.location_slug}",
             reply_markup=main_menu(player.location_slug, getattr(player, "current_district_slug", None)),
         )
-def calculate_choice_chance(player, choice):
-    base = choice.get("base_chance", 0.5)
-    stat = choice.get("stat")
-
-    if not stat:
-        return base
-
-    # берём статы игрока (адаптируй под свою модель!)
-    value = getattr(player, stat, 5)
-
-    # формула
-    bonus = value * 0.03  # 3% за каждую единицу
-
-    chance = base + bonus
-
-    return min(0.95, max(0.1, chance))
