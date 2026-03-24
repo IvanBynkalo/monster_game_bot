@@ -1979,3 +1979,205 @@ def format_duration_ru(seconds: int) -> str:
         parts.append(f"{minutes} мин.")
 
     return " ".join(parts) if parts else "меньше минуты"
+
+
+# ─── Сумки / инвентарь ───────────────────────────────────────────────────────
+
+def _row_to_bag(row) -> dict | None:
+    if not row:
+        return None
+    return {
+        "telegram_id": row["telegram_id"],
+        "bag_slug": row["bag_slug"],
+        "bag_name": row["bag_name"],
+        "capacity": int(row["capacity"]),
+        "source": row["source"],
+        "is_equipped": bool(row["is_equipped"]),
+        "sell_price": int(row["sell_price"] or 0),
+        "created_at": row["created_at"],
+    }
+
+
+def _ensure_player_bags_table():
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS player_bags (
+                telegram_id     INTEGER NOT NULL,
+                bag_slug        TEXT NOT NULL,
+                bag_name        TEXT NOT NULL,
+                capacity        INTEGER NOT NULL,
+                source          TEXT NOT NULL DEFAULT 'shop',
+                is_equipped     INTEGER NOT NULL DEFAULT 0,
+                sell_price      INTEGER NOT NULL DEFAULT 0,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (telegram_id, bag_slug)
+            )
+            """
+        )
+        conn.commit()
+
+
+def _ensure_default_bag(telegram_id: int):
+    _ensure_player_bags_table()
+    player = get_player(telegram_id)
+    if not player:
+        return
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT bag_slug FROM player_bags WHERE telegram_id=? LIMIT 1",
+            (telegram_id,),
+        ).fetchone()
+        if row:
+            equipped = conn.execute(
+                "SELECT bag_slug, capacity FROM player_bags WHERE telegram_id=? AND is_equipped=1 LIMIT 1",
+                (telegram_id,),
+            ).fetchone()
+            if equipped:
+                conn.execute(
+                    "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
+                    (int(equipped["capacity"]), telegram_id),
+                )
+                conn.commit()
+            return
+
+        cap = max(1, int(getattr(player, "bag_capacity", 12) or 12))
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO player_bags
+                (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (telegram_id, "starter_bag", "Стартовая сумка", cap, "starter", 1, 0),
+        )
+        conn.execute(
+            "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
+            (cap, telegram_id),
+        )
+        conn.commit()
+
+
+def get_player_bags(telegram_id: int) -> list[dict]:
+    _ensure_default_bag(telegram_id)
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM player_bags
+            WHERE telegram_id=?
+            ORDER BY is_equipped DESC, capacity DESC, created_at ASC
+            """,
+            (telegram_id,),
+        ).fetchall()
+    return [_row_to_bag(r) for r in rows]
+
+
+def get_equipped_bag(telegram_id: int) -> dict | None:
+    _ensure_default_bag(telegram_id)
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM player_bags WHERE telegram_id=? AND is_equipped=1 LIMIT 1",
+            (telegram_id,),
+        ).fetchone()
+    return _row_to_bag(row)
+
+
+def grant_bag(telegram_id: int, bag_slug: str, bag_name: str, capacity: int, *, source: str = "shop", sell_price: int = 0, auto_equip: bool = True) -> tuple[bool, dict | None]:
+    _ensure_default_bag(telegram_id)
+    capacity = int(capacity)
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
+            (telegram_id, bag_slug),
+        ).fetchone()
+        if existing:
+            return False, _row_to_bag(existing)
+
+        equipped = conn.execute(
+            "SELECT * FROM player_bags WHERE telegram_id=? AND is_equipped=1 LIMIT 1",
+            (telegram_id,),
+        ).fetchone()
+        should_equip = bool(auto_equip and (not equipped or capacity > int(equipped["capacity"])))
+
+        if should_equip:
+            conn.execute(
+                "UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?",
+                (telegram_id,),
+            )
+
+        conn.execute(
+            """
+            INSERT INTO player_bags
+                (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (telegram_id, bag_slug, bag_name, capacity, source, 1 if should_equip else 0, int(sell_price or 0)),
+        )
+
+        if should_equip:
+            conn.execute(
+                "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
+                (capacity, telegram_id),
+            )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
+            (telegram_id, bag_slug),
+        ).fetchone()
+    return True, _row_to_bag(row)
+
+
+def equip_bag(telegram_id: int, bag_slug: str) -> bool:
+    _ensure_default_bag(telegram_id)
+    bag = None
+    for item in get_player_bags(telegram_id):
+        if item["bag_slug"] == bag_slug:
+            bag = item
+            break
+    if not bag:
+        return False
+
+    total_resources = get_resources_count_total(telegram_id)
+    total_items = sum(get_items(telegram_id).values())
+    used_slots = total_resources + total_items
+    if used_slots > int(bag["capacity"]):
+        return False
+
+    with get_connection() as conn:
+        conn.execute("UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?", (telegram_id,))
+        conn.execute(
+            "UPDATE player_bags SET is_equipped=1 WHERE telegram_id=? AND bag_slug=?",
+            (telegram_id, bag_slug),
+        )
+        conn.execute(
+            "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
+            (int(bag["capacity"]), telegram_id),
+        )
+        conn.commit()
+    return True
+
+
+def sell_bag(telegram_id: int, bag_slug: str) -> int | None:
+    _ensure_default_bag(telegram_id)
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
+            (telegram_id, bag_slug),
+        ).fetchone()
+        if not row:
+            return None
+        bag = _row_to_bag(row)
+        if bag["is_equipped"]:
+            return None
+        price = int(bag.get("sell_price") or 0)
+        conn.execute(
+            "DELETE FROM player_bags WHERE telegram_id=? AND bag_slug=? AND is_equipped=0",
+            (telegram_id, bag_slug),
+        )
+        if price > 0:
+            conn.execute(
+                "UPDATE players SET gold=gold+? WHERE telegram_id=?",
+                (price, telegram_id),
+            )
+        conn.commit()
+    return price
