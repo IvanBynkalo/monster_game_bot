@@ -35,17 +35,25 @@ def dungeon_menu(in_room_type: str | None = None, completed: bool = False):
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def dungeon_choice_menu(choices: list[dict]):
-    rows = []
-    for choice in choices:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=choice["text"],
-                    callback_data=f"dungeon:choice:{choice['id']}",
-                )
-            ]
+def dungeon_choice_menu(choices: list[dict], player=None):
+   from handlers.dungeon import calculate_choice_chance
+
+rows = []
+
+for choice in choices:
+    text = choice["text"]
+
+    if player:
+        chance = calculate_choice_chance(player, choice)
+        percent = int(chance * 100)
+        text = f"{text} ({percent}%)"
+
+    rows.append([
+        InlineKeyboardButton(
+            text=text,
+            callback_data=f"dungeon:choice:{choice['id']}",
         )
+    ])
 
     rows.append(
         [
