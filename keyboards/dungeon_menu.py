@@ -32,6 +32,7 @@ def dungeon_menu(in_room_type: str | None = None, completed: bool = False):
             KeyboardButton(text="🐲 Мои монстры"),
         ]
     )
+
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
@@ -39,10 +40,23 @@ def _get_risk_emoji(chance: float) -> str:
     percent = int(chance * 100)
 
     if percent < 50:
-        return "🔴"
-    if percent < 75:
-        return "🟡"
-    return "🟢"
+        return "🔴"  # опасно
+    elif percent < 75:
+        return "🟡"  # риск
+    else:
+        return "🟢"  # безопасно
+
+
+def _get_stat_hint(stat: str | None) -> str:
+    if stat == "strength":
+        return " • сила"
+    if stat == "intellect":
+        return " • интеллект"
+    if stat == "agility":
+        return " • ловкость"
+    if stat == "defense":
+        return " • защита"
+    return ""
 
 
 def dungeon_choice_menu(choices: list[dict], player=None):
@@ -57,7 +71,9 @@ def dungeon_choice_menu(choices: list[dict], player=None):
             chance = calculate_choice_chance(player, choice)
             percent = int(chance * 100)
             risk = _get_risk_emoji(chance)
-            text = f"{risk} {text} ({percent}%)"
+            stat_hint = _get_stat_hint(choice.get("stat"))
+
+            text = f"{risk} {text} ({percent}%){stat_hint}"
 
         rows.append(
             [
@@ -68,6 +84,7 @@ def dungeon_choice_menu(choices: list[dict], player=None):
             ]
         )
 
+    # кнопка выхода (inline)
     rows.append(
         [
             InlineKeyboardButton(
