@@ -30,6 +30,11 @@ from database.repositories import (
     add_city_order,
     set_ui_screen,
     get_city_resource_market,
+    grant_bag,
+    get_player_bags,
+    get_equipped_bag,
+    equip_bag,
+    sell_bag,
     get_city_resource_sell_price,
     get_city_resource_buy_price,
     sell_resource_to_city_market,
@@ -217,7 +222,7 @@ class InlineProxyMessage:
         self.from_user = callback.from_user
 
     async def answer(self, text: str, reply_markup=None, **kwargs):
-        return await self._callback.message.answer(text, **kwargs)
+        return await self._callback.message.answer(text, reply_markup=reply_markup, **kwargs)
 
     async def answer_photo(self, photo, caption=None, reply_markup=None, **kwargs):
         return await self._callback.message.answer_photo(photo=photo, caption=caption, **kwargs)
@@ -331,6 +336,7 @@ def mirna_main_inline(player_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Купить у Мирны", callback_data="marketnpc:mirna_buy_menu")],
             [InlineKeyboardButton(text="💰 Продать товары Мирне", callback_data="marketnpc:mirna_sell_menu")],
+            [InlineKeyboardButton(text="🎒 Мои сумки", callback_data="marketnpc:mirna_bags_menu")],
             [InlineKeyboardButton(text=quest_label, callback_data="marketnpc:mirna_quest_menu")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="marketnpc:close")],
         ]
@@ -578,11 +584,13 @@ def bort_quest_inline(player_id: int) -> InlineKeyboardMarkup:
 def render_mirna_text(player_id: int) -> str:
     player = get_player(player_id)
     gold = getattr(player, "gold", 0) if player else 0
+    equipped = get_equipped_bag(player_id)
 
     lines = [
         "🧵 Мирна — портная лавка",
         "",
         f"💰 Твоё золото: {gold}",
+        f"🎒 Надета: {equipped['bag_name']} ({equipped['capacity']} мест)" if equipped else "🎒 Надета: стартовая сумка",
         "",
         "Мирна шьёт полезные вещи для путешественников.",
         "Сейчас у неё в продаже в первую очередь сумки, а дальше здесь появятся одежда, плащи и прочие швейные товары.",
@@ -607,11 +615,13 @@ def render_mirna_text(player_id: int) -> str:
 def render_mirna_buy_text(player_id: int) -> str:
     player = get_player(player_id)
     gold = getattr(player, "gold", 0) if player else 0
+    equipped = get_equipped_bag(player_id)
 
     lines = [
         "🛒 Мирна — покупка",
         "",
         f"💰 Твоё золото: {gold}",
+        f"🎒 Сейчас надета: {equipped['bag_name']} ({equipped['capacity']} мест)" if equipped else f"🎒 Текущая вместимость: {getattr(player, 'bag_capacity', 12)}",
         "",
         "Выбери сумку:",
     ]
@@ -1296,7 +1306,7 @@ async def city_bags_handler(message: Message):
     set_ui_screen(message.from_user.id, "district")
     await _answer_with_city_image(
         message,
-        "bag_market.png",
+        "mirna_shop.png",
         render_mirna_text(message.from_user.id),
         mirna_main_inline(message.from_user.id),
     )
@@ -1311,7 +1321,7 @@ async def city_monsters_handler(message: Message):
     set_ui_screen(message.from_user.id, "district")
     await _answer_with_city_image(
         message,
-        "bag_market.png",
+        "varg_shop.png",
         render_varg_text(message.from_user.id),
         varg_main_inline(message.from_user.id),
     )
@@ -1324,9 +1334,11 @@ async def city_buyer_handler(message: Message):
         return
 
     set_ui_screen(message.from_user.id, "district")
-    await message.answer(
+    await _answer_with_city_image(
+        message,
+        "bort_shop.png",
         render_bort_text(player.location_slug, message.from_user.id),
-        reply_markup=bort_main_inline(message.from_user.id),
+        bort_main_inline(message.from_user.id),
     )
 
 
@@ -1459,6 +1471,57 @@ async def trap_inline_callback(callback: CallbackQuery):
         msg_text = f"🪤 {result['msg']}\n💰 Потрачено: {result['gold_cost']}з\n🎒 Получено: x{result['amount']}"
         await callback.message.answer(msg_text)
 
+async def _edit_city_inline(callback: CallbackQuery, text: str, reply_markup=None):
+    msg = callback.message
+    if not msg:
+        await callback.answer()
+        return
+    try:
+        if getattr(msg, "photo", None) or getattr(msg, "caption", None) is not None:
+            await msg.edit_caption(caption=text, reply_markup=reply_markup)
+        else:
+            await msg.edit_text(text=text, reply_markup=reply_markup)
+        return
+    except Exception:
+        pass
+    await msg.answer(text, reply_markup=reply_markup)
+
+
+def mirna_bags_inline(player_id: int) -> InlineKeyboardMarkup:
+    rows = []
+    for bag in get_player_bags(player_id):
+        slug = bag["bag_slug"]
+        name = bag["bag_name"]
+        cap = bag["capacity"]
+        if bag.get("is_equipped"):
+            rows.append([InlineKeyboardButton(text=f"✅ {name} • {cap} мест", callback_data="marketnpc:mirna_bags_menu")])
+        else:
+            rows.append([
+                InlineKeyboardButton(text=f"🎒 Надеть {name} • {cap}", callback_data=f"marketnpc:mirna_bag_equip:{slug}"),
+                InlineKeyboardButton(text=f"💰 Продать", callback_data=f"marketnpc:mirna_bag_sell:{slug}"),
+            ])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к Мирне", callback_data="marketnpc:mirna_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_mirna_bags_text(player_id: int) -> str:
+    equipped = get_equipped_bag(player_id)
+    bags = get_player_bags(player_id)
+    lines = [
+        "🎒 Мирна — твои сумки",
+        "",
+        f"Сейчас надета: {equipped['bag_name']} ({equipped['capacity']} мест)" if equipped else "Сейчас сумка не выбрана.",
+        "",
+        "Доступные сумки:",
+    ]
+    for bag in bags:
+        marker = "✅ надета" if bag.get("is_equipped") else f"можно продать за {bag.get('sell_price', 0)}з"
+        lines.append(f"• {bag['bag_name']} — {bag['capacity']} мест — {marker}")
+    lines.append("")
+    lines.append("Надетую сумку продать нельзя. При покупке лучшая сумка надевается автоматически.")
+    return "\n".join(lines)
+
+
 async def market_inline_callback(callback: CallbackQuery):
     player = get_player(callback.from_user.id)
     if not player:
@@ -1470,7 +1533,8 @@ async def market_inline_callback(callback: CallbackQuery):
     # ---------------- MIRNA ----------------
 
     if data == "marketnpc:mirna_buy_menu":
-        await callback.message.edit_text(
+        await _edit_city_inline(
+            callback,
             render_mirna_buy_text(callback.from_user.id),
             reply_markup=mirna_buy_inline(),
         )
@@ -1483,14 +1547,36 @@ async def market_inline_callback(callback: CallbackQuery):
         if not offer:
             await callback.answer("Товар не найден.", show_alert=True)
             return
-
-        buy_text = f"🛒 Купить сумку: {offer['name']} • {offer['price']}з"
-        await callback.answer("Покупаю у Мирны...")
-        await _run_existing_handler(callback, buy_bag_handler, buy_text)
+        if player.gold < offer["price"]:
+            await callback.answer("Недостаточно золота.", show_alert=True)
+            return
+        added, bag = grant_bag(
+            callback.from_user.id,
+            slug,
+            offer["name"],
+            offer["capacity"],
+            source="shop",
+            sell_price=max(1, offer["price"] // 2),
+            auto_equip=True,
+        )
+        if not added:
+            await callback.answer("Такая сумка у тебя уже есть.", show_alert=True)
+            return
+        add_player_gold(callback.from_user.id, -offer["price"])
+        await callback.answer(
+            f"🎒 Куплена {offer['name']} {'и сразу надета' if bag.get('is_equipped') else ''}",
+            show_alert=True,
+        )
+        await _edit_city_inline(
+            callback,
+            render_mirna_buy_text(callback.from_user.id),
+            reply_markup=mirna_buy_inline(),
+        )
         return
 
     if data == "marketnpc:mirna_sell_menu":
-        await callback.message.edit_text(
+        await _edit_city_inline(
+            callback,
             render_mirna_sell_text(callback.from_user.id),
             reply_markup=mirna_sell_inline(callback.from_user.id),
         )
@@ -1530,7 +1616,8 @@ async def market_inline_callback(callback: CallbackQuery):
         return
 
     if data == "marketnpc:mirna_quest_menu":
-        await callback.message.edit_text(
+        await _edit_city_inline(
+            callback,
             render_mirna_quest_text(callback.from_user.id),
             reply_markup=mirna_quest_inline(callback.from_user.id),
         )
@@ -1554,7 +1641,8 @@ async def market_inline_callback(callback: CallbackQuery):
             reward_exp=quest["reward_exp"],
         )
 
-        await callback.message.edit_text(
+        await _edit_city_inline(
+            callback,
             render_mirna_quest_text(callback.from_user.id),
             reply_markup=mirna_quest_inline(callback.from_user.id),
         )
@@ -1592,11 +1680,49 @@ async def market_inline_callback(callback: CallbackQuery):
         return
 
     if data == "marketnpc:mirna_back":
-        await callback.message.edit_text(
+        await _edit_city_inline(
+            callback,
             render_mirna_text(callback.from_user.id),
             reply_markup=mirna_main_inline(callback.from_user.id),
         )
         await callback.answer()
+        return
+
+    if data == "marketnpc:mirna_bags_menu":
+        await _edit_city_inline(
+            callback,
+            render_mirna_bags_text(callback.from_user.id),
+            reply_markup=mirna_bags_inline(callback.from_user.id),
+        )
+        await callback.answer()
+        return
+
+    if data.startswith("marketnpc:mirna_bag_equip:"):
+        slug = data.split(":")[-1]
+        ok = equip_bag(callback.from_user.id, slug)
+        if not ok:
+            await callback.answer("Нельзя надеть эту сумку: проверь вместимость или наличие.", show_alert=True)
+            return
+        await callback.answer("🎒 Сумка надета.", show_alert=False)
+        await _edit_city_inline(
+            callback,
+            render_mirna_bags_text(callback.from_user.id),
+            reply_markup=mirna_bags_inline(callback.from_user.id),
+        )
+        return
+
+    if data.startswith("marketnpc:mirna_bag_sell:"):
+        slug = data.split(":")[-1]
+        price = sell_bag(callback.from_user.id, slug)
+        if price is None:
+            await callback.answer("Надетую сумку продавать нельзя. Сначала надень другую.", show_alert=True)
+            return
+        await callback.answer(f"💰 Сумка продана за {price}з", show_alert=False)
+        await _edit_city_inline(
+            callback,
+            render_mirna_bags_text(callback.from_user.id),
+            reply_markup=mirna_bags_inline(callback.from_user.id),
+        )
         return
 
     # ---------------- VARG ----------------
@@ -2021,7 +2147,7 @@ async def market_inline_callback(callback: CallbackQuery):
     # ---------------- CLOSE ----------------
 
     if data == "marketnpc:close":
-        await callback.message.edit_text("Выбери действие внизу клавиатуры квартала.")
+        await _edit_city_inline(callback, "Выбери действие внизу клавиатуры квартала.")
         await callback.answer()
         return
 
