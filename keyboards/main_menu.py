@@ -36,7 +36,7 @@ def main_menu(location_slug: str, district_slug: str | None = None,
         return city_menu(district_slug, telegram_id=telegram_id)
 
     keyboard = [
-        [KeyboardButton(text="🧭 Переместиться"), KeyboardButton(text="🐲 Мои монстры")],
+        [KeyboardButton(text="🗺 Мир / переходы"), KeyboardButton(text="🐲 Мои монстры")],
         [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="👤 Персонаж")],
         [KeyboardButton(text="📂 Ещё")],
     ]
