@@ -238,7 +238,7 @@ async def move_handler(message: Message):
         text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
 
     await send_location_image(message, target.slug, text,
-                               reply_markup=main_menu(target.slug, None))
+                               reply_markup=main_menu(target.slug, getattr(get_player(message.from_user.id), 'current_district_slug', None)))
     # Inline-меню действий при прибытии
     from game.dungeon_service import DUNGEONS
     from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
