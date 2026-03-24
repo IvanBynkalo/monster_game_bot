@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery, ErrorEvent, Message, PreCheckoutQuery, SuccessfulPayment,
@@ -18,7 +18,13 @@ from handlers.story import story_handler
 from handlers.more import more_handler, back_handler, healing_menu_handler
 from handlers.district import district_handler, district_move_handler
 from handlers.explore import explore_handler, elite_expedition_handler
-from handlers.dungeon import dungeon_handler, dungeon_next_room_handler, dungeon_fight_handler, dungeon_leave_handler
+from handlers.dungeon import (
+    dungeon_handler,
+    dungeon_next_room_handler,
+    dungeon_fight_handler,
+    dungeon_leave_handler,
+    dungeon_choice_handler,
+)
 from handlers.gather import gather_handler
 from handlers.encounter import (
     attack_handler,
@@ -354,8 +360,16 @@ dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
 dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
 dp.message.register(
     navigation_handler,
-    text_is("🧭 Перемещение", "Перемещение", "🧭 Навигация", "Навигация",
-            "🧭 Переместиться", "Переместиться"),
+    text_is(
+        "🗺 Мир / переходы",
+        "Мир / переходы",
+        "🧭 Перемещение",
+        "Перемещение",
+        "🧭 Навигация",
+        "Навигация",
+        "🧭 Переместиться",
+        "Переместиться",
+    ),
 )
 dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
 dp.message.register(healing_menu_handler, text_is("❤️ Лечение", "Лечение"))
@@ -464,6 +478,15 @@ dp.message.register(
     text_contains("убежать от босса"),
 )
 
+
+async def dungeon_leave_inline_callback(callback: CallbackQuery):
+    await callback.answer()
+
+    fake_msg = callback.message.model_copy(
+        update={"from_user": callback.from_user}
+    )
+    await dungeon_leave_handler(fake_msg)
+
 dp.callback_query.register(
     market_inline_callback,
     lambda c: c.data and c.data.startswith("marketnpc:"),
@@ -484,7 +507,14 @@ dp.callback_query.register(
     bestiary_callback,
     lambda c: c.data and c.data.startswith("bestiary:"),
 )
-dp.callback_query.register(dungeon_choice_handler, F.data.startswith("dungeon:choice"))
+dp.callback_query.register(
+    dungeon_choice_handler,
+    lambda c: c.data and c.data.startswith("dungeon:choice:"),
+)
+dp.callback_query.register(
+    dungeon_leave_inline_callback,
+    lambda c: c.data == "dungeon:leave_inline",
+)
 
 
 
