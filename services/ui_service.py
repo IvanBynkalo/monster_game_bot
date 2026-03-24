@@ -16,8 +16,18 @@ async def show_location_screen(message: Message, user_id: int):
         await message.answer("Ошибка: игрок не найден")
         return
 
-    # Текст локации
+    # Текст локации + текущий район для полевых зон
     loc_text = render_location_card(player.location_slug)
+    try:
+        from game.district_service import get_district, render_district_card
+        district = get_district(player.location_slug, getattr(player, "current_district_slug", None))
+        if district and not is_city(player.location_slug):
+            loc_text = (
+                f"{loc_text}\n\nТекущий район:\n"
+                f"{render_district_card(player.location_slug, district['slug'])}"
+            )
+    except Exception:
+        pass
 
     # Главное меню (нижняя клавиатура)
     reply_kb = main_menu(
