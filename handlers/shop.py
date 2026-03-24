@@ -202,26 +202,37 @@ async def buy_bag_handler(message: Message):
 
     text = (message.text or "").strip()
 
+    offer_slug = None
     offer = None
-    for item in BAG_OFFERS.values():
+    for slug, item in BAG_OFFERS.items():
         if text.startswith(f"🛒 Купить сумку: {item['name']}"):
+            offer_slug = slug
             offer = item
             break
 
-    if not offer:
+    if not offer or not offer_slug:
         await message.answer("Не удалось определить сумку.", reply_markup=district_actions_menu("market_square", message.from_user.id))
-        return
-
-    if player.bag_capacity >= offer["capacity"]:
-        await message.answer("У тебя уже есть сумка не хуже этой.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
     if player.gold < offer["price"]:
         await message.answer("Недостаточно золота.", reply_markup=district_actions_menu("market_square", message.from_user.id))
         return
 
-    player.gold -= offer["price"]
-    player.bag_capacity = offer["capacity"]
+    added, bag = grant_bag(
+        message.from_user.id,
+        offer_slug,
+        offer["name"],
+        offer["capacity"],
+        source="shop",
+        sell_price=max(1, offer["price"] // 2),
+        auto_equip=True,
+    )
+    if not added:
+        await message.answer("Такая сумка у тебя уже есть.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        return
+
+    add_player_gold(message.from_user.id, -offer["price"])
+    updated_player = get_player(message.from_user.id)
 
     extras = []
     for quest in progress_extra_quests(message.from_user.id, "bag_upgrade", 1):
@@ -233,11 +244,13 @@ async def buy_bag_handler(message: Message):
             f"✨ Награда: +{quest['reward_exp']} опыта"
         )
 
+    equip_text = "Сумка автоматически надета." if bag.get("is_equipped") else "Сумка отправлена в гардероб Мирны."
     text = (
         f"🎒 Куплена сумка: {offer['name']}\n"
-        f"Новая вместимость: {player.bag_capacity}\n"
+        f"Вместимость: {offer['capacity']}\n"
+        f"{equip_text}\n"
         f"Потрачено: {offer['price']} золота\n"
-        f"Осталось золота: {player.gold}"
+        f"Осталось золота: {updated_player.gold if updated_player else 0}"
     )
 
     if extras:
