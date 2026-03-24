@@ -1826,6 +1826,7 @@ def get_npc_quest_status(telegram_id: int, npc_key: str) -> str | None:
         pass
     return None
 
+
 # ─── Подземелья (cooldown система) ───────────────────────────────────────────
 
 from datetime import datetime, timedelta
@@ -1837,67 +1838,103 @@ DUNGEON_COOLDOWN_HOURS = 72  # 3 дня
 def get_dungeon_cooldown_status(telegram_id: int, dungeon_slug: str) -> dict:
     """
     Проверяет доступность подземелья для игрока.
+    Если кулдаун истёк — данж снова считается доступным.
     """
     with get_connection() as conn:
-        row = conn.execute("""
-            SELECT cooldown_until
+        row = conn.execute(
+            """
+            SELECT status, cooldown_until
             FROM player_dungeon_progress
             WHERE telegram_id=? AND dungeon_slug=?
-        """, (telegram_id, dungeon_slug)).fetchone()
+            """,
+            (telegram_id, dungeon_slug),
+        ).fetchone()
 
     if not row or not row["cooldown_until"]:
         return {
             "available": True,
-            "remaining_seconds": 0
+            "status": "available",
+            "cooldown_until": None,
+            "remaining_seconds": 0,
         }
 
-    cooldown_until = datetime.fromisoformat(row["cooldown_until"])
+    cooldown_until_raw = row["cooldown_until"]
+    try:
+        cooldown_until = datetime.fromisoformat(cooldown_until_raw)
+    except Exception:
+        return {
+            "available": True,
+            "status": "available",
+            "cooldown_until": None,
+            "remaining_seconds": 0,
+        }
+
     now = datetime.utcnow()
 
     if now >= cooldown_until:
         return {
             "available": True,
-            "remaining_seconds": 0
+            "status": "available",
+            "cooldown_until": None,
+            "remaining_seconds": 0,
         }
 
-    remaining = (cooldown_until - now).total_seconds()
+    remaining = int((cooldown_until - now).total_seconds())
 
     return {
         "available": False,
-        "remaining_seconds": int(remaining)
+        "status": row["status"] or "cleared",
+        "cooldown_until": cooldown_until_raw,
+        "remaining_seconds": remaining,
     }
 
 
-def set_dungeon_cleared(telegram_id: int, dungeon_slug: str):
+def mark_dungeon_cleared(telegram_id: int, dungeon_slug: str, cooldown_hours: int = 72):
     """
     Вызывается после убийства босса.
     Ставит подземелье на кулдаун.
     """
     now = datetime.utcnow()
-    cooldown_until = now + timedelta(hours=DUNGEON_COOLDOWN_HOURS)
+    cooldown_until = now + timedelta(hours=cooldown_hours)
 
     with get_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO player_dungeon_progress (
                 telegram_id,
                 dungeon_slug,
                 status,
                 cleared_at,
-                cooldown_until
+                cooldown_until,
+                updated_at
             )
-            VALUES (?, ?, 'cleared', ?, ?)
+            VALUES (?, ?, 'cleared', ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(telegram_id, dungeon_slug)
             DO UPDATE SET
                 status='cleared',
                 cleared_at=excluded.cleared_at,
-                cooldown_until=excluded.cooldown_until
-        """, (
-            telegram_id,
-            dungeon_slug,
-            now.isoformat(),
-            cooldown_until.isoformat()
-        ))
+                cooldown_until=excluded.cooldown_until,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            (
+                telegram_id,
+                dungeon_slug,
+                now.isoformat(),
+                cooldown_until.isoformat(),
+            ),
+        )
         conn.commit()
+
+
+def set_dungeon_cleared(telegram_id: int, dungeon_slug: str):
+    """
+    Совместимость со старым именем.
+    """
+    return mark_dungeon_cleared(
+        telegram_id=telegram_id,
+        dungeon_slug=dungeon_slug,
+        cooldown_hours=DUNGEON_COOLDOWN_HOURS,
+    )
 
 
 def format_duration_ru(seconds: int) -> str:
