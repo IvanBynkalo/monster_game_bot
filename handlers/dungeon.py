@@ -33,6 +33,7 @@ from game.player_survival_service import render_injury_warning
 from keyboards.dungeon_menu import dungeon_choice_menu, dungeon_menu
 from keyboards.main_menu import main_menu
 from utils.images import send_dungeon_image
+from services.ui_service import show_location_screen
 
 
 def _get_dungeon_state(player):
@@ -614,7 +615,6 @@ async def dungeon_leave_handler(message: Message):
         summary_text = "\n\n" + render_dungeon_summary(state)
 
     _clear_dungeon_state(player)
-    player = get_player(message.from_user.id)
 
     await message.answer(
         "🏃 Ты покидаешь подземелье и возвращаешься наружу." + summary_text,
@@ -624,94 +624,4 @@ async def dungeon_leave_handler(message: Message):
         ),
     )
 
-    try:
-        from game.grid_exploration_service import is_dungeon_available
-        from game.location_rules import is_city
-        from game.map_service import render_location_card
-        from keyboards.location_menu import location_actions_inline
-        from utils.images import send_location_image
-
-        loc_text = render_location_card(player.location_slug)
-
-        await send_location_image(
-            message,
-            player.location_slug,
-            loc_text,
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
-
-        if not is_city(player.location_slug):
-            has_dungeon = False
-            try:
-                has_dungeon = (
-                    player.location_slug in DUNGEONS
-                    and is_dungeon_available(message.from_user.id, player.location_slug)
-                )
-            except Exception:
-                has_dungeon = False
-
-            await message.answer(
-                "Что будешь делать в этой локации?",
-                reply_markup=location_actions_inline(
-                    player.location_slug,
-                    has_dungeon=has_dungeon,
-                ),
-            )
-    except Exception:
-        from game.map_service import get_location_name
-
-        await message.answer(
-            f"📍 Ты сейчас находишься в локации: {get_location_name(player.location_slug)}",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
-
-    try:
-        from game.grid_exploration_service import is_dungeon_available
-        from game.location_rules import is_city
-        from game.map_service import render_location_card
-        from keyboards.location_menu import location_actions_inline
-        from utils.images import send_location_image
-
-        loc_text = render_location_card(player.location_slug, player.telegram_id)
-
-        await send_location_image(
-            message,
-            player.location_slug,
-            loc_text,
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
-
-        if not is_city(player.location_slug):
-            has_dungeon = False
-            try:
-                has_dungeon = (
-                    player.location_slug in DUNGEONS
-                    and is_dungeon_available(message.from_user.id, player.location_slug)
-                )
-            except Exception:
-                has_dungeon = False
-
-            await message.answer(
-                "Что будешь делать в этой локации?",
-                reply_markup=location_actions_inline(
-                    player.location_slug,
-                    has_dungeon=has_dungeon,
-                ),
-            )
-    except Exception:
-        await message.answer(
-            f"📍 Ты сейчас находишься в локации: {player.location_slug}",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
+    await show_location_screen(message, message.from_user.id)
