@@ -334,6 +334,17 @@ def init_db() -> None:
             completed     INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (telegram_id, location_slug, week_key)
         );
+        CREATE TABLE IF NOT EXISTS player_dungeon_progress (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id     INTEGER NOT NULL,
+    dungeon_slug    TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'available',
+    cleared_at      TEXT,
+    cooldown_until  TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (telegram_id, dungeon_slug)
+);
         """)
         conn.commit()
 
