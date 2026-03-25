@@ -1154,7 +1154,7 @@ async def market_inline_callback(callback: CallbackQuery):
         if not offer or not purchase_market_monster or not add_captured_monster:
             await callback.answer("Покупка монстра недоступна.", show_alert=True)
             return
-        if data.startswith("marketnpc:varg_buy:"):
+   if data.startswith("marketnpc:varg_buy:"):
     from database.repositories import get_player, update_player_gold
     from game.crystal_service import can_store_monster, store_monster_in_crystal
     from game.monster_service import generate_monster
@@ -1171,24 +1171,19 @@ async def market_inline_callback(callback: CallbackQuery):
 
     price = offer["price"]
 
-    # ❌ НЕ ХВАТАЕТ ЗОЛОТА
     if gold < price:
         await callback.answer("❌ Недостаточно золота.", show_alert=True)
         return
 
-    # ❌ НЕТ КРИСТАЛЛА
     can_store, reason = can_store_monster(uid)
     if not can_store:
         await callback.answer("❌ Нет свободных кристаллов!", show_alert=True)
         return
 
-    # ✅ СПИСЫВАЕМ ЗОЛОТО
     update_player_gold(uid, -price)
 
-    # ✅ СОЗДАЁМ МОНСТРА
     monster = generate_monster(slug)
 
-    # ✅ КЛАДЁМ В КРИСТАЛЛ
     crystal = store_monster_in_crystal(uid, monster)
 
     await callback.answer(f"🐲 Куплен {offer['name']}", show_alert=False)
