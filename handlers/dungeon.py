@@ -32,8 +32,22 @@ from game.dungeon_service import (
 from game.player_survival_service import render_injury_warning
 from keyboards.dungeon_menu import dungeon_choice_menu, dungeon_menu
 from keyboards.main_menu import main_menu
-from utils.images import send_dungeon_image
 from services.ui_service import show_location_screen
+from utils.images import send_dungeon_image
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Вспомогательные функции
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _root_menu(player) -> object:
+    return main_menu(
+        player.location_slug,
+        getattr(player, "current_district_slug", None),
+        telegram_id=player.telegram_id,
+    )
+
 
 
 def _get_dungeon_state(player):
@@ -41,12 +55,15 @@ def _get_dungeon_state(player):
     return ui.get("context", {}).get("dungeon_state")
 
 
+
 def _set_dungeon_state(player, state):
     set_ui_screen(player.telegram_id, "dungeon", dungeon_state=state)
 
 
+
 def _clear_dungeon_state(player):
     set_ui_screen(player.telegram_id, "main")
+
 
 
 def _add_summary_items(state: dict, items: dict):
@@ -55,14 +72,14 @@ def _add_summary_items(state: dict, items: dict):
         summary_items[slug] = summary_items.get(slug, 0) + amount
 
 
+
 def _read_value(obj, key: str, default=0):
     if obj is None:
         return default
-
     if isinstance(obj, dict):
         return obj.get(key, default)
-
     return getattr(obj, key, default)
+
 
 
 def _get_monster_choice_bonus(active_monster, stat: str | None) -> float:
@@ -78,15 +95,12 @@ def _get_monster_choice_bonus(active_monster, stat: str | None) -> float:
     if stat == "strength":
         base_value = max(attack, level)
         return min(0.18, base_value * 0.015)
-
     if stat == "intellect":
         base_value = max(intellect, level)
         return min(0.18, base_value * 0.015)
-
     if stat == "agility":
         base_value = max(agility, level)
         return min(0.18, base_value * 0.015)
-
     if stat == "defense":
         base_value = max(defense, level)
         return min(0.18, base_value * 0.015)
@@ -94,7 +108,15 @@ def _get_monster_choice_bonus(active_monster, stat: str | None) -> float:
     return min(0.10, level * 0.01)
 
 
+
 def calculate_choice_chance(player, choice: dict) -> float:
+    """
+    Итоговый шанс выбора в комнатах-событиях.
+    Складывается из:
+    - базового шанса комнаты
+    - бонуса от характеристики героя
+    - бонуса от активного монстра
+    """
     base = choice.get("base_chance", choice.get("success_chance", 0.5))
     stat = choice.get("stat")
 
@@ -111,6 +133,24 @@ def calculate_choice_chance(player, choice: dict) -> float:
     return min(0.95, max(0.1, chance))
 
 
+
+def _defeat_and_escape_text(player, fallen_name: str, gold_loss: int, reason: str | None = None) -> str:
+    lines = [
+        f"☠️ {fallen_name} пал в подземелье.",
+        "Герой тоже повержен и едва выбирается наружу.",
+    ]
+    if reason:
+        lines.append(reason)
+    lines.append(f"Потеряно золота: {gold_loss}")
+    lines.append("Ты возвращаешься в Сереброград.")
+    return "\n".join(lines)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Хендлеры
+# ──────────────────────────────────────────────────────────────────────────────
+
+
 async def dungeon_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -120,20 +160,14 @@ async def dungeon_handler(message: Message):
     if player.is_defeated:
         await message.answer(
             "☠️ Герой повержен. Сначала вылечи его в городе.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            reply_markup=_root_menu(player),
         )
         return
 
     if getattr(player, "injury_turns", 0) > 0:
         await message.answer(
             render_injury_warning(player),
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            reply_markup=_root_menu(player),
         )
         return
 
@@ -141,10 +175,7 @@ async def dungeon_handler(message: Message):
     if not dungeon:
         await message.answer(
             "В этой локации подземелье пока недоступно.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            reply_markup=_root_menu(player),
         )
         return
 
@@ -152,15 +183,11 @@ async def dungeon_handler(message: Message):
     if not cooldown["available"]:
         remaining_text = format_duration_ru(cooldown["remaining_seconds"])
         reopen_at = cooldown.get("cooldown_until", "скоро")
-
         await message.answer(
             "🕳 Это подземелье уже зачищено.\n"
             f"⏳ Откроется через: {remaining_text}\n"
             f"🗓 Следующее открытие: {reopen_at}",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            reply_markup=_root_menu(player),
         )
         return
 
@@ -170,20 +197,14 @@ async def dungeon_handler(message: Message):
         await message.answer(
             f"🔒 Вход в подземелье ещё не найден.\n"
             f"Исследуй локацию до {THRESHOLDS['dungeon_unlocks']}% — тогда найдёшь вход.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            reply_markup=_root_menu(player),
         )
         return
 
     if not spend_player_energy(message.from_user.id, 2):
         await message.answer(
             "⚡ Для входа в подземелье нужно 2 энергии.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            reply_markup=_root_menu(player),
         )
         return
 
@@ -212,13 +233,7 @@ async def dungeon_next_room_handler(message: Message):
 
     state = _get_dungeon_state(player)
     if not state:
-        await message.answer(
-            "Сейчас ты не в подземелье.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
+        await message.answer("Сейчас ты не в подземелье.", reply_markup=_root_menu(player))
         return
 
     if state.get("completed"):
@@ -229,12 +244,7 @@ async def dungeon_next_room_handler(message: Message):
         return
 
     current_room = state.get("current_room")
-    if current_room and current_room.get("type") in {
-        "combat",
-        "elite",
-        "boss",
-        "event_choice",
-    }:
+    if current_room and current_room.get("type") in {"combat", "elite", "boss", "event_choice"}:
         if current_room["type"] == "event_choice":
             await message.answer(
                 "Сначала сделай выбор в текущем событии.",
@@ -251,10 +261,7 @@ async def dungeon_next_room_handler(message: Message):
     if state["room_index"] >= state["rooms_total"]:
         state["completed"] = True
         _set_dungeon_state(player, state)
-        await message.answer(
-            render_dungeon_summary(state),
-            reply_markup=dungeon_menu(completed=True),
-        )
+        await message.answer(render_dungeon_summary(state), reply_markup=dungeon_menu(completed=True))
         return
 
     room = generate_room(state)
@@ -266,11 +273,9 @@ async def dungeon_next_room_handler(message: Message):
     if room["type"] == "treasure":
         add_player_gold(message.from_user.id, room["gold"])
         state["summary"]["gold"] += room["gold"]
-
         for item_slug, amount in room["items"].items():
             add_item(message.from_user.id, item_slug, amount)
         _add_summary_items(state, room["items"])
-
         state["current_room"] = None
         _set_dungeon_state(player, state)
 
@@ -309,7 +314,6 @@ async def dungeon_next_room_handler(message: Message):
         add_player_experience(message.from_user.id, room["reward_exp"])
         state["summary"]["gold"] += room["reward_gold"]
         state["summary"]["exp"] += room["reward_exp"]
-
         state["current_room"] = None
         _set_dungeon_state(player, state)
 
@@ -328,13 +332,9 @@ async def dungeon_next_room_handler(message: Message):
         active = get_active_monster(message.from_user.id)
         hp_line = ""
         if active:
-            hp_line = (
-                f"\n🩸 HP активного монстра: "
-                f"{active['current_hp']}/{active['max_hp']}"
-            )
+            hp_line = f"\n🩸 HP активного монстра: {active['current_hp']}/{active['max_hp']}"
 
         _set_dungeon_state(player, state)
-
         await message.answer(
             render_dungeon_state({**state, "current_room": room})
             + f"\n\n🪤 Ловушка наносит {room['damage']} урона.{hp_line}",
@@ -349,10 +349,7 @@ async def dungeon_next_room_handler(message: Message):
         )
         return
 
-    await message.answer(
-        render_dungeon_state(state),
-        reply_markup=dungeon_menu(room["type"]),
-    )
+    await message.answer(render_dungeon_state(state), reply_markup=dungeon_menu(room["type"]))
 
 
 async def dungeon_fight_handler(message: Message):
@@ -363,13 +360,7 @@ async def dungeon_fight_handler(message: Message):
 
     state = _get_dungeon_state(player)
     if not state:
-        await message.answer(
-            "Сейчас ты не в подземелье.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
+        await message.answer("Сейчас ты не в подземелье.", reply_markup=_root_menu(player))
         return
 
     room = state.get("current_room")
@@ -382,22 +373,13 @@ async def dungeon_fight_handler(message: Message):
 
     active = get_active_monster(message.from_user.id)
     if not active:
-        await message.answer(
-            "У тебя нет активного монстра.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
+        await message.answer("У тебя нет активного монстра.", reply_markup=_root_menu(player))
         return
 
     if active["current_hp"] <= 0:
         await message.answer(
             "☠️ Активный монстр повержен. Сначала вылечи его.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            reply_markup=_root_menu(player),
         )
         return
 
@@ -416,10 +398,7 @@ async def dungeon_fight_handler(message: Message):
     if enemy["hp"] <= 0:
         add_player_gold(message.from_user.id, enemy["reward_gold"])
         add_player_experience(message.from_user.id, enemy["reward_exp"])
-        add_active_monster_experience(
-            message.from_user.id,
-            max(4, enemy["reward_exp"] // 2),
-        )
+        add_active_monster_experience(message.from_user.id, max(4, enemy["reward_exp"] // 2))
 
         state["summary"]["gold"] += enemy["reward_gold"]
         state["summary"]["exp"] += enemy["reward_exp"]
@@ -428,18 +407,13 @@ async def dungeon_fight_handler(message: Message):
 
         if room["type"] == "boss":
             state["completed"] = True
-
             dungeon_cfg = get_dungeon(state["location_slug"])
-            respawn_hours = 72
-            if dungeon_cfg:
-                respawn_hours = dungeon_cfg.get("respawn_hours", 72)
-
+            respawn_hours = dungeon_cfg.get("respawn_hours", 72) if dungeon_cfg else 72
             mark_dungeon_cleared(
                 telegram_id=message.from_user.id,
                 dungeon_slug=state["location_slug"],
                 cooldown_hours=respawn_hours,
             )
-
             _set_dungeon_state(player, state)
             await message.answer(
                 f"👑 Босс повержен: {enemy['name']}\n"
@@ -470,28 +444,14 @@ async def dungeon_fight_handler(message: Message):
         gold_loss = min(25, max(8, player.gold // 10))
         defeat_player_state(message.from_user.id, gold_loss)
         player = get_player(message.from_user.id)
-
         await message.answer(
-            f"☠️ {fallen_name} пал в подземелье.\n"
-            f"Герой тоже повержен и едва выбирается наружу.\n"
-            f"Потеряно золота: {gold_loss}\n"
-            f"Ты возвращаешься в Сереброград.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
+            _defeat_and_escape_text(player, fallen_name, gold_loss),
+            reply_markup=_root_menu(player),
         )
         return
 
     _set_dungeon_state(player, state)
-    enemy_tag = (
-        "💀 Элитный враг"
-        if room["type"] == "elite"
-        else "👑 Босс"
-        if room["type"] == "boss"
-        else "⚔️ Враг"
-    )
-
+    enemy_tag = "💀 Элитный враг" if room["type"] == "elite" else "👑 Босс" if room["type"] == "boss" else "⚔️ Враг"
     await message.answer(
         f"⚔️ Ты наносишь {base_damage} урона.\n"
         f"{enemy_tag}: {enemy['name']}\n"
@@ -529,7 +489,7 @@ async def dungeon_choice_handler(callback: CallbackQuery):
     result = choice["success"] if success else choice["fail"]
 
     lines = [
-        f"{room['title']}",
+        room["title"],
         "",
         f"Ты выбираешь: {choice['text']}",
         f"Результат: {'успех' if success else 'неудача'}",
@@ -570,15 +530,9 @@ async def dungeon_choice_handler(callback: CallbackQuery):
             gold_loss = min(25, max(8, player.gold // 10))
             defeat_player_state(player.telegram_id, gold_loss)
             player = get_player(player.telegram_id)
-
             await callback.message.answer(
-                f"☠️ {fallen_name} пал после рискованного выбора.\n"
-                f"Герой едва выбирается из подземелья.\n"
-                f"Потеряно золота: {gold_loss}",
-                reply_markup=main_menu(
-                    player.location_slug,
-                    getattr(player, "current_district_slug", None),
-                ),
+                _defeat_and_escape_text(player, fallen_name, gold_loss, "Герой едва выбирается из подземелья."),
+                reply_markup=_root_menu(player),
             )
             await callback.answer()
             return
@@ -586,10 +540,7 @@ async def dungeon_choice_handler(callback: CallbackQuery):
     state["current_room"] = None
     _set_dungeon_state(player, state)
 
-    await callback.message.answer(
-        "\n".join(lines),
-        reply_markup=dungeon_menu(),
-    )
+    await callback.message.answer("\n".join(lines), reply_markup=dungeon_menu())
     await callback.answer()
 
 
@@ -601,13 +552,7 @@ async def dungeon_leave_handler(message: Message):
 
     state = _get_dungeon_state(player)
     if not state:
-        await message.answer(
-            "Ты сейчас не в подземелье.",
-            reply_markup=main_menu(
-                player.location_slug,
-                getattr(player, "current_district_slug", None),
-            ),
-        )
+        await message.answer("Ты сейчас не в подземелье.", reply_markup=_root_menu(player))
         return
 
     summary_text = ""
@@ -618,10 +563,6 @@ async def dungeon_leave_handler(message: Message):
 
     await message.answer(
         "🏃 Ты покидаешь подземелье и возвращаешься наружу." + summary_text,
-        reply_markup=main_menu(
-            player.location_slug,
-            getattr(player, "current_district_slug", None),
-        ),
+        reply_markup=_root_menu(player),
     )
-
     await show_location_screen(message, message.from_user.id)
