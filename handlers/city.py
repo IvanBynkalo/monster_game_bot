@@ -1247,24 +1247,6 @@ async def market_inline_callback(callback: CallbackQuery):
         await callback.answer(f"💰 Получено {price}з", show_alert=False)
         await _edit_city_inline(callback, render_varg_sell_text(uid), varg_sell_inline(uid))
         return
-    if data.startswith("marketnpc:varg_sell:"):
-        monster_id = int(data.split(":")[-1])
-        target = None
-        for monster in get_player_monsters(uid):
-            if int(monster["id"]) == monster_id and not monster.get("is_active"):
-                target = monster
-                break
-        if not target:
-            await callback.answer("Монстр не найден или активен.", show_alert=True)
-            return
-        price = RARITY_SELL_BASE.get(target.get("rarity", "common"), 20)
-        if not remove_player_monster(uid, monster_id):
-            await callback.answer("Не удалось продать монстра.", show_alert=True)
-            return
-        add_player_gold(uid, price)
-        await callback.answer(f"💰 Получено {price}з", show_alert=False)
-        await _edit_city_inline(callback, render_varg_sell_text(uid), varg_sell_inline(uid))
-        return
 
     # Борт
     if data == "marketnpc:bort_back":
@@ -1287,15 +1269,14 @@ async def market_inline_callback(callback: CallbackQuery):
     if data.startswith("marketnpc:bort_sell:"):
         slug = data.split(":")[-1]
         gold = sell_resource_to_city_market(uid, player.location_slug, slug, 1)
-        if gold is None:
-            await callback.answer("Не удалось продать ресурс.", show_alert=True)
+        if gold is None or gold <= 0:
+            await callback.answer("Этот ресурс нельзя продать.", show_alert=True)
             return
-        add_player_gold(uid, gold)
         rewards = _mark_city_order_progress(uid, slug)
         msg = f"💰 Продано: {get_resource_label(slug)} за {gold}з"
         if rewards:
             msg += "\n\n" + _reward_text(uid, rewards)
-        await callback.answer("Ресурс продан", show_alert=False)
+        await callback.answer(f"💰 +{gold} золота", show_alert=False)
         await callback.message.answer(msg)
         await _edit_city_inline(callback, render_bort_text(player.location_slug, uid), bort_sell_inline(uid, player.location_slug))
         return
