@@ -137,8 +137,9 @@ def normalize_text(value: str | None) -> str:
     text = value.strip().lower()
     text = re.sub(r"[\u200b-\u200d\ufe0f]", "", text)
     text = re.sub(r"\s+", " ", text).strip()
-    text = re.sub(r"\s*\((?:\d+\s*)?[✅❗]\)\s*$", "", text)
-    return text
+    # Убираем хвосты статусов на reply-кнопках: (✅), (❗), (📌), (2 ✅), (3 📌) и т.п.
+    text = re.sub(r"\s*\((?:[^()]|\s)+\)\s*$", "", text)
+    return text.strip()
 
 
 def text_is(*variants: str):
@@ -247,6 +248,7 @@ async def cooldown_cmd(message):
 async def guild_quest_callback(callback):
     """Обрабатывает взятие/сдачу гильдейских поручений и обновляет ту же inline-панель."""
     from game.guild_quests import take_quest, claim_quest, render_guild_panel
+    from keyboards.city_menu import district_actions_menu, invalidate_quest_status_cache
 
     uid = callback.from_user.id
     data = callback.data or ""
@@ -266,6 +268,9 @@ async def guild_quest_callback(callback):
         await callback.answer()
         return
 
+    invalidate_quest_status_cache(uid, profession)
+    invalidate_quest_status_cache(uid, "guild_any")
+
     await callback.answer(msg, show_alert=not ok)
 
     title, desc = _guild_meta(profession)
@@ -276,6 +281,15 @@ async def guild_quest_callback(callback):
         await callback.message.edit_text(panel_text, reply_markup=kb)
     except Exception:
         await callback.message.answer(panel_text, reply_markup=kb)
+
+    # Обновляем reply-клавиатуру квартала гильдий, чтобы статусы (✅/❗/📌) менялись сразу.
+    try:
+        await callback.message.answer(
+            "🏛 Меню гильдий обновлено.",
+            reply_markup=district_actions_menu("guild_quarter", uid),
+        )
+    except Exception:
+        pass
 
 
 
@@ -391,17 +405,11 @@ dp.message.register(
         "Торговая лавка",
     ),
 )
-dp.message.register(city_bags_handler, text_is(
-    "🎒 Лавка сумок", "Лавка сумок",
-    "🎒 Лавка сумок (❗)", "Лавка сумок (❗)",
-))
-dp.message.register(city_monsters_handler, text_is(
-    "🐲 Рынок монстров", "Рынок монстров",
-    "🐲 Рынок монстров (❗)", "Рынок монстров (❗)",
-))
-dp.message.register(city_buyer_handler, text_is("💰 Скупщик ресурсов", "Скупщик ресурсов", "💰 Скупщик ресурсов (❗)", "Скупщик ресурсов (❗)"))
-dp.message.register(city_board_handler, text_is("📜 Доска заказов", "Доска заказов", "📜 Доска заказов (❗)", "Доска заказов (❗)"))
-dp.message.register(city_guilds_handler, text_is("🏛 Гильдии", "Гильдии", "🏛 Гильдии (❗)", "Гильдии (❗)"))
+dp.message.register(city_bags_handler, text_startswith("🎒 Лавка сумок", "Лавка сумок"))
+dp.message.register(city_monsters_handler, text_startswith("🐲 Рынок монстров", "Рынок монстров"))
+dp.message.register(city_buyer_handler, text_startswith("💰 Скупщик ресурсов", "Скупщик ресурсов"))
+dp.message.register(city_board_handler, text_startswith("📜 Доска заказов", "Доска заказов"))
+dp.message.register(city_guilds_handler, text_startswith("🏛 Гильдии", "Гильдии"))
 dp.message.register(city_craft_quarter_handler, text_is("⚒ Ремесленный квартал", "Ремесленный квартал"))
 dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
 dp.message.register(take_ore_order_handler, text_is("📌 Взять заказ: Руда"))
@@ -409,10 +417,10 @@ dp.message.register(my_board_orders_handler, text_is("📒 Мои заказы")
 dp.message.register(back_to_city_from_board_handler, text_is("⬅️ Назад в город"))
 dp.message.register(city_alchemy_handler, text_is("⚗ Алхимическая лаборатория", "Алхимическая лаборатория"))
 dp.message.register(city_traps_handler, text_is("🪤 Мастер ловушек", "Мастер ловушек"))
-dp.message.register(guild_hunters_handler, text_is("🎯 Гильдия ловцов", "Гильдия ловцов", "🎯 Гильдия ловцов (❗)", "Гильдия ловцов (❗)"))
-dp.message.register(guild_gatherers_handler, text_is("🌿 Гильдия собирателей", "Гильдия собирателей", "🌿 Гильдия собирателей (❗)", "Гильдия собирателей (❗)"))
-dp.message.register(guild_geologists_handler, text_is("⛏ Гильдия геологов", "Гильдия геологов", "⛏ Гильдия геологов (❗)", "Гильдия геологов (❗)"))
-dp.message.register(guild_alchemists_handler, text_is("⚗ Гильдия алхимиков", "Гильдия алхимиков", "⚗ Гильдия алхимиков (❗)", "Гильдия алхимиков (❗)"))
+dp.message.register(guild_hunters_handler, text_startswith("🎯 Гильдия ловцов", "Гильдия ловцов"))
+dp.message.register(guild_gatherers_handler, text_startswith("🌿 Гильдия собирателей", "Гильдия собирателей"))
+dp.message.register(guild_geologists_handler, text_startswith("⛏ Гильдия геологов", "Гильдия геологов"))
+dp.message.register(guild_alchemists_handler, text_startswith("⚗ Гильдия алхимиков", "Гильдия алхимиков"))
 dp.message.register(city_guard_handler, text_is("🛡 Городская стража", "Городская стража"))
 dp.message.register(leave_city_handler, text_is("🚶 Покинуть город", "Покинуть город"))
 
