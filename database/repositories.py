@@ -4,8 +4,21 @@ repositories.py — полный слой доступа к данным на SQ
 """
 import json
 import time
+import logging
 from database.db import get_connection, json_get, json_set
 from database.models import Player
+
+logger = logging.getLogger(__name__)
+events_logger = logging.getLogger("game_events")
+
+
+def _log_repo_event(action: str, **kwargs):
+    try:
+        payload = " | ".join(f"{k}={kwargs[k]!r}" for k in sorted(kwargs))
+        events_logger.info("REPO_%s | %s", action, payload)
+    except Exception:
+        logger.exception("REPO_LOG_EVENT_FAIL | action=%s", action)
+
 
 # ─── Константы квестов ────────────────────────────────────────────────────────
 
@@ -252,11 +265,20 @@ def reset_player_state(telegram_id: int, name: str = "Игрок") -> Player:
 def _update_player_field(telegram_id: int, **fields):
     if not fields:
         return
-    sets = ", ".join(f"{k}=?" for k in fields)
-    vals = list(fields.values()) + [telegram_id]
-    with get_connection() as conn:
-        conn.execute(f"UPDATE players SET {sets} WHERE telegram_id=?", vals)
-        conn.commit()
+    try:
+        sets = ", ".join(f"{k}=?" for k in fields)
+        vals = list(fields.values()) + [telegram_id]
+        with get_connection() as conn:
+            conn.execute(f"UPDATE players SET {sets} WHERE telegram_id=?", vals)
+            conn.commit()
+        _log_repo_event("UPDATE_PLAYER_FIELD", telegram_id=telegram_id, fields=list(fields.keys()))
+    except Exception:
+        logger.exception(
+            "UPDATE_PLAYER_FIELD_FAIL | telegram_id=%s | fields=%r",
+            telegram_id,
+            fields,
+        )
+        raise
 
 def update_player_location(telegram_id: int, location_slug: str) -> Player | None:
     """Обновляет текущую локацию и выставляет корректный район по умолчанию.
@@ -863,22 +885,44 @@ def get_item_count(telegram_id: int, item_slug: str) -> int:
     return row["amount"] if row else 0
 
 def add_item(telegram_id: int, item_slug: str, amount: int = 1) -> int:
-    with get_connection() as conn:
-        conn.execute("""INSERT INTO player_items (telegram_id,item_slug,amount)
-            VALUES (?,?,?) ON CONFLICT(telegram_id,item_slug) DO UPDATE SET amount=amount+?""",
-            (telegram_id,item_slug,amount,amount))
-        conn.commit()
-    return get_item_count(telegram_id, item_slug)
+    try:
+        with get_connection() as conn:
+            conn.execute("""INSERT INTO player_items (telegram_id,item_slug,amount)
+                VALUES (?,?,?) ON CONFLICT(telegram_id,item_slug) DO UPDATE SET amount=amount+?""",
+                (telegram_id,item_slug,amount,amount))
+            conn.commit()
+        total = get_item_count(telegram_id, item_slug)
+        _log_repo_event("ADD_ITEM", telegram_id=telegram_id, item_slug=item_slug, amount=amount, total=total)
+        return total
+    except Exception:
+        logger.exception(
+            "ADD_ITEM_FAIL | telegram_id=%s | item_slug=%r | amount=%s",
+            telegram_id,
+            item_slug,
+            amount,
+        )
+        raise
 
 def spend_item(telegram_id: int, item_slug: str, amount: int = 1) -> bool:
-    current = get_item_count(telegram_id, item_slug)
-    if current < amount:
-        return False
-    with get_connection() as conn:
-        conn.execute("UPDATE player_items SET amount=amount-? WHERE telegram_id=? AND item_slug=?",
-            (amount,telegram_id,item_slug))
-        conn.commit()
-    return True
+    try:
+        current = get_item_count(telegram_id, item_slug)
+        if current < amount:
+            _log_repo_event("SPEND_ITEM_DENIED", telegram_id=telegram_id, item_slug=item_slug, amount=amount, current=current)
+            return False
+        with get_connection() as conn:
+            conn.execute("UPDATE player_items SET amount=amount-? WHERE telegram_id=? AND item_slug=?",
+                (amount,telegram_id,item_slug))
+            conn.commit()
+        _log_repo_event("SPEND_ITEM", telegram_id=telegram_id, item_slug=item_slug, amount=amount, remaining=current - amount)
+        return True
+    except Exception:
+        logger.exception(
+            "SPEND_ITEM_FAIL | telegram_id=%s | item_slug=%r | amount=%s",
+            telegram_id,
+            item_slug,
+            amount,
+        )
+        raise
 
 # ─── Ресурсы ──────────────────────────────────────────────────────────────────
 
@@ -888,25 +932,53 @@ def get_resources(telegram_id: int) -> dict:
     return {r["slug"]: r["amount"] for r in rows}
 
 def add_resource(telegram_id: int, slug: str, count: int) -> int:
-    with get_connection() as conn:
-        conn.execute("""INSERT INTO player_resources (telegram_id,slug,amount)
-            VALUES (?,?,?) ON CONFLICT(telegram_id,slug) DO UPDATE SET amount=amount+?""",
-            (telegram_id,slug,count,count))
-        conn.commit()
-    with get_connection() as conn:
-        row = conn.execute("SELECT amount FROM player_resources WHERE telegram_id=? AND slug=?", (telegram_id,slug)).fetchone()
-    return row["amount"] if row else 0
+    try:
+        with get_connection() as conn:
+            conn.execute("""INSERT INTO player_resources (telegram_id,slug,amount)
+                VALUES (?,?,?) ON CONFLICT(telegram_id,slug) DO UPDATE SET amount=amount+?""",
+                (telegram_id,slug,count,count))
+            conn.commit()
+        with get_connection() as conn:
+            row = conn.execute("SELECT amount FROM player_resources WHERE telegram_id=? AND slug=?", (telegram_id,slug)).fetchone()
+        total = row["amount"] if row else 0
+        _log_repo_event("ADD_RESOURCE", telegram_id=telegram_id, slug=slug, count=count, total=total)
+        return total
+    except Exception:
+        logger.exception(
+            "ADD_RESOURCE_FAIL | telegram_id=%s | slug=%r | count=%s",
+            telegram_id,
+            slug,
+            count,
+        )
+        raise
 
 def spend_resource(telegram_id: int, slug: str, count: int) -> bool:
-    with get_connection() as conn:
-        row = conn.execute("SELECT amount FROM player_resources WHERE telegram_id=? AND slug=?", (telegram_id,slug)).fetchone()
-    if not row or row["amount"] < count:
-        return False
-    with get_connection() as conn:
-        conn.execute("UPDATE player_resources SET amount=amount-? WHERE telegram_id=? AND slug=?",
-            (count,telegram_id,slug))
-        conn.commit()
-    return True
+    try:
+        with get_connection() as conn:
+            row = conn.execute("SELECT amount FROM player_resources WHERE telegram_id=? AND slug=?", (telegram_id,slug)).fetchone()
+        if not row or row["amount"] < count:
+            _log_repo_event(
+                "SPEND_RESOURCE_DENIED",
+                telegram_id=telegram_id,
+                slug=slug,
+                count=count,
+                current=(row["amount"] if row else 0),
+            )
+            return False
+        with get_connection() as conn:
+            conn.execute("UPDATE player_resources SET amount=amount-? WHERE telegram_id=? AND slug=?",
+                (count,telegram_id,slug))
+            conn.commit()
+        _log_repo_event("SPEND_RESOURCE", telegram_id=telegram_id, slug=slug, count=count, remaining=row["amount"] - count)
+        return True
+    except Exception:
+        logger.exception(
+            "SPEND_RESOURCE_FAIL | telegram_id=%s | slug=%r | count=%s",
+            telegram_id,
+            slug,
+            count,
+        )
+        raise
 
 # ─── Квесты ───────────────────────────────────────────────────────────────────
 
@@ -1286,34 +1358,56 @@ def get_market_monster_price(monster_slug: str) -> int:
     return max(1, int(round(e["base_price"] * (1 + 0.10 * e.get("demand",0.0)))))
 
 def purchase_market_item(telegram_id: int, item_slug: str) -> int | None:
-    p = get_player(telegram_id)
-    if not p:
-        return None
-    price = get_market_item_price(item_slug)
-    if p.gold < price:
-        return None
-    _update_player_field(telegram_id, gold=p.gold - price)
-    e = get_market_item_entry(item_slug)
-    new_demand = min(10.0, e.get("demand",0.0) + 1.0)
-    with get_connection() as conn:
-        conn.execute("UPDATE market_items SET demand=?,updated_at=? WHERE item_slug=?", (new_demand,time.time(),item_slug))
-        conn.commit()
-    return price
+    try:
+        p = get_player(telegram_id)
+        if not p:
+            _log_repo_event("PURCHASE_MARKET_ITEM_NO_PLAYER", telegram_id=telegram_id, item_slug=item_slug)
+            return None
+        price = get_market_item_price(item_slug)
+        if p.gold < price:
+            _log_repo_event("PURCHASE_MARKET_ITEM_NO_GOLD", telegram_id=telegram_id, item_slug=item_slug, price=price, gold=p.gold)
+            return None
+        _update_player_field(telegram_id, gold=p.gold - price)
+        e = get_market_item_entry(item_slug)
+        new_demand = min(10.0, e.get("demand",0.0) + 1.0)
+        with get_connection() as conn:
+            conn.execute("UPDATE market_items SET demand=?,updated_at=? WHERE item_slug=?", (new_demand,time.time(),item_slug))
+            conn.commit()
+        _log_repo_event("PURCHASE_MARKET_ITEM", telegram_id=telegram_id, item_slug=item_slug, price=price, new_demand=new_demand)
+        return price
+    except Exception:
+        logger.exception(
+            "PURCHASE_MARKET_ITEM_FAIL | telegram_id=%s | item_slug=%r",
+            telegram_id,
+            item_slug,
+        )
+        raise
 
 def purchase_market_monster(telegram_id: int, monster_slug: str) -> int | None:
-    p = get_player(telegram_id)
-    if not p:
-        return None
-    price = get_market_monster_price(monster_slug)
-    if p.gold < price:
-        return None
-    _update_player_field(telegram_id, gold=p.gold - price)
-    e = get_market_monster_entry(monster_slug)
-    new_demand = min(10.0, e.get("demand",0.0) + 1.0)
-    with get_connection() as conn:
-        conn.execute("UPDATE market_monsters_npc SET demand=?,updated_at=? WHERE monster_slug=?", (new_demand,time.time(),monster_slug))
-        conn.commit()
-    return price
+    try:
+        p = get_player(telegram_id)
+        if not p:
+            _log_repo_event("PURCHASE_MARKET_MONSTER_NO_PLAYER", telegram_id=telegram_id, monster_slug=monster_slug)
+            return None
+        price = get_market_monster_price(monster_slug)
+        if p.gold < price:
+            _log_repo_event("PURCHASE_MARKET_MONSTER_NO_GOLD", telegram_id=telegram_id, monster_slug=monster_slug, price=price, gold=p.gold)
+            return None
+        _update_player_field(telegram_id, gold=p.gold - price)
+        e = get_market_monster_entry(monster_slug)
+        new_demand = min(10.0, e.get("demand",0.0) + 1.0)
+        with get_connection() as conn:
+            conn.execute("UPDATE market_monsters_npc SET demand=?,updated_at=? WHERE monster_slug=?", (new_demand,time.time(),monster_slug))
+            conn.commit()
+        _log_repo_event("PURCHASE_MARKET_MONSTER", telegram_id=telegram_id, monster_slug=monster_slug, price=price, new_demand=new_demand)
+        return price
+    except Exception:
+        logger.exception(
+            "PURCHASE_MARKET_MONSTER_FAIL | telegram_id=%s | monster_slug=%r",
+            telegram_id,
+            monster_slug,
+        )
+        raise
 
 # ─── Ресурсный рынок города ───────────────────────────────────────────────────
 
@@ -1380,36 +1474,73 @@ def get_city_resource_buy_price(city_slug: str, slug: str, amount: int = 1) -> i
     return max(sell+1, int(round(entry["base_price"] * mu))) * max(1, amount)
 
 def sell_resource_to_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1) -> int | None:
-    p = get_player(telegram_id)
-    if not p:
-        return None
-    if not spend_resource(telegram_id, slug, amount):
-        return None
-    gold = get_city_resource_sell_price(city_slug, slug, merchant_level=getattr(p,"merchant_level",1), amount=amount)
-    _update_player_field(telegram_id, gold=p.gold + gold)
-    with get_connection() as conn:
-        conn.execute("UPDATE city_resource_markets SET stock=ROUND(stock+?,2) WHERE city_slug=? AND resource_slug=?",
-            (amount,city_slug,slug))
-        conn.commit()
-    return gold
+    try:
+        p = get_player(telegram_id)
+        if not p:
+            _log_repo_event("SELL_RESOURCE_NO_PLAYER", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount)
+            return None
+        entry = get_city_resource_market_entry(city_slug, slug)
+        if not entry:
+            _log_repo_event("SELL_RESOURCE_NO_MARKET_ENTRY", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount)
+            return None
+        if not spend_resource(telegram_id, slug, amount):
+            _log_repo_event("SELL_RESOURCE_NO_STOCK", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount)
+            return None
+        gold = get_city_resource_sell_price(city_slug, slug, merchant_level=getattr(p,"merchant_level",1), amount=amount)
+        if not gold or gold <= 0:
+            _log_repo_event("SELL_RESOURCE_BAD_PRICE", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount, gold=gold)
+            return None
+        _update_player_field(telegram_id, gold=p.gold + gold)
+        with get_connection() as conn:
+            conn.execute("UPDATE city_resource_markets SET stock=ROUND(stock+?,2) WHERE city_slug=? AND resource_slug=?",
+                (amount,city_slug,slug))
+            conn.commit()
+        _log_repo_event("SELL_RESOURCE", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount, gold=gold)
+        return gold
+    except Exception:
+        logger.exception(
+            "SELL_RESOURCE_FAIL | telegram_id=%s | city_slug=%r | slug=%r | amount=%s",
+            telegram_id,
+            city_slug,
+            slug,
+            amount,
+        )
+        raise
 
 def buy_resource_from_city_market(telegram_id: int, city_slug: str, slug: str, amount: int = 1) -> int | None:
-    p = get_player(telegram_id)
-    if not p:
-        return None
-    entry = get_city_resource_market_entry(city_slug, slug)
-    if not entry or float(entry.get("stock",0)) < amount:
-        return None
-    price = get_city_resource_buy_price(city_slug, slug, amount=amount)
-    if p.gold < price:
-        return None
-    _update_player_field(telegram_id, gold=p.gold - price)
-    add_resource(telegram_id, slug, amount)
-    with get_connection() as conn:
-        conn.execute("UPDATE city_resource_markets SET stock=ROUND(MAX(0,stock-?),2) WHERE city_slug=? AND resource_slug=?",
-            (amount,city_slug,slug))
-        conn.commit()
-    return price
+    try:
+        p = get_player(telegram_id)
+        if not p:
+            _log_repo_event("BUY_RESOURCE_NO_PLAYER", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount)
+            return None
+        entry = get_city_resource_market_entry(city_slug, slug)
+        if not entry:
+            _log_repo_event("BUY_RESOURCE_NO_MARKET_ENTRY", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount)
+            return None
+        if float(entry.get("stock",0)) < amount:
+            _log_repo_event("BUY_RESOURCE_NO_STOCK", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount, stock=entry.get("stock", 0))
+            return None
+        price = get_city_resource_buy_price(city_slug, slug, amount=amount)
+        if p.gold < price:
+            _log_repo_event("BUY_RESOURCE_NO_GOLD", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount, price=price, gold=p.gold)
+            return None
+        _update_player_field(telegram_id, gold=p.gold - price)
+        add_resource(telegram_id, slug, amount)
+        with get_connection() as conn:
+            conn.execute("UPDATE city_resource_markets SET stock=ROUND(MAX(0,stock-?),2) WHERE city_slug=? AND resource_slug=?",
+                (amount,city_slug,slug))
+            conn.commit()
+        _log_repo_event("BUY_RESOURCE", telegram_id=telegram_id, city_slug=city_slug, slug=slug, amount=amount, price=price)
+        return price
+    except Exception:
+        logger.exception(
+            "BUY_RESOURCE_FAIL | telegram_id=%s | city_slug=%r | slug=%r | amount=%s",
+            telegram_id,
+            city_slug,
+            slug,
+            amount,
+        )
+        raise
 
 # ─── Система типов ────────────────────────────────────────────────────────────
 
@@ -1913,36 +2044,52 @@ def mark_dungeon_cleared(telegram_id: int, dungeon_slug: str, cooldown_hours: in
     Вызывается после убийства босса.
     Ставит подземелье на кулдаун.
     """
-    now = datetime.utcnow()
-    cooldown_until = now + timedelta(hours=cooldown_hours)
+    try:
+        now = datetime.utcnow()
+        cooldown_until = now + timedelta(hours=cooldown_hours)
 
-    with get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO player_dungeon_progress (
-                telegram_id,
-                dungeon_slug,
-                status,
-                cleared_at,
-                cooldown_until,
-                updated_at
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO player_dungeon_progress (
+                    telegram_id,
+                    dungeon_slug,
+                    status,
+                    cleared_at,
+                    cooldown_until,
+                    updated_at
+                )
+                VALUES (?, ?, 'cleared', ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(telegram_id, dungeon_slug)
+                DO UPDATE SET
+                    status='cleared',
+                    cleared_at=excluded.cleared_at,
+                    cooldown_until=excluded.cooldown_until,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    telegram_id,
+                    dungeon_slug,
+                    now.isoformat(),
+                    cooldown_until.isoformat(),
+                ),
             )
-            VALUES (?, ?, 'cleared', ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(telegram_id, dungeon_slug)
-            DO UPDATE SET
-                status='cleared',
-                cleared_at=excluded.cleared_at,
-                cooldown_until=excluded.cooldown_until,
-                updated_at=CURRENT_TIMESTAMP
-            """,
-            (
-                telegram_id,
-                dungeon_slug,
-                now.isoformat(),
-                cooldown_until.isoformat(),
-            ),
+            conn.commit()
+        _log_repo_event(
+            "DUNGEON_CLEARED",
+            telegram_id=telegram_id,
+            dungeon_slug=dungeon_slug,
+            cooldown_hours=cooldown_hours,
+            cooldown_until=cooldown_until.isoformat(),
         )
-        conn.commit()
+    except Exception:
+        logger.exception(
+            "DUNGEON_CLEARED_FAIL | telegram_id=%s | dungeon_slug=%r | cooldown_hours=%s",
+            telegram_id,
+            dungeon_slug,
+            cooldown_hours,
+        )
+        raise
 
 
 def set_dungeon_cleared(telegram_id: int, dungeon_slug: str):
@@ -2082,102 +2229,138 @@ def get_equipped_bag(telegram_id: int) -> dict | None:
 
 
 def grant_bag(telegram_id: int, bag_slug: str, bag_name: str, capacity: int, *, source: str = "shop", sell_price: int = 0, auto_equip: bool = True) -> tuple[bool, dict | None]:
-    _ensure_default_bag(telegram_id)
-    capacity = int(capacity)
-    with get_connection() as conn:
-        existing = conn.execute(
-            "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
-        ).fetchone()
-        if existing:
-            return False, _row_to_bag(existing)
+    try:
+        _ensure_default_bag(telegram_id)
+        capacity = int(capacity)
+        with get_connection() as conn:
+            existing = conn.execute(
+                "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
+                (telegram_id, bag_slug),
+            ).fetchone()
+            if existing:
+                bag = _row_to_bag(existing)
+                _log_repo_event("GRANT_BAG_EXISTS", telegram_id=telegram_id, bag_slug=bag_slug)
+                return False, bag
 
-        equipped = conn.execute(
-            "SELECT * FROM player_bags WHERE telegram_id=? AND is_equipped=1 LIMIT 1",
-            (telegram_id,),
-        ).fetchone()
-        should_equip = bool(auto_equip and (not equipped or capacity > int(equipped["capacity"])))
-
-        if should_equip:
-            conn.execute(
-                "UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?",
+            equipped = conn.execute(
+                "SELECT * FROM player_bags WHERE telegram_id=? AND is_equipped=1 LIMIT 1",
                 (telegram_id,),
-            )
+            ).fetchone()
+            should_equip = bool(auto_equip and (not equipped or capacity > int(equipped["capacity"])))
 
-        conn.execute(
-            """
-            INSERT INTO player_bags
-                (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
-            VALUES (?,?,?,?,?,?,?)
-            """,
-            (telegram_id, bag_slug, bag_name, capacity, source, 1 if should_equip else 0, int(sell_price or 0)),
-        )
+            if should_equip:
+                conn.execute(
+                    "UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?",
+                    (telegram_id,),
+                )
 
-        if should_equip:
             conn.execute(
-                "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
-                (capacity, telegram_id),
+                """
+                INSERT INTO player_bags
+                    (telegram_id, bag_slug, bag_name, capacity, source, is_equipped, sell_price)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (telegram_id, bag_slug, bag_name, capacity, source, 1 if should_equip else 0, int(sell_price or 0)),
             )
-        conn.commit()
 
-        row = conn.execute(
-            "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
-        ).fetchone()
-    return True, _row_to_bag(row)
+            if should_equip:
+                conn.execute(
+                    "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
+                    (capacity, telegram_id),
+                )
+            conn.commit()
+
+            row = conn.execute(
+                "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
+                (telegram_id, bag_slug),
+            ).fetchone()
+        bag = _row_to_bag(row)
+        _log_repo_event("GRANT_BAG", telegram_id=telegram_id, bag_slug=bag_slug, capacity=capacity, should_equip=should_equip, source=source)
+        return True, bag
+    except Exception:
+        logger.exception(
+            "GRANT_BAG_FAIL | telegram_id=%s | bag_slug=%r | capacity=%s | source=%r",
+            telegram_id,
+            bag_slug,
+            capacity,
+            source,
+        )
+        raise
 
 
 def equip_bag(telegram_id: int, bag_slug: str) -> bool:
-    _ensure_default_bag(telegram_id)
-    bag = None
-    for item in get_player_bags(telegram_id):
-        if item["bag_slug"] == bag_slug:
-            bag = item
-            break
-    if not bag:
-        return False
+    try:
+        _ensure_default_bag(telegram_id)
+        bag = None
+        for item in get_player_bags(telegram_id):
+            if item["bag_slug"] == bag_slug:
+                bag = item
+                break
+        if not bag:
+            _log_repo_event("EQUIP_BAG_NOT_FOUND", telegram_id=telegram_id, bag_slug=bag_slug)
+            return False
 
-    total_resources = get_resources_count_total(telegram_id)
-    total_items = sum(get_items(telegram_id).values())
-    used_slots = total_resources + total_items
-    if used_slots > int(bag["capacity"]):
-        return False
+        total_resources = get_resources_count_total(telegram_id)
+        total_items = sum(get_inventory(telegram_id).values())
+        used_slots = total_resources + total_items
+        if used_slots > int(bag["capacity"]):
+            _log_repo_event("EQUIP_BAG_NO_SPACE", telegram_id=telegram_id, bag_slug=bag_slug, used_slots=used_slots, capacity=bag["capacity"])
+            return False
 
-    with get_connection() as conn:
-        conn.execute("UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?", (telegram_id,))
-        conn.execute(
-            "UPDATE player_bags SET is_equipped=1 WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
+        with get_connection() as conn:
+            conn.execute("UPDATE player_bags SET is_equipped=0 WHERE telegram_id=?", (telegram_id,))
+            conn.execute(
+                "UPDATE player_bags SET is_equipped=1 WHERE telegram_id=? AND bag_slug=?",
+                (telegram_id, bag_slug),
+            )
+            conn.execute(
+                "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
+                (int(bag["capacity"]), telegram_id),
+            )
+            conn.commit()
+        _log_repo_event("EQUIP_BAG", telegram_id=telegram_id, bag_slug=bag_slug, capacity=bag["capacity"])
+        return True
+    except Exception:
+        logger.exception(
+            "EQUIP_BAG_FAIL | telegram_id=%s | bag_slug=%r",
+            telegram_id,
+            bag_slug,
         )
-        conn.execute(
-            "UPDATE players SET bag_capacity=? WHERE telegram_id=?",
-            (int(bag["capacity"]), telegram_id),
-        )
-        conn.commit()
-    return True
+        raise
 
 
 def sell_bag(telegram_id: int, bag_slug: str) -> int | None:
-    _ensure_default_bag(telegram_id)
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
-            (telegram_id, bag_slug),
-        ).fetchone()
-        if not row:
-            return None
-        bag = _row_to_bag(row)
-        if bag["is_equipped"]:
-            return None
-        price = int(bag.get("sell_price") or 0)
-        conn.execute(
-            "DELETE FROM player_bags WHERE telegram_id=? AND bag_slug=? AND is_equipped=0",
-            (telegram_id, bag_slug),
-        )
-        if price > 0:
+    try:
+        _ensure_default_bag(telegram_id)
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM player_bags WHERE telegram_id=? AND bag_slug=?",
+                (telegram_id, bag_slug),
+            ).fetchone()
+            if not row:
+                _log_repo_event("SELL_BAG_NOT_FOUND", telegram_id=telegram_id, bag_slug=bag_slug)
+                return None
+            bag = _row_to_bag(row)
+            if bag["is_equipped"]:
+                _log_repo_event("SELL_BAG_EQUIPPED_DENIED", telegram_id=telegram_id, bag_slug=bag_slug)
+                return None
+            price = int(bag.get("sell_price") or 0)
             conn.execute(
-                "UPDATE players SET gold=gold+? WHERE telegram_id=?",
-                (price, telegram_id),
+                "DELETE FROM player_bags WHERE telegram_id=? AND bag_slug=? AND is_equipped=0",
+                (telegram_id, bag_slug),
             )
-        conn.commit()
-    return price
+            if price > 0:
+                conn.execute(
+                    "UPDATE players SET gold=gold+? WHERE telegram_id=?",
+                    (price, telegram_id),
+                )
+            conn.commit()
+        _log_repo_event("SELL_BAG", telegram_id=telegram_id, bag_slug=bag_slug, price=price)
+        return price
+    except Exception:
+        logger.exception(
+            "SELL_BAG_FAIL | telegram_id=%s | bag_slug=%r",
+            telegram_id,
+            bag_slug,
+        )
+        raise
