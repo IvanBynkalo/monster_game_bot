@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import re
+import time
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -123,11 +126,101 @@ from handlers.city import (
 # old admin handlers removed
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-logger = logging.getLogger(__name__)
+def setup_logging() -> logging.Logger:
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+
+    root = logging.getLogger()
+    if getattr(root, "_custom_setup_done", False):
+        return logging.getLogger(__name__)
+
+    root.handlers.clear()
+    root.setLevel(logging.INFO)
+
+    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(fmt)
+
+    app_file = RotatingFileHandler(
+        log_dir / "app.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    app_file.setLevel(logging.INFO)
+    app_file.setFormatter(fmt)
+
+    error_file = RotatingFileHandler(
+        log_dir / "errors.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    error_file.setLevel(logging.ERROR)
+    error_file.setFormatter(fmt)
+
+    events_logger = logging.getLogger("game_events")
+    events_logger.handlers.clear()
+    events_logger.setLevel(logging.INFO)
+    events_logger.propagate = False
+
+    events_file = RotatingFileHandler(
+        log_dir / "events.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    events_file.setLevel(logging.INFO)
+    events_file.setFormatter(fmt)
+    events_logger.addHandler(events_file)
+
+    root.addHandler(console)
+    root.addHandler(app_file)
+    root.addHandler(error_file)
+    root._custom_setup_done = True
+    return logging.getLogger(__name__)
+
+
+def get_events_logger() -> logging.Logger:
+    return logging.getLogger("game_events")
+
+
+logger = setup_logging()
+events_logger = get_events_logger()
+
+
+def _safe_user_id(obj):
+    try:
+        return obj.from_user.id if getattr(obj, "from_user", None) else None
+    except Exception:
+        return None
+
+
+def _safe_username(obj):
+    try:
+        return obj.from_user.username if getattr(obj, "from_user", None) else None
+    except Exception:
+        return None
+
+
+def log_incoming_message(message: Message):
+    events_logger.info(
+        "INCOMING_MESSAGE | user_id=%s | username=%s | text=%r",
+        _safe_user_id(message),
+        _safe_username(message),
+        (message.text or message.caption or "")[:500],
+    )
+
+
+def log_incoming_callback(callback: CallbackQuery):
+    events_logger.info(
+        "INCOMING_CALLBACK | user_id=%s | username=%s | data=%r",
+        _safe_user_id(callback),
+        _safe_username(callback),
+        (callback.data or "")[:500],
+    )
 
 
 def normalize_text(value: str | None) -> str:
@@ -173,6 +266,9 @@ def text_contains(*variants: str):
 
 def is_admin(user_id: int) -> bool:
     return user_id in set(ADMIN_IDS or [])
+
+
+ADMIN_STATES: set[int] = set()
 
 
 def has_admin_state(message: Message) -> bool:
@@ -1830,30 +1926,26 @@ async def onboarding_callback(callback):
 
 
 
-@dp.callback_query(lambda c: c.data and c.data.startswith("daily:"))
-@dp.callback_query(lambda c: c.data and c.data.startswith("egg:"))
-@dp.callback_query(lambda c: c.data and c.data.startswith("ach:"))
-
-
-# Admin text handler — перехватывает ввод в диалогах (только для админов в активном состоянии)
-
-
-
-
-
-
-
-
-
-@dp.callback_query(lambda c: c.data and c.data.startswith("shop:"))
-@dp.callback_query(lambda c: c.data and c.data.startswith("onb:"))
 
 
 
 @dp.callback_query()
 async def fallback_callback_handler(callback: CallbackQuery):
     """Перехватывает все необработанные inline-кнопки."""
-    log_callback_error(callback.data or "empty", callback.from_user.id)
+    data = callback.data or "empty"
+    uid = callback.from_user.id if callback.from_user else None
+
+    logger.warning(
+        "UNHANDLED_CALLBACK | user_id=%s | data=%r",
+        uid,
+        data,
+    )
+
+    try:
+        log_callback_error(data, uid)
+    except Exception:
+        pass
+
     try:
         await callback.answer(
             "⚠️ Эта кнопка больше не активна. Открой меню заново.",
@@ -1865,36 +1957,34 @@ async def fallback_callback_handler(callback: CallbackQuery):
 
 @dp.errors()
 async def errors_handler(event):
-    """Глобальный обработчик ошибок aiogram 3 — логирует в error_tracker."""
+    """Глобальный обработчик ошибок aiogram 3."""
     exception = event.exception
     ctx = "unknown"
     uid = None
+
     try:
         upd = event.update
         if upd.message:
-            ctx = f"msg:{(upd.message.text or '')[:50]}"
-            uid = upd.message.from_user.id
+            ctx = f"msg:{(upd.message.text or '')[:80]}"
+            uid = upd.message.from_user.id if upd.message.from_user else None
         elif upd.callback_query:
-            ctx = f"cb:{(upd.callback_query.data or '')[:50]}"
-            uid = upd.callback_query.from_user.id
+            ctx = f"cb:{(upd.callback_query.data or '')[:80]}"
+            uid = upd.callback_query.from_user.id if upd.callback_query.from_user else None
     except Exception:
         pass
-    log_exception(ctx, exception, uid)
-    return True
 
+    try:
+        log_exception(ctx, exception, uid)
+    except Exception:
+        pass
 
-async def global_error_handler(event: ErrorEvent):
-    logger.exception("Unhandled update error: %s", event.exception)
-    return True
-
-
-async def fallback_callback_handler(callback: CallbackQuery):
-    logger.warning(
-        "UNHANDLED CALLBACK: user=%s data=%r",
-        callback.from_user.id if callback.from_user else None,
-        callback.data,
+    logger.exception(
+        "GLOBAL_ERROR | ctx=%s | user_id=%s | error=%r",
+        ctx,
+        uid,
+        exception,
     )
-    await callback.answer("Кнопка не работает", show_alert=False)
+    return True
 
 
 # Unhandled messages are now logged via error_tracker middleware
@@ -1995,27 +2085,83 @@ async def _notification_loop(bot_instance):
 
 @dp.message.outer_middleware()
 async def activity_middleware(handler, event, data):
-    """Обновляет last_active_at при каждом сообщении."""
+    """Логирует все входящие сообщения, активность и ошибки."""
+    started = time.perf_counter()
+    log_incoming_message(event)
+
     try:
         _analytics_lazy()
         touch_player_activity(event.from_user.id, event.from_user.username)
     except Exception:
         pass
-    return await handler(event, data)
+
+    try:
+        result = await handler(event, data)
+        logger.info(
+            "MESSAGE_OK | user_id=%s | username=%s | text=%r | duration_ms=%.2f",
+            _safe_user_id(event),
+            _safe_username(event),
+            (event.text or event.caption or "")[:200],
+            (time.perf_counter() - started) * 1000,
+        )
+        return result
+    except Exception as exc:
+        uid = _safe_user_id(event)
+        ctx = f"msg:{(event.text or event.caption or '')[:80]}"
+
+        try:
+            log_exception(ctx, exc, uid)
+        except Exception:
+            pass
+
+        logger.exception(
+            "MESSAGE_FAIL | user_id=%s | username=%s | text=%r | error=%r",
+            uid,
+            _safe_username(event),
+            (event.text or event.caption or "")[:200],
+            exc,
+        )
+        raise
 
 
 @dp.callback_query.outer_middleware()
 async def callback_error_middleware(handler, event, data):
-    """Логирует исключения в callback-хендлерах."""
+    """Логирует все callback-и и ошибки callback-хендлеров."""
+    started = time.perf_counter()
+    log_incoming_callback(event)
+
     try:
-        return await handler(event, data)
-    except Exception as _exc:
+        result = await handler(event, data)
+        logger.info(
+            "CALLBACK_OK | user_id=%s | username=%s | data=%r | duration_ms=%.2f",
+            _safe_user_id(event),
+            _safe_username(event),
+            (event.data or "")[:200],
+            (time.perf_counter() - started) * 1000,
+        )
+        return result
+    except Exception as exc:
+        uid = _safe_user_id(event)
+        ctx = f"cb:{(event.data or '')[:80]}"
+
         try:
-            log_exception(f"cb:{(event.data or '')[:60]}", _exc,
-                         getattr(event.from_user, "id", None))
+            log_exception(ctx, exc, uid)
+        except Exception:
+            pass
+
+        logger.exception(
+            "CALLBACK_FAIL | user_id=%s | username=%s | data=%r | error=%r",
+            uid,
+            _safe_username(event),
+            (event.data or "")[:200],
+            exc,
+        )
+
+        try:
             await event.answer("⚠️ Произошла ошибка.", show_alert=True)
         except Exception:
             pass
+
         return None
 
 
