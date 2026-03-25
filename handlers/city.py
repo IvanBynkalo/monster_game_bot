@@ -1130,72 +1130,122 @@ async def market_inline_callback(callback: CallbackQuery):
         await _edit_city_inline(callback, render_mirna_sell_text(uid), mirna_sell_inline(uid))
         return
 
-    # Варг
+       # Варг
     if data == "marketnpc:varg_back":
         await _edit_city_inline(callback, render_varg_text(uid), varg_main_inline(uid))
         await callback.answer()
         return
+
     if data == "marketnpc:varg_buy_menu":
         await _edit_city_inline(callback, render_varg_buy_text(), varg_buy_inline())
         await callback.answer()
         return
+
     if data == "marketnpc:varg_sell_menu":
         await _edit_city_inline(callback, render_varg_sell_text(uid), varg_sell_inline(uid))
         await callback.answer()
         return
+
     if data == "marketnpc:varg_quest":
         ok, msg = _npc_take_or_claim_result(uid, "varg")
         await callback.answer(msg, show_alert=not ok)
         await _edit_city_inline(callback, render_varg_text(uid), varg_main_inline(uid))
         return
+
     if data.startswith("marketnpc:varg_buy:"):
         slug = data.split(":")[-1]
         offer = MONSTER_SHOP_OFFERS.get(slug)
-        if not offer or not purchase_market_monster or not add_captured_monster:
-            await callback.answer("Покупка монстра недоступна.", show_alert=True)
+
+        if not offer:
+            await callback.answer("Монстр недоступен.", show_alert=True)
             return
-   if data.startswith("marketnpc:varg_buy:"):
-    from database.repositories import get_player, update_player_gold
-    from game.crystal_service import can_store_monster, store_monster_in_crystal
-    from game.monster_service import generate_monster
 
-    slug = data.split(":")[-1]
-    offer = MONSTER_SHOP_OFFERS.get(slug)
+        # 🔥 проверка кристалла ДО покупки
+        try:
+            from game.crystal_service import can_receive_monster
 
-    if not offer:
-        await callback.answer("Монстр недоступен.", show_alert=True)
-        return
+            preview = {
+                "name": offer["name"],
+                "rarity": offer.get("rarity", "common"),
+                "level": 1,
+                "hp": offer.get("hp", 1),
+                "max_hp": offer.get("hp", 1),
+                "attack": offer.get("attack", 1),
+                "mood": offer.get("mood", "instinct"),
+            }
 
-    player = get_player(uid)
-    gold = player["gold"]
+            can_store, store_msg, target_crystal = can_receive_monster(uid, monster=preview)
+        except Exception:
+            can_store, store_msg, target_crystal = True, "", None
 
-    price = offer["price"]
+        if not can_store:
+            await callback.answer(store_msg or "❌ Нет свободных кристаллов!", show_alert=True)
+            return
 
-    if gold < price:
-        await callback.answer("❌ Недостаточно золота.", show_alert=True)
-        return
+        # покупка
+        price = purchase_market_monster(uid, slug)
+        if price is None:
+            await callback.answer("❌ Недостаточно золота.", show_alert=True)
+            return
 
-    can_store, reason = can_store_monster(uid)
-    if not can_store:
-        await callback.answer("❌ Нет свободных кристаллов!", show_alert=True)
-        return
+        captured = add_captured_monster(
+            telegram_id=uid,
+            name=offer["name"],
+            rarity=offer["rarity"],
+            mood=offer["mood"],
+            hp=offer["hp"],
+            attack=offer["attack"],
+            source_type="рынок",
+        )
 
-    update_player_gold(uid, -price)
+        # кладём в кристалл
+        try:
+            from game.crystal_service import store_monster_in_crystal
 
-    monster = generate_monster(slug)
+            ok, msg = store_monster_in_crystal(
+                uid,
+                captured["id"],
+                target_crystal["id"] if target_crystal else None,
+            )
 
-    crystal = store_monster_in_crystal(uid, monster)
+            if not ok:
+                from database.repositories import remove_player_monster, add_player_gold
+                remove_player_monster(uid, captured["id"])
+                add_player_gold(uid, price)
 
-    await callback.answer(f"🐲 Куплен {offer['name']}", show_alert=False)
+                await callback.answer("❌ Не удалось поместить монстра в кристалл.", show_alert=True)
+                return
 
-    await _edit_city_inline(
-        callback,
-        f"🐲 {offer['name']} помещён в кристалл\n\n💎 {crystal['name']}",
-        varg_buy_inline()
-    )
-    return
+        except Exception:
+            pass
+
         await callback.answer(f"🐲 Куплен {offer['name']}", show_alert=False)
         await _edit_city_inline(callback, render_varg_buy_text(), varg_buy_inline())
+        return
+
+    if data.startswith("marketnpc:varg_sell:"):
+        monster_id = int(data.split(":")[-1])
+
+        target = None
+        for monster in get_player_monsters(uid):
+            if int(monster["id"]) == monster_id and not monster.get("is_active"):
+                target = monster
+                break
+
+        if not target:
+            await callback.answer("Монстр не найден или активен.", show_alert=True)
+            return
+
+        price = RARITY_SELL_BASE.get(target.get("rarity", "common"), 20)
+
+        if not remove_player_monster(uid, monster_id):
+            await callback.answer("Не удалось продать монстра.", show_alert=True)
+            return
+
+        add_player_gold(uid, price)
+
+        await callback.answer(f"💰 Получено {price}з", show_alert=False)
+        await _edit_city_inline(callback, render_varg_sell_text(uid), varg_sell_inline(uid))
         return
     if data.startswith("marketnpc:varg_sell:"):
         monster_id = int(data.split(":")[-1])
