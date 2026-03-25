@@ -156,7 +156,7 @@ async def _show_arrival_screen(message: Message, target_slug: str, story_done):
 
     text = (
         "🚶 Ты переместился в новую область.\n\n"
-        f"{render_location_card(target_slug)}\n\n"
+        f"{render_location_card(target_slug, telegram_id=message.from_user.id, current_district_slug=getattr(player, 'current_district_slug', None))}\n\n"
         f"{exploration_panel}{weekly_text}"
     ).strip()
 
