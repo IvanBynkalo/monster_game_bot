@@ -19,12 +19,16 @@ MOOD_LABELS = {
 
 
 async def start_handler(message: Message):
+    from game.player_service import ensure_player_crystal_state
     from keyboards.main_menu import main_menu
+
+    migration = ensure_player_crystal_state(message.from_user.id)
 
     player, created = get_or_create_player(
         message.from_user.id,
         message.from_user.first_name or "Игрок"
     )
+
     starter_monster, starter_created = ensure_starter_monster(message.from_user.id)
 
     if created:
