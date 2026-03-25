@@ -1154,19 +1154,51 @@ async def market_inline_callback(callback: CallbackQuery):
         if not offer or not purchase_market_monster or not add_captured_monster:
             await callback.answer("Покупка монстра недоступна.", show_alert=True)
             return
-        price = purchase_market_monster(uid, slug)
-        if price is None:
-            await callback.answer("Недостаточно золота.", show_alert=True)
-            return
-        add_captured_monster(
-            telegram_id=uid,
-            name=offer["name"],
-            rarity=offer["rarity"],
-            mood=offer["mood"],
-            hp=offer["hp"],
-            attack=offer["attack"],
-            source_type="рынок",
-        )
+        if data.startswith("marketnpc:varg_buy:"):
+    from database.repositories import get_player, update_player_gold
+    from game.crystal_service import can_store_monster, store_monster_in_crystal
+    from game.monster_service import generate_monster
+
+    slug = data.split(":")[-1]
+    offer = MONSTER_SHOP_OFFERS.get(slug)
+
+    if not offer:
+        await callback.answer("Монстр недоступен.", show_alert=True)
+        return
+
+    player = get_player(uid)
+    gold = player["gold"]
+
+    price = offer["price"]
+
+    # ❌ НЕ ХВАТАЕТ ЗОЛОТА
+    if gold < price:
+        await callback.answer("❌ Недостаточно золота.", show_alert=True)
+        return
+
+    # ❌ НЕТ КРИСТАЛЛА
+    can_store, reason = can_store_monster(uid)
+    if not can_store:
+        await callback.answer("❌ Нет свободных кристаллов!", show_alert=True)
+        return
+
+    # ✅ СПИСЫВАЕМ ЗОЛОТО
+    update_player_gold(uid, -price)
+
+    # ✅ СОЗДАЁМ МОНСТРА
+    monster = generate_monster(slug)
+
+    # ✅ КЛАДЁМ В КРИСТАЛЛ
+    crystal = store_monster_in_crystal(uid, monster)
+
+    await callback.answer(f"🐲 Куплен {offer['name']}", show_alert=False)
+
+    await _edit_city_inline(
+        callback,
+        f"🐲 {offer['name']} помещён в кристалл\n\n💎 {crystal['name']}",
+        varg_buy_inline()
+    )
+    return
         await callback.answer(f"🐲 Куплен {offer['name']}", show_alert=False)
         await _edit_city_inline(callback, render_varg_buy_text(), varg_buy_inline())
         return
