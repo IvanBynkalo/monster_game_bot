@@ -9,6 +9,19 @@ _quest_status_cache: dict[tuple, tuple] = {}  # (uid, key) -> (status, expires_a
 _QUEST_CACHE_TTL = 10  # секунд
 
 
+def invalidate_quest_status_cache(telegram_id: int, npc_key: str | None = None):
+    """Сбрасывает кэш индикаторов квестов для игрока."""
+    keys_to_delete = []
+    for key in list(_quest_status_cache.keys()):
+        uid, current_key = key
+        if uid != telegram_id:
+            continue
+        if npc_key is None or current_key == npc_key:
+            keys_to_delete.append(key)
+    for key in keys_to_delete:
+        _quest_status_cache.pop(key, None)
+
+
 def _cached_quest_status(telegram_id: int, npc_key: str) -> str | None:
     """Возвращает статус квеста с кэшированием."""
     cache_key = (telegram_id, npc_key)
