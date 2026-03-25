@@ -21,12 +21,14 @@ MOOD_LABELS = {
 async def start_handler(message: Message):
     from game.player_service import ensure_player_crystal_state
     from keyboards.main_menu import main_menu
+    from database.repositories import get_player_monsters
 
     player, created = get_or_create_player(
         message.from_user.id,
         message.from_user.first_name or "Игрок"
     )
 
+    # 🔥 МИГРАЦИЯ + стартовый монстр + кристалл
     migration = ensure_player_crystal_state(message.from_user.id)
 
     if created:
@@ -41,25 +43,29 @@ async def start_handler(message: Message):
             "Прислушайся к шёпоту деревьев и найди источник искажения."
         )
 
+    # 🔥 ПРАВИЛЬНОЕ отображение стартового монстра
     if migration.get("starter_created"):
         monsters = get_player_monsters(message.from_user.id)
+
         if monsters:
-            starter_monster = monsters[0]
+            starter_monster = monsters[-1]  # последний = только что созданный
+
             await message.answer(
-                f"Ты получаешь стартового монстра: {starter_monster['name']}\n"
+                f"🐲 Ты получаешь стартового монстра: {starter_monster['name']}\n"
                 f"Редкость: {RARITY_LABELS.get(starter_monster['rarity'], starter_monster['rarity'])}\n"
                 f"Эмоция: {MOOD_LABELS.get(starter_monster['mood'], starter_monster['mood'])}"
             )
 
-    # Ежедневный вход: streak + награда (рек. #12)
+    # Ежедневный вход
     streak_text = handle_login_streak(message.from_user.id)
     if streak_text:
         await message.answer(streak_text)
 
-    # Аналитика сессии (рек. #20)
+    # Аналитика
     track_session_start(message.from_user.id)
 
     set_ui_screen(message.from_user.id, "main")
+
     from database.repositories import get_player as _get_fresh
     _player = _get_fresh(message.from_user.id)
 
@@ -71,20 +77,31 @@ async def start_handler(message: Message):
     loc_text = render_location_card(_player.location_slug)
 
     if is_city(_player.location_slug):
-        # В городе — показываем городское меню
-        await message.answer(loc_text, reply_markup=main_menu(_player.location_slug, _player.current_district_slug))
-    else:
-        # Вне города — показываем локацию с картинкой + inline-меню
-        await send_location_image(
-            message, _player.location_slug, loc_text,
+        await message.answer(
+            loc_text,
             reply_markup=main_menu(_player.location_slug, _player.current_district_slug)
         )
+    else:
+        await send_location_image(
+            message,
+            _player.location_slug,
+            loc_text,
+            reply_markup=main_menu(_player.location_slug, _player.current_district_slug)
+        )
+
         try:
             from game.grid_exploration_service import is_dungeon_available
-            has_dungeon = _player.location_slug in DUNGEONS and is_dungeon_available(message.from_user.id, _player.location_slug)
+            has_dungeon = (
+                _player.location_slug in DUNGEONS
+                and is_dungeon_available(message.from_user.id, _player.location_slug)
+            )
         except Exception:
             has_dungeon = False
+
         await message.answer(
             "Что делать:",
-            reply_markup=location_actions_inline(_player.location_slug, has_dungeon=has_dungeon)
+            reply_markup=location_actions_inline(
+                _player.location_slug,
+                has_dungeon=has_dungeon
+            )
         )
