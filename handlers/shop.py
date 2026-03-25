@@ -1,9 +1,26 @@
+"""
+handlers/shop.py
+
+Торговые цепочки города.
+
+Что изменено:
+- все входы в торговлю ведут в контекст Торгового квартала;
+- ui_screen ставится явно для каждого экрана;
+- кнопка "назад" возвращает в квартал, а не в случайное место;
+- исправлен импорт grant_bag;
+- добавлены безопасные обновления золота/данных игрока после покупок;
+- сохранена совместимость по именам функций и кнопок из bot.py.
+"""
+
 # ── Error tracking shim ─────────────────────────────
 try:
     from game.error_tracker import log_logic_error as _log_logic, log_exception as _log_exc
 except Exception:
-    def _log_logic(*a, **k): pass
-    def _log_exc(*a, **k): pass
+    def _log_logic(*a, **k):
+        pass
+
+    def _log_exc(*a, **k):
+        pass
 # ────────────────────────────────────────────────────
 
 from aiogram.types import Message
@@ -17,6 +34,7 @@ from database.repositories import (
     get_city_resource_market,
     get_player,
     get_resources,
+    grant_bag,
     improve_profession_from_action,
     progress_board_quests,
     progress_extra_quests,
@@ -31,7 +49,6 @@ from game.market_service import (
     get_resource_label,
     get_resource_slug_from_buy_button,
     get_resource_slug_from_sell_button,
-    render_bag_shop_text,
     render_resource_buy_text,
     render_resource_sell_text,
 )
@@ -43,14 +60,7 @@ from game.shop_service import (
 )
 from keyboards.city_menu import district_actions_menu
 from keyboards.main_menu import main_menu
-from keyboards.shop_menu import (
-    bag_shop_menu,
-    buy_resources_menu,
-    item_shop_menu,
-    monster_shop_menu,
-    sell_menu,
-    shop_menu,
-)
+from keyboards.shop_menu import buy_resources_menu, sell_menu
 
 ITEM_NAME_TO_SLUG = {
     "🛒 Купить: Малое зелье": "small_potion",
@@ -65,8 +75,20 @@ MONSTER_BUTTON_TO_SLUG = {
 }
 
 
-def _check_city_shop(player):
-    return player and has_shop(player.location_slug) and is_city(player.location_slug)
+def _root_menu(player, telegram_id: int):
+    return main_menu(
+        player.location_slug,
+        getattr(player, "current_district_slug", None),
+        telegram_id=telegram_id,
+    )
+
+
+def _check_city_shop(player) -> bool:
+    return bool(player and has_shop(player.location_slug) and is_city(player.location_slug))
+
+
+def _market_quarter_kb(telegram_id: int):
+    return district_actions_menu("market_square", telegram_id)
 
 
 def _merchant_gain_text(gain: dict | None) -> str:
@@ -85,6 +107,14 @@ def _merchant_gain_text(gain: dict | None) -> str:
     )
 
 
+async def _send_city_only_error(message: Message, text: str):
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    await message.answer(text, reply_markup=_root_menu(player, message.from_user.id))
+
+
 async def shop_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
@@ -92,112 +122,126 @@ async def shop_handler(message: Message):
         return
 
     if not _check_city_shop(player):
-        await message.answer(
+        await _send_city_only_error(
+            message,
             "Лавки и здания работают только в городе. Вернись в Сереброград.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
         )
         return
 
     set_ui_screen(message.from_user.id, "shop")
     await message.answer(
         get_shop_name(player.location_slug) + "\n\n" + render_shop_menu_text(),
-        reply_markup=district_actions_menu("market_square", message.from_user.id),
+        reply_markup=_market_quarter_kb(message.from_user.id),
     )
 
 
 async def item_shop_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Покупки доступны только в городе.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Покупки доступны только в городе.")
         return
 
     set_ui_screen(message.from_user.id, "item_shop")
+
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from database.repositories import get_inventory as _get_inventory
     from game.shop_service import ITEM_ORDER, get_market_item_price
-    from database.repositories import get_market_item_entry
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    LABELS = {
-        "small_potion":   ("🧪", "Малое зелье"),
+
+    labels = {
+        "small_potion": ("🧪", "Малое зелье"),
         "energy_capsule": ("⚡", "Капсула энергии"),
-        "basic_trap":     ("🪤", "Простая ловушка"),
-        "flee_elixir":    ("💨", "Эликсир побега"),
-        "revival_shard":  ("💎", "Осколок возрождения"),
+        "basic_trap": ("🪤", "Простая ловушка"),
+        "flee_elixir": ("💨", "Эликсир побега"),
+        "revival_shard": ("💎", "Осколок возрождения"),
     }
-    from database.repositories import get_inventory as _get_inv
-    _inv = _get_inv(message.from_user.id)
+    inventory = _get_inventory(message.from_user.id)
 
     rows = []
     for slug in ITEM_ORDER:
-        emoji, name = LABELS.get(slug, ("🛒", slug))
+        emoji, name = labels.get(slug, ("🛒", slug))
         price = get_market_item_price(slug)
-        have = _inv.get(slug, 0)
-        have_str = f" · у тебя: {have}" if have > 0 else ""
-        rows.append([InlineKeyboardButton(
-            text=f"🛒 {emoji} {name} — {price}з{have_str}",
-            callback_data=f"shop:buy:{slug}"
-        )])
-    # Extra items
-    for slug in ["flee_elixir", "revival_shard"]:
+        have = inventory.get(slug, 0)
+        suffix = f" · у тебя: {have}" if have > 0 else ""
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🛒 {emoji} {name} — {price}з{suffix}",
+                callback_data=f"shop:buy:{slug}",
+            )
+        ])
+
+    for slug in ("flee_elixir", "revival_shard"):
         try:
             from game.item_service import ITEMS
             if slug in ITEMS:
-                emoji, name = LABELS.get(slug, ("🛒", slug))
-                have = _inv.get(slug, 0)
-                have_str = f" · у тебя: {have}" if have > 0 else ""
-                rows.append([InlineKeyboardButton(
-                    text=f"🛒 {emoji} {name} — 60з{have_str}",
-                    callback_data=f"shop:buy:{slug}"
-                )])
+                emoji, name = labels.get(slug, ("🛒", slug))
+                have = inventory.get(slug, 0)
+                suffix = f" · у тебя: {have}" if have > 0 else ""
+                rows.append([
+                    InlineKeyboardButton(
+                        text=f"🛒 {emoji} {name} — 60з{suffix}",
+                        callback_data=f"shop:buy:{slug}",
+                    )
+                ])
         except Exception:
             pass
-    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="shop:back")])
-    inline_kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
-    # Используем меню квартала вместо старого shop_menu
-    _reply_kb = district_actions_menu("market_square", message.from_user.id)
-    await message.answer(render_item_shop_text(), reply_markup=_reply_kb)
-    await message.answer("🛒 Купить:", reply_markup=inline_kb)
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="shop:back")])
+
+    await message.answer(
+        render_item_shop_text(),
+        reply_markup=_market_quarter_kb(message.from_user.id),
+    )
+    await message.answer(
+        "🛒 Выбери предмет для покупки:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
 
 
 async def monster_shop_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Покупки доступны только в городе.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Покупки доступны только в городе.")
         return
 
     set_ui_screen(message.from_user.id, "monster_shop")
     await message.answer(
         render_monster_shop_text(),
-        reply_markup=district_actions_menu("market_square", message.from_user.id),
+        reply_markup=_market_quarter_kb(message.from_user.id),
     )
 
 
 async def bag_shop_handler(message: Message):
-    """Перенаправляем в inline-лавку сумок (Мирна в city.py)."""
+    """Перенаправление в inline-лавку Мирны из city.py."""
     player = get_player(message.from_user.id)
-    if not _check_city_shop(player):
-        await message.answer(
-            "Сумки продаются только в городе.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+    if not player:
+        await message.answer("Сначала напиши /start")
         return
-    # Используем inline-версию через city_bags_handler
+
+    if not _check_city_shop(player):
+        await _send_city_only_error(message, "Сумки продаются только в городе.")
+        return
+
+    set_ui_screen(message.from_user.id, "bag_shop")
     from handlers.city import city_bags_handler
     await city_bags_handler(message)
 
 
 async def buy_bag_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Сумки продаются только в городе.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Сумки продаются только в городе.")
         return
 
     text = (message.text or "").strip()
@@ -211,11 +255,17 @@ async def buy_bag_handler(message: Message):
             break
 
     if not offer or not offer_slug:
-        await message.answer("Не удалось определить сумку.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Не удалось определить сумку.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     if player.gold < offer["price"]:
-        await message.answer("Недостаточно золота.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Недостаточно золота.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     added, bag = grant_bag(
@@ -228,7 +278,10 @@ async def buy_bag_handler(message: Message):
         auto_equip=True,
     )
     if not added:
-        await message.answer("Такая сумка у тебя уже есть.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Такая сумка у тебя уже есть.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     add_player_gold(message.from_user.id, -offer["price"])
@@ -244,68 +297,84 @@ async def buy_bag_handler(message: Message):
             f"✨ Награда: +{quest['reward_exp']} опыта"
         )
 
-    equip_text = "Сумка автоматически надета." if bag.get("is_equipped") else "Сумка отправлена в гардероб Мирны."
-    text = (
+    equip_text = (
+        "Сумка автоматически надета." if bag and bag.get("is_equipped") else "Сумка отправлена в гардероб Мирны."
+    )
+    result = (
         f"🎒 Куплена сумка: {offer['name']}\n"
         f"Вместимость: {offer['capacity']}\n"
         f"{equip_text}\n"
         f"Потрачено: {offer['price']} золота\n"
-        f"Осталось золота: {updated_player.gold if updated_player else 0}"
+        f"Осталось золота: {getattr(updated_player, 'gold', 0)}"
     )
-
     if extras:
-        text += "\n\n" + "\n\n".join(extras)
+        result += "\n\n" + "\n\n".join(extras)
 
-    await message.answer(text, reply_markup=district_actions_menu("market_square", message.from_user.id))
+    await message.answer(result, reply_markup=_market_quarter_kb(message.from_user.id))
 
 
 async def buy_item_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Покупки доступны только в городе.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Покупки доступны только в городе.")
         return
 
     slug = ITEM_NAME_TO_SLUG.get((message.text or "").strip())
     if not slug:
-        await message.answer("Не удалось определить товар.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Не удалось определить товар.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     price = purchase_market_item(message.from_user.id, slug)
     if price is None:
-        await message.answer("Недостаточно золота для покупки.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Недостаточно золота для покупки.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     add_item(message.from_user.id, slug, 1)
+    updated_player = get_player(message.from_user.id)
 
     await message.answer(
-        f"✅ Покупка успешна.\n"
-        f"Товар добавлен в инвентарь.\n"
+        "✅ Покупка успешна.\n"
+        "Товар добавлен в инвентарь.\n"
         f"Потрачено: {price} золота\n"
-        f"Осталось золота: {player.gold}",
-        reply_markup=district_actions_menu("market_square", message.from_user.id),
+        f"Осталось золота: {getattr(updated_player, 'gold', 0)}",
+        reply_markup=_market_quarter_kb(message.from_user.id),
     )
 
 
 async def buy_monster_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Покупки доступны только в городе.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Покупки доступны только в городе.")
         return
 
     slug = MONSTER_BUTTON_TO_SLUG.get((message.text or "").strip())
     if not slug:
-        await message.answer("Не удалось определить монстра.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Не удалось определить монстра.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     price = purchase_market_monster(message.from_user.id, slug)
     if price is None:
-        await message.answer("Недостаточно золота для покупки.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Недостаточно золота для покупки.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     offer = MONSTER_SHOP_OFFERS[slug]
@@ -319,22 +388,24 @@ async def buy_monster_handler(message: Message):
         source_type="рынок",
     )
     monster["monster_type"] = offer["monster_type"]
+    updated_player = get_player(message.from_user.id)
 
     await message.answer(
         f"✅ Ты купил монстра: {monster['name']}\n"
         f"Потрачено: {price} золота\n"
-        f"Осталось золота: {player.gold}",
-        reply_markup=district_actions_menu("market_square", message.from_user.id),
+        f"Осталось золота: {getattr(updated_player, 'gold', 0)}",
+        reply_markup=_market_quarter_kb(message.from_user.id),
     )
 
 
 async def sell_resources_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Продавать можно только в городе у торговца.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Продавать можно только в городе у торговца.")
         return
 
     resources = get_resources(message.from_user.id)
@@ -356,11 +427,12 @@ async def sell_resources_handler(message: Message):
 
 async def buy_resources_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Покупать ресурсы можно только в городе у торговца.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Покупать ресурсы можно только в городе у торговца.")
         return
 
     market = get_city_resource_market(player.location_slug)
@@ -374,21 +446,28 @@ async def buy_resources_handler(message: Message):
 
 async def sell_resource_item_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Продавать можно только в городе у торговца.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Продавать можно только в городе у торговца.")
         return
 
     slug = get_resource_slug_from_sell_button(message.text)
     if not slug:
-        await message.answer("Не удалось определить ресурс.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Не удалось определить ресурс.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     resources = get_resources(message.from_user.id)
     if resources.get(slug, 0) <= 0:
-        await message.answer("У тебя нет этого ресурса.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "У тебя нет этого ресурса.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     gold = sell_resource_to_city_market(
@@ -397,9 +476,11 @@ async def sell_resource_item_handler(message: Message):
         slug=slug,
         amount=1,
     )
-
     if gold is None:
-        await message.answer("Не удалось продать ресурс.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Не удалось продать ресурс.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     profession_gain = improve_profession_from_action(message.from_user.id, "merchant", 1)
@@ -423,41 +504,45 @@ async def sell_resource_item_handler(message: Message):
             f"✨ Награда: +{quest['reward_exp']} опыта"
         )
 
-    text = (
-        f"💰 Продажа успешна.\n"
-        f"Получено: {gold} золота за 1 шт.\n"
-        f"Теперь золота: {player.gold}"
-        f"{_merchant_gain_text(profession_gain)}"
-    )
-
-    if extras:
-        text += "\n\n" + "\n\n".join(extras)
-
+    updated_player = get_player(message.from_user.id)
     updated_resources = get_resources(message.from_user.id)
     set_ui_screen(message.from_user.id, "sell_shop")
+
+    text = (
+        "💰 Продажа успешна.\n"
+        f"Получено: {gold} золота за 1 шт.\n"
+        f"Теперь золота: {getattr(updated_player, 'gold', 0)}"
+        f"{_merchant_gain_text(profession_gain)}"
+    )
+    if extras:
+        text += "\n\n" + "\n\n".join(extras)
 
     await message.answer(
         text,
         reply_markup=sell_menu(
             city_slug=player.location_slug,
             resources=updated_resources,
-            merchant_level=player.merchant_level,
+            merchant_level=getattr(updated_player, 'merchant_level', player.merchant_level),
         ),
     )
 
 
 async def buy_resource_item_handler(message: Message):
     player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
     if not _check_city_shop(player):
-        await message.answer(
-            "Покупать ресурсы можно только в городе у торговца.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
-        )
+        await _send_city_only_error(message, "Покупать ресурсы можно только в городе у торговца.")
         return
 
     slug = get_resource_slug_from_buy_button(message.text)
     if not slug:
-        await message.answer("Не удалось определить ресурс.", reply_markup=district_actions_menu("market_square", message.from_user.id))
+        await message.answer(
+            "Не удалось определить ресурс.",
+            reply_markup=_market_quarter_kb(message.from_user.id),
+        )
         return
 
     price = buy_resource_from_city_market(
@@ -466,7 +551,6 @@ async def buy_resource_item_handler(message: Message):
         slug=slug,
         amount=1,
     )
-
     if price is None:
         await message.answer(
             "Недостаточно золота или товара уже нет на складе.",
@@ -477,11 +561,12 @@ async def buy_resource_item_handler(message: Message):
         )
         return
 
+    updated_player = get_player(message.from_user.id)
     await message.answer(
-        f"🛒 Покупка успешна.\n"
+        "🛒 Покупка успешна.\n"
         f"Получен ресурс: {get_resource_label(slug)}\n"
         f"Потрачено: {price} золота\n"
-        f"Осталось золота: {player.gold}",
+        f"Осталось золота: {getattr(updated_player, 'gold', 0)}",
         reply_markup=buy_resources_menu(
             player.location_slug,
             get_city_resource_market(player.location_slug),
@@ -498,5 +583,5 @@ async def back_to_shop_handler(message: Message):
     set_ui_screen(message.from_user.id, "shop")
     await message.answer(
         render_shop_menu_text(),
-        reply_markup=district_actions_menu("market_square", message.from_user.id),
+        reply_markup=_market_quarter_kb(message.from_user.id),
     )
