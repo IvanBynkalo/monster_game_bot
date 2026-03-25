@@ -16,26 +16,22 @@ async def show_location_screen(message: Message, user_id: int):
         await message.answer("Ошибка: игрок не найден")
         return
 
-    # Текст локации + текущий район для полевых зон
-    loc_text = render_location_card(player.location_slug)
-    try:
-        from game.district_service import get_district, render_district_card
-        district = get_district(player.location_slug, getattr(player, "current_district_slug", None))
-        if district and not is_city(player.location_slug):
-            loc_text = (
-                f"{loc_text}\n\nТекущий район:\n"
-                f"{render_district_card(player.location_slug, district['slug'])}"
-            )
-    except Exception:
-        pass
+    # Карточка локации уже сама включает данные по текущему району
+    # и доступным районам для конкретного игрока
+    loc_text = render_location_card(
+        player.location_slug,
+        telegram_id=user_id,
+        current_district_slug=getattr(player, "current_district_slug", None),
+    )
 
     # Главное меню (нижняя клавиатура)
     reply_kb = main_menu(
         player.location_slug,
         getattr(player, "current_district_slug", None),
+        telegram_id=user_id,
     )
 
-    # Отправляем карточку (с картинкой если есть)
+    # Отправляем карточку локации
     await send_location_image(
         message,
         player.location_slug,
@@ -43,7 +39,7 @@ async def show_location_screen(message: Message, user_id: int):
         reply_markup=reply_kb,
     )
 
-    # Inline действия (кнопки действий)
+    # Inline-действия для не-городских локаций
     if not is_city(player.location_slug):
         try:
             has_dungeon = (
