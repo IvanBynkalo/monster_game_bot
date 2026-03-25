@@ -346,16 +346,14 @@ async def capture_handler(message: Message):
 
     can_store, store_msg, target_crystal = _can_store_encounter_monster(message.from_user.id, encounter)
     if not can_store:
-        await message.answer(
-            store_msg + "
-
-💎 Сначала освободи место в кристаллах или купи новый кристалл в городе.",
-            reply_markup=encounter_inline_menu(
-                has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
-                has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
-            ),
-        )
-        return
+    await message.answer(
+        store_msg + "\n\n💎 Сначала освободи место в кристаллах или купи новый кристалл в городе.",
+        reply_markup=encounter_inline_menu(
+            has_trap=get_item_count(message.from_user.id, "basic_trap") > 0,
+            has_poison_trap=get_item_count(message.from_user.id, "poison_trap") > 0,
+        ),
+    )
+    return
 
     encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + min(
         0.20,
