@@ -346,14 +346,14 @@ async def capture_handler(message: Message):
 
     can_store, store_msg, target_crystal = _can_store_encounter_monster(message.from_user.id, encounter)
     if not can_store:
-    await message.answer(
-        store_msg + "\n\n💎 Сначала освободи место в кристаллах или купи новый кристалл в городе.",
-        reply_markup=encounter_inline_menu(
-            has_trap=get_item_count(message.from_user.id, "basic_trap") > 0,
-            has_poison_trap=get_item_count(message.from_user.id, "poison_trap") > 0,
-        ),
-    )
-    return
+        await message.answer(
+            store_msg + "\n\n💎 Сначала освободи место в кристаллах или купи новый кристалл в городе.",
+            reply_markup=encounter_inline_menu(
+                has_trap=get_item_count(message.from_user.id, "basic_trap") > 0,
+                has_poison_trap=get_item_count(message.from_user.id, "poison_trap") > 0,
+            ),
+        )
+        return
 
     encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + min(
         0.20,
@@ -386,37 +386,35 @@ async def capture_handler(message: Message):
     if result.get("finished"):
         clear_pending_encounter(message.from_user.id)
 
-        # ✅ СНАЧАЛА СОЗДАЁМ
-captured = add_captured_monster(
-    message.from_user.id,
-    encounter["monster_name"],
-    encounter["rarity"],
-    encounter["mood"],
-    max(1, encounter["hp"]),
-    encounter["attack"],
-)
+        captured = add_captured_monster(
+            message.from_user.id,
+            encounter["monster_name"],
+            encounter["rarity"],
+            encounter["mood"],
+            max(1, encounter["hp"]),
+            encounter["attack"],
+        )
 
-# ❗ СРАЗУ КЛАДЁМ В КРИСТАЛЛ (без fallback'ов)
-from game.crystal_service import store_monster_in_crystal
+        from game.crystal_service import store_monster_in_crystal
 
-ok, msg = store_monster_in_crystal(
-    message.from_user.id,
-    captured["id"],
-    target_crystal["id"] if target_crystal else None
-)
+        ok, msg = store_monster_in_crystal(
+            message.from_user.id,
+            captured["id"],
+            target_crystal["id"] if target_crystal else None,
+        )
 
-# ❌ ЕСЛИ НЕ УДАЛОСЬ — ОТКАТ
-if not ok:
-    from database.repositories import remove_player_monster
-    remove_player_monster(message.from_user.id, captured["id"])
+        if not ok:
+            from database.repositories import remove_player_monster
+            remove_player_monster(message.from_user.id, captured["id"])
 
-    await message.answer(
-        "❌ Ошибка хранения монстра:\n" + msg
-    )
-    return
+            await message.answer("❌ Ошибка хранения монстра:\n" + msg)
+            return
 
-crystal_success = f"\n💎 Монстр помещён в кристалл: {target_crystal['name'] if target_crystal else 'кристалл'}"
-crystal_warn = ""
+        crystal_success = (
+            f"\n💎 Монстр помещён в кристалл: "
+            f"{target_crystal['name'] if target_crystal else 'кристалл'}"
+        )
+        crystal_warn = ""
 
         rarity_xp = {
             "common": 1,
@@ -486,6 +484,7 @@ crystal_warn = ""
             )
         except Exception:
             pass
+
         if guild_done:
             extras.extend(
                 [
@@ -515,8 +514,8 @@ crystal_warn = ""
     await message.answer(
         result["text"] + (("\n\n" + damage_text) if damage_text else ""),
         reply_markup=encounter_inline_menu(
-            has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
-            has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+            has_trap=get_item_count(message.from_user.id, "basic_trap") > 0,
+            has_poison_trap=get_item_count(message.from_user.id, "poison_trap") > 0,
         ),
     )
 async def flee_handler(message: Message):
