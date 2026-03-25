@@ -1,44 +1,67 @@
 """
-Главное меню — v3.1
-Вне города: контекстное меню по данным локации.
-В городе: city_menu.
+keyboards/main_menu.py
+
+Единое корневое меню игры.
+
+Логика:
+- В путешествии: отдельное компактное меню путешественника.
+- В городе: корневое городское меню.
+- Вне города: корневое полевое меню.
+
+Важно:
+- Reply keyboard здесь отвечает только за крупные разделы.
+- Действия внутри экранов должны жить в inline-кнопках или отдельных подменю.
 """
+
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 from game.location_rules import is_city
-from keyboards.city_menu import city_menu
 
 
+def main_menu(
+    location_slug: str,
+    district_slug: str | None = None,
+    is_traveling: bool = False,
+    telegram_id: int | None = None,
+) -> ReplyKeyboardMarkup:
+    """
+    Возвращает корневое меню в зависимости от контекста игрока.
 
-def _get_notif_label(telegram_id: int = None) -> str:
-    try:
-        if not telegram_id:
-            return "🔔 Уведомления"
-        from game.notification_service import get_unread_count
-        n = get_unread_count(telegram_id)
-        return f"🔔 Уведомления ({n} 🔵)" if n > 0 else "🔔 Уведомления"
-    except Exception:
-        return "🔔 Уведомления"
+    Параметры district_slug и telegram_id пока оставлены для совместимости
+    с текущими вызовами в проекте.
+    """
 
-def main_menu(location_slug: str, district_slug: str | None = None,
-              is_traveling: bool = False, telegram_id: int = None) -> ReplyKeyboardMarkup:
-    # Если игрок в пути — всегда показываем меню путешественника,
-    # даже если физически ещё находится в городе
+    # Режим путешествия: минимум кнопок, без лишних отвлечений
     if is_traveling:
         keyboard = [
-            [KeyboardButton(text="🚫 Отменить перемещение"), KeyboardButton(text="🐲 Мои монстры")],
-            [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="👤 Персонаж")],
-            [KeyboardButton(text="📂 Ещё")],
+            [KeyboardButton(text="🚫 Отменить перемещение")],
+            [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="🎒 Инвентарь")],
+            [KeyboardButton(text="👤 Персонаж"), KeyboardButton(text="📂 Ещё")],
         ]
-        return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+        return ReplyKeyboardMarkup(
+            keyboard=keyboard,
+            resize_keyboard=True,
+        )
 
+    # Городское корневое меню
     if is_city(location_slug):
-        return city_menu(district_slug, telegram_id=telegram_id)
+        keyboard = [
+            [KeyboardButton(text="🏙 Город")],
+            [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="🎒 Инвентарь")],
+            [KeyboardButton(text="👤 Персонаж"), KeyboardButton(text="📂 Ещё")],
+        ]
+        return ReplyKeyboardMarkup(
+            keyboard=keyboard,
+            resize_keyboard=True,
+        )
 
+    # Полевое корневое меню
     keyboard = [
-        [KeyboardButton(text="🗺 Мир / переходы"), KeyboardButton(text="🐲 Мои монстры")],
-        [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="👤 Персонаж")],
-        [KeyboardButton(text="📂 Ещё")],
+        [KeyboardButton(text="🧭 Локация"), KeyboardButton(text="🗺 Переходы")],
+        [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="🎒 Инвентарь")],
+        [KeyboardButton(text="👤 Персонаж"), KeyboardButton(text="📂 Ещё")],
     ]
-
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+    )
