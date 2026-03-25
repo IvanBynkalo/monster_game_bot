@@ -1209,10 +1209,9 @@ async def market_inline_callback(callback: CallbackQuery):
             )
 
             if not ok:
-                from database.repositories import remove_player_monster, add_player_gold
                 remove_player_monster(uid, captured["id"])
                 add_player_gold(uid, price)
-
+                
                 await callback.answer("❌ Не удалось поместить монстра в кристалл.", show_alert=True)
                 return
 
