@@ -1,17 +1,76 @@
+import logging
+import os
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from datetime import datetime
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-LOG_DIR = BASE_DIR / "logs"
+
+LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
-LOG_FILE = LOG_DIR / "game.log"
 
-def log_event(event_type: str, telegram_id: int | None = None, details: str = ""):
-    timestamp = datetime.utcnow().isoformat()
-    line = f"[{timestamp}] {event_type}"
-    if telegram_id is not None:
-        line += f" user={telegram_id}"
-    if details:
-        line += f" | {details}"
-    with LOG_FILE.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
+APP_LOG_FILE = LOG_DIR / "app.log"
+ERROR_LOG_FILE = LOG_DIR / "errors.log"
+EVENT_LOG_FILE = LOG_DIR / "events.log"
+
+
+def setup_logging() -> logging.Logger:
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    if logger.handlers:
+        return logger
+
+    log_format = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(log_format)
+
+    app_handler = RotatingFileHandler(
+        APP_LOG_FILE,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    app_handler.setLevel(logging.INFO)
+    app_handler.setFormatter(log_format)
+
+    error_handler = RotatingFileHandler(
+        ERROR_LOG_FILE,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(log_format)
+
+    logger.addHandler(console_handler)
+    logger.addHandler(app_handler)
+    logger.addHandler(error_handler)
+
+    # Отдельный логгер игровых событий
+    events_logger = logging.getLogger("game_events")
+    events_logger.setLevel(logging.INFO)
+    events_logger.propagate = False
+
+    if not events_logger.handlers:
+        events_handler = RotatingFileHandler(
+            EVENT_LOG_FILE,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        events_handler.setLevel(logging.INFO)
+        events_handler.setFormatter(log_format)
+        events_logger.addHandler(events_handler)
+
+    return logger
+
+
+def get_logger(name: str) -> logging.Logger:
+    return logging.getLogger(name)
+
+
+def get_events_logger() -> logging.Logger:
+    return logging.getLogger("game_events")
