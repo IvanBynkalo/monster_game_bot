@@ -82,34 +82,34 @@ LOCATIONS = {
     ),
 }
 
-# Уровни доступа к локациям (минимальный уровень игрока)
+# Оставлено для совместимости со старым кодом.
+# Источником правды теперь считаем game.location_rules.LOCATION_REQUIREMENTS
 LOCATION_LEVEL_REQUIREMENT = {
-    "silver_city":   1,
-    "dark_forest":   1,   # стартовая зона
-    "emerald_fields":1,   # стартовая зона
-    "shadow_marsh":  4,
-    "stone_hills":   4,
-    "shadow_swamp":  6,
-    "ancient_ruins": 6,
-    "bone_desert":   8,
-    "volcano_wrath": 10,
-    "storm_ridge":   10,
-    "emotion_rift":  12,
+    "silver_city": 1,
+    "dark_forest": 1,
+    "emerald_fields": 1,
+    "stone_hills": 2,
+    "shadow_marsh": 3,
+    "shadow_swamp": 3,
+    "ancient_ruins": 5,
+    "bone_desert": 6,
+    "volcano_wrath": 8,
+    "storm_ridge": 10,
+    "emotion_rift": 12,
 }
 
-# Упрощённая карта переходов — максимум 2-3 соседа у каждой точки
 TRAVEL_GRAPH = {
-    "silver_city":   ["dark_forest"],
-    "dark_forest":   ["silver_city", "emerald_fields", "shadow_marsh"],
-    "emerald_fields":["dark_forest", "stone_hills"],
-    "shadow_marsh":  ["dark_forest", "shadow_swamp"],
-    "stone_hills":   ["emerald_fields", "ancient_ruins"],
-    "shadow_swamp":  ["shadow_marsh", "bone_desert"],
+    "silver_city": ["dark_forest"],
+    "dark_forest": ["silver_city", "emerald_fields", "shadow_marsh"],
+    "emerald_fields": ["dark_forest", "stone_hills"],
+    "shadow_marsh": ["dark_forest", "shadow_swamp"],
+    "stone_hills": ["emerald_fields", "ancient_ruins"],
+    "shadow_swamp": ["shadow_marsh", "bone_desert"],
     "ancient_ruins": ["stone_hills", "bone_desert"],
-    "bone_desert":   ["shadow_swamp", "ancient_ruins", "volcano_wrath"],
+    "bone_desert": ["shadow_swamp", "ancient_ruins", "volcano_wrath"],
     "volcano_wrath": ["bone_desert", "storm_ridge"],
-    "storm_ridge":   ["volcano_wrath", "emotion_rift"],
-    "emotion_rift":  ["storm_ridge"],
+    "storm_ridge": ["volcano_wrath", "emotion_rift"],
+    "emotion_rift": ["storm_ridge"],
 }
 
 MOOD_LABELS = {
@@ -118,6 +118,8 @@ MOOD_LABELS = {
     "instinct": "🎯 Инстинкт",
     "inspiration": "✨ Вдохновение",
 }
+
+STARTER_LOCATIONS = {"silver_city", "dark_forest", "emerald_fields"}
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 WORLD_MAP_PATH = BASE_DIR / "assets" / "world_map.png"
@@ -140,32 +142,182 @@ def render_map_overview(current_slug: str) -> str:
     lines = ["🗺 Карта мира", ""]
     for slug, location in LOCATIONS.items():
         marker = "📍" if slug == current_slug else "▫️"
-        lines.append(f"{marker} {location.name} — {MOOD_LABELS[location.mood]}")
+        lines.append(f"{marker} {location.name} — {MOOD_LABELS.get(location.mood, location.mood)}")
     return "\n".join(lines)
 
 
-def render_location_card(location_slug: str) -> str:
+def _get_player(telegram_id: int | None):
+    if not telegram_id:
+        return None
+    try:
+        from database.repositories import get_player
+        return get_player(telegram_id)
+    except Exception:
+        return None
+
+
+def _get_completed_story_ids(telegram_id: int | None) -> list[str]:
+    if not telegram_id:
+        return []
+    try:
+        from database.repositories import get_player_story
+        story = get_player_story(telegram_id)
+        return story.get("completed_ids", []) if story else []
+    except Exception:
+        return []
+
+
+def _is_location_discovered(telegram_id: int | None, location_slug: str) -> bool:
+    if location_slug in STARTER_LOCATIONS:
+        return True
+    if not telegram_id:
+        return True
+
+    try:
+        from database.repositories import get_connection
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
+                (telegram_id, location_slug),
+            ).fetchone()
+
+        if not row:
+            return False
+
+        if isinstance(row, tuple):
+            return row[0] > 0
+
+        return row["cnt"] > 0
+    except Exception:
+        # Лучше показать зону, чем сломать экран
+        return True
+
+
+def _format_transition_line(location, player=None, completed_ids: list[str] | None = None, telegram_id: int | None = None) -> str:
+    discovered = _is_location_discovered(telegram_id, location.slug)
+
+    if not discovered and location.slug not in STARTER_LOCATIONS:
+        return "— ❓ Неизведанная территория"
+
+    if player is None:
+        from game.location_rules import LOCATION_REQUIREMENTS
+        req = LOCATION_REQUIREMENTS.get(location.slug, {})
+        min_lvl = req.get("min_level", 1)
+        if min_lvl > 1:
+            return f"— {location.name} (ур.{min_lvl}+)"
+        return f"— {location.name}"
+
+    from game.location_rules import check_location_access, LOCATION_REQUIREMENTS
+
+    allowed, _ = check_location_access(player, location.slug, completed_ids or [])
+    req = LOCATION_REQUIREMENTS.get(location.slug, {})
+    min_lvl = req.get("min_level", 1)
+
+    if allowed:
+        return f"— {location.name}"
+
+    if min_lvl > 1:
+        return f"— 🔒 {location.name} (ур.{min_lvl}+)"
+    return f"— 🔒 {location.name}"
+
+
+def _build_district_section(location_slug: str, current_district_slug: str | None = None, telegram_id: int | None = None) -> list[str]:
+    try:
+        from game.district_service import (
+            get_district,
+            get_districts_for_location,
+            get_unlocked_districts,
+            MOOD_LABELS as DISTRICT_MOOD_LABELS,
+        )
+    except Exception:
+        return []
+
+    all_districts = get_districts_for_location(location_slug)
+    if not all_districts:
+        return []
+
+    current_district = get_district(location_slug, current_district_slug) if current_district_slug else None
+
+    lines: list[str] = []
+
+    if current_district:
+        lines.extend([
+            "",
+            "Текущий район:",
+            current_district["name"],
+            f"Эмоция района: {DISTRICT_MOOD_LABELS.get(current_district['mood'], current_district['mood'])}",
+            f"Опасность: {current_district['danger']}",
+            "",
+            current_district["description"],
+        ])
+
+    lines.extend([
+        "",
+        "Доступные районы этой локации:",
+    ])
+
+    if telegram_id:
+        visible_districts = get_unlocked_districts(telegram_id, location_slug)
+        visible_slugs = {d["slug"] for d in visible_districts}
+    else:
+        visible_districts = all_districts
+        visible_slugs = {d["slug"] for d in all_districts}
+
+    for district in all_districts:
+        marker = "📍" if district["slug"] == current_district_slug else "▫️"
+
+        if district["slug"] in visible_slugs:
+            lines.append(f"{marker} {district['name']}")
+        else:
+            lines.append(f"{marker} 🔒 Неоткрытый район")
+
+    return lines
+
+
+def render_location_card(
+    location_slug: str,
+    telegram_id: int | None = None,
+    current_district_slug: str | None = None,
+) -> str:
     location = get_location(location_slug)
     if not location:
         return "Локация не найдена."
+
     neighbors = get_connected_locations(location_slug)
+    player = _get_player(telegram_id)
+    completed_ids = _get_completed_story_ids(telegram_id)
+
     lines = [
         location.name,
         f"Тип местности: {location.biome}",
-        f"Эмоция локации: {MOOD_LABELS[location.mood]}",
+        f"Эмоция локации: {MOOD_LABELS.get(location.mood, location.mood)}",
         "",
         location.description,
         "",
         "Переходы:",
     ]
-    from game.location_rules import LOCATION_REQUIREMENTS
-    for item in neighbors:
-        req = LOCATION_REQUIREMENTS.get(item.slug, {})
-        min_lvl = req.get("min_level", 1)
-        if min_lvl > 1:
-            lines.append(f"— {item.name} (ур.{min_lvl}+)")
-        else:
-            lines.append(f"— {item.name}")
+
+    if neighbors:
+        for item in neighbors:
+            lines.append(
+                _format_transition_line(
+                    item,
+                    player=player,
+                    completed_ids=completed_ids,
+                    telegram_id=telegram_id,
+                )
+            )
+    else:
+        lines.append("— Нет доступных переходов")
+
+    district_lines = _build_district_section(
+        location_slug,
+        current_district_slug=current_district_slug,
+        telegram_id=telegram_id,
+    )
+    if district_lines:
+        lines.extend(district_lines)
+
     return "\n".join(lines)
 
 
@@ -173,17 +325,23 @@ def build_map_caption(current_slug: str) -> str:
     location = get_location(current_slug)
     if not location:
         return "🗺 Визуальная карта мира"
+
     neighbors = get_connected_locations(current_slug)
     lines = [
         "🗺 Визуальная карта мира",
         "",
         f"Сейчас ты находишься: {location.name}",
-        f"Доминирующая эмоция зоны: {MOOD_LABELS[location.mood]}",
+        f"Доминирующая эмоция зоны: {MOOD_LABELS.get(location.mood, location.mood)}",
         "",
         "Доступные переходы:",
     ]
-    for item in neighbors:
-        lines.append(f"• {item.name}")
+
+    if neighbors:
+        for item in neighbors:
+            lines.append(f"• {item.name}")
+    else:
+        lines.append("• Нет соседних локаций")
+
     return "\n".join(lines)
 
 
@@ -192,9 +350,17 @@ def get_move_commands(location_slug: str):
 
 
 def resolve_location_by_move_text(text: str):
-    target_name = text.replace("🚶 ", "", 1).strip()
+    cleaned = (text or "").strip()
+    prefixes = ("🚶 ", "🔒 ", "Перейти: ")
+    for prefix in prefixes:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned.replace(prefix, "", 1).strip()
+
+    if " (ур." in cleaned:
+        cleaned = cleaned.split(" (ур.", 1)[0].strip()
+
     for location in LOCATIONS.values():
-        if location.name == target_name:
+        if location.name == cleaned:
             return location
     return None
 
