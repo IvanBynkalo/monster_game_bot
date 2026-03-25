@@ -1,154 +1,347 @@
 from aiogram.types import Message, FSInputFile
-from utils.images import send_location_image
-from game.exploration_service import render_exploration_panel
-from game.weekly_quest_service import check_and_assign_weekly_quest, get_active_weekly_quest, render_weekly_quest
 
-from database.repositories import get_player, set_ui_screen, update_player_location, update_story_progress
-from game.location_rules import check_location_access
+from database.repositories import (
+    get_player,
+    set_ui_screen,
+    update_player_location,
+    update_story_progress,
+)
+from game.location_rules import check_location_access, is_city
 from game.map_service import (
     WORLD_MAP_PATH,
     build_map_caption,
-    render_map_overview,
-    render_location_card,
     get_move_commands,
+    render_location_card,
+    render_map_overview,
     resolve_location_by_move_text,
 )
 from game.story_service import apply_story_reward
-from game.travel_service import start_travel, get_travel, get_travel_seconds, format_travel_time, is_traveling, check_arrival, render_travel_status, LOCATION_NAMES
-from keyboards.main_menu import main_menu
+from game.travel_service import (
+    LOCATION_NAMES,
+    check_arrival,
+    get_travel,
+    is_traveling,
+    render_travel_status,
+    start_travel,
+)
+from game.weekly_quest_service import (
+    check_and_assign_weekly_quest,
+    get_active_weekly_quest,
+    render_weekly_quest,
+)
 from keyboards.location_menu import location_actions_inline
+from keyboards.main_menu import main_menu
 from keyboards.navigation_menu import navigation_menu
+from services.ui_service import show_location_screen
+from utils.images import send_location_image
+
+
 # ── Error tracking shim ──────────────────────────────────────────────────────
 try:
     from game.error_tracker import log_logic_error as _log_logic, log_exception as _log_exc
-except Exception:
-    def _log_logic(*a, **k): pass
-    def _log_exc(*a, **k): pass
+except Exception:  # pragma: no cover
+    def _log_logic(*a, **k):
+        pass
+
+    def _log_exc(*a, **k):
+        pass
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _normalize_move_text(text: str) -> str:
     import re
+
     text = (text or "").strip()
     if text.startswith("Перейти: "):
         text = "🚶 " + text.replace("Перейти: ", "", 1)
-    # Убираем суффикс уровня "(ур.X+)" если есть
     text = re.sub(r"\s*\(ур\.\d+\+\)\s*$", "", text).strip()
     return text
 
 
-async def navigation_handler(message: Message):
-    player = get_player(message.from_user.id)
-    if not player:
-        await message.answer("Сначала напиши /start")
-        return
-    set_ui_screen(message.from_user.id, "navigation")
-    await message.answer(
-        "🧭 Навигация\n\nЗдесь собраны все доступные переходы: районы, соседние области и карта.",
-        reply_markup=navigation_menu(player.location_slug, player.current_district_slug, telegram_id=message.from_user.id),
+def _root_menu_for_player(player, user_id: int, *, traveling: bool = False):
+    return main_menu(
+        player.location_slug,
+        getattr(player, "current_district_slug", None),
+        is_traveling=traveling,
+        telegram_id=user_id,
     )
 
 
-async def map_handler(message: Message):
-    player = get_player(message.from_user.id)
-    if not player:
-        await message.answer("Сначала напиши /start")
-        return
-
-    # Проверяем прибытие / статус пути
+async def _show_travel_status(message: Message, player) -> bool:
+    """Показывает статус путешествия. Возвращает True, если игрок сейчас в пути."""
     arrival = check_arrival(message.from_user.id)
     if arrival and arrival.get("arrived"):
-        player = get_player(message.from_user.id)
-    elif is_traveling(message.from_user.id):
-        travel_data = get_travel(message.from_user.id)
-        if travel_data:
-            await message.answer(
-                render_travel_status(travel_data),
-                reply_markup=main_menu(player.location_slug, player.current_district_slug, is_traveling=True)
-            )
-        return
+        return False
 
-    set_ui_screen(message.from_user.id, "main")
+    if not is_traveling(message.from_user.id):
+        return False
+
+    travel_data = get_travel(message.from_user.id)
+    if travel_data:
+        await message.answer(
+            render_travel_status(travel_data),
+            reply_markup=_root_menu_for_player(player, message.from_user.id, traveling=True),
+        )
+    return True
+
+
+async def _show_world_map(message: Message, player):
     caption = build_map_caption(player.location_slug)
-
-    from game.location_rules import is_city
-    from game.dungeon_service import DUNGEONS
-    from game.grid_exploration_service import is_dungeon_available
+    set_ui_screen(message.from_user.id, "main")
 
     if WORLD_MAP_PATH.exists():
         await message.answer_photo(
             photo=FSInputFile(str(WORLD_MAP_PATH)),
             caption=caption,
-            reply_markup=main_menu(player.location_slug, player.current_district_slug),
+            reply_markup=_root_menu_for_player(player, message.from_user.id),
         )
     else:
         await message.answer(
             render_map_overview(player.location_slug),
-            reply_markup=main_menu(player.location_slug, player.current_district_slug)
+            reply_markup=_root_menu_for_player(player, message.from_user.id),
         )
 
-    # Inline-меню действий — только вне города
-    if not is_city(player.location_slug):
-        try:
-            has_dungeon = player.location_slug in DUNGEONS and is_dungeon_available(
-                message.from_user.id, player.location_slug
-            )
-        except Exception:
-            has_dungeon = False
-        await message.answer(
-            "Что делать:",
-            reply_markup=location_actions_inline(player.location_slug, has_dungeon=has_dungeon)
+
+async def _show_location_actions(message: Message, location_slug: str):
+    if is_city(location_slug):
+        return
+
+    try:
+        from game.dungeon_service import DUNGEONS
+        from game.grid_exploration_service import is_dungeon_available
+
+        has_dungeon = location_slug in DUNGEONS and is_dungeon_available(
+            message.from_user.id,
+            location_slug,
         )
+    except Exception:
+        has_dungeon = False
+
+    await message.answer(
+        "Что будешь делать в этой локации?",
+        reply_markup=location_actions_inline(location_slug, has_dungeon=has_dungeon),
+    )
+
+
+async def _show_arrival_screen(message: Message, target_slug: str, story_done):
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
+    try:
+        from game.grid_exploration_service import render_exploration_panel
+
+        exploration_panel = render_exploration_panel(message.from_user.id, target_slug)
+    except Exception as exc:
+        _log_exc("grid panel failed", exc=exc, extra={"target_slug": target_slug})
+        exploration_panel = ""
+
+    try:
+        new_weekly = check_and_assign_weekly_quest(message.from_user.id, target_slug)
+        active_weekly = get_active_weekly_quest(message.from_user.id, target_slug)
+    except Exception as exc:
+        _log_exc("weekly quest failed", exc=exc, extra={"target_slug": target_slug})
+        new_weekly = None
+        active_weekly = None
+
+    weekly_text = ""
+    if new_weekly:
+        weekly_text = f"\n\n🎉 Новый недельный квест!\n{render_weekly_quest(new_weekly)}"
+    elif active_weekly and not active_weekly.get("completed"):
+        weekly_text = f"\n\n{render_weekly_quest(active_weekly)}"
+
+    text = (
+        "🚶 Ты переместился в новую область.\n\n"
+        f"{render_location_card(target_slug)}\n\n"
+        f"{exploration_panel}{weekly_text}"
+    ).strip()
+
+    if story_done:
+        text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
+
+    await send_location_image(
+        message,
+        target_slug,
+        text,
+        reply_markup=_root_menu_for_player(player, message.from_user.id),
+    )
+    await _show_location_actions(message, target_slug)
+
+    try:
+        from game.emotion_birth_service import BIRTH_LOCATIONS, get_birth_panel
+
+        if target_slug in BIRTH_LOCATIONS:
+            birth_panel = get_birth_panel(message.from_user.id, target_slug)
+            if birth_panel:
+                await message.answer(birth_panel)
+    except Exception:
+        pass
+
+
+def _mark_location_discovered(user_id: int, location_slug: str):
+    try:
+        from database.repositories import get_connection
+
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO player_grid_exploration
+                (telegram_id, location_slug, col, row, cell_type)
+                VALUES (?, ?, 5, 0, 'normal')
+                """,
+                (user_id, location_slug),
+            )
+            conn.commit()
+    except Exception as exc:
+        _log_exc("mark discovered failed", exc=exc, extra={"location_slug": location_slug})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Handlers
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def map_handler(message: Message):
+    """Экран обзора мира / карты, отдельно от экрана текущей локации."""
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
+    if await _show_travel_status(message, player):
+        return
+
+    player = get_player(message.from_user.id) or player
+    await _show_world_map(message, player)
 
 
 async def location_handler(message: Message):
+    """Экран текущей локации: где игрок находится и что тут можно делать."""
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
+    if await _show_travel_status(message, player):
+        return
+
+    set_ui_screen(message.from_user.id, "location")
     await show_location_screen(message, message.from_user.id)
+
+
+async def navigation_handler(message: Message):
+    """Экран только для переходов: соседние зоны и районы текущей локации."""
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+
+    arrival = check_arrival(message.from_user.id)
+    if arrival and arrival.get("arrived"):
+        player = get_player(message.from_user.id) or player
+
+    if is_traveling(message.from_user.id):
+        travel_data = get_travel(message.from_user.id)
+        if travel_data:
+            await message.answer(
+                render_travel_status(travel_data),
+                reply_markup=_root_menu_for_player(player, message.from_user.id, traveling=True),
+            )
+        return
+
+    set_ui_screen(message.from_user.id, "navigation")
+
+    district_slug = getattr(player, "current_district_slug", None)
+    current_location_name = LOCATION_NAMES.get(player.location_slug, player.location_slug)
+    lines = [
+        "🗺 Переходы",
+        "",
+        f"Сейчас ты находишься: {current_location_name}",
+    ]
+
+    if district_slug:
+        lines.append(f"Текущий район: {district_slug}")
+
+    if is_city(player.location_slug):
+        lines += [
+            "",
+            "Здесь можно переходить между городскими районами или выйти через главные ворота.",
+        ]
+    else:
+        lines += [
+            "",
+            "Здесь показаны соседние локации и доступные районы текущей зоны.",
+            "Чтобы посмотреть описание места и действия в нём, нажми «🧭 Локация».",
+        ]
+
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=navigation_menu(
+            player.location_slug,
+            district_slug,
+            telegram_id=message.from_user.id,
+        ),
+    )
 
 
 async def move_handler(message: Message):
     player = get_player(message.from_user.id)
     if not player:
-        await show_location_screen(message, message.from_user.id)
+        await message.answer("Сначала напиши /start")
         return
 
-    # Проверяем не в пути ли уже герой
-    if (message.text or "").strip() == "🚫 Отменить перемещение":
-        from database.repositories import get_connection as _gc_cancel
-        with _gc_cancel() as _conn:
-            _conn.execute("DELETE FROM player_travel WHERE telegram_id=?",
-                          (message.from_user.id,))
-            _conn.commit()
+    text = (message.text or "").strip()
+
+    if text == "🚫 Отменить перемещение":
+        from database.repositories import get_connection
+
+        with get_connection() as conn:
+            conn.execute(
+                "DELETE FROM player_travel WHERE telegram_id=?",
+                (message.from_user.id,),
+            )
+            conn.commit()
+
         await message.answer(
             "✅ Перемещение отменено. Ты остался на месте.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug)
+            reply_markup=_root_menu_for_player(player, message.from_user.id),
         )
         return
 
-    # Сначала проверяем — может уже прибыли?
-    _mv_arrival = check_arrival(message.from_user.id)
-    if _mv_arrival and _mv_arrival.get("arrived"):
-        # Прибыли — обновляем игрока и продолжаем к выбору следующего перехода
-        player = get_player(message.from_user.id)
-        if player:
-            await message.answer(
-                f"✅ Ты прибыл в {LOCATION_NAMES.get(_mv_arrival['to_slug'], _mv_arrival['to_slug'])}!",
-                reply_markup=main_menu(player.location_slug, player.current_district_slug)
-            )
+    arrival = check_arrival(message.from_user.id)
+    if arrival and arrival.get("arrived"):
+        player = get_player(message.from_user.id) or player
+        await message.answer(
+            f"✅ Ты прибыл в {LOCATION_NAMES.get(player.location_slug, player.location_slug)}!",
+            reply_markup=_root_menu_for_player(player, message.from_user.id),
+        )
         return
-    elif is_traveling(message.from_user.id):
+
+    if is_traveling(message.from_user.id):
         travel_data = get_travel(message.from_user.id)
         if travel_data:
-            await message.answer(render_travel_status(travel_data))
-            return
-
-    if (message.text or "").strip() == "⬅️ Назад":
-        set_ui_screen(message.from_user.id, "main")
-        await message.answer("Главное меню", reply_markup=main_menu(player.location_slug, player.current_district_slug))
+            await message.answer(
+                render_travel_status(travel_data),
+                reply_markup=_root_menu_for_player(player, message.from_user.id, traveling=True),
+            )
         return
 
-    normalized = _normalize_move_text(message.text)
+    if text == "⬅️ Назад":
+        set_ui_screen(message.from_user.id, "main")
+        await message.answer(
+            "Главное меню",
+            reply_markup=_root_menu_for_player(player, message.from_user.id),
+        )
+        return
+
+    if text in {"🗺 Карта", "Карта"}:
+        await map_handler(message)
+        return
+
+    normalized = _normalize_move_text(text)
     target = resolve_location_by_move_text(normalized)
     if not target:
         await message.answer("Не удалось определить локацию для перехода.")
@@ -159,8 +352,8 @@ async def move_handler(message: Message):
         await message.answer("Из текущей локации туда пройти нельзя.")
         return
 
-    # Проверка уровня и требований локации
     from database.repositories import get_player_story
+
     story = get_player_story(message.from_user.id)
     completed_ids = story.get("completed_ids", []) if story else []
     allowed, reason = check_location_access(player, target.slug, completed_ids)
@@ -168,91 +361,29 @@ async def move_handler(message: Message):
         await message.answer(reason)
         return
 
-    # Начинаем путешествие с учётом ловкости
     travel = start_travel(
         message.from_user.id,
         player.location_slug,
         target.slug,
-        agility=player.agility
+        agility=player.agility,
     )
 
     from_name = LOCATION_NAMES.get(player.location_slug, player.location_slug)
-    to_name   = LOCATION_NAMES.get(target.slug, target.slug)
+    to_name = LOCATION_NAMES.get(target.slug, target.slug)
 
-    if travel["seconds"] <= 10:  # мгновенный переход только для очень коротких дистанций
-        # Короткий переход — мгновенно
-        update_player_location(message.from_user.id, target.slug)
-        story_done = update_story_progress(message.from_user.id, "move", target.slug)
-        set_ui_screen(message.from_user.id, "main")
-        # Отмечаем локацию как посещённую (для навигации)
-        try:
-            from database.repositories import get_connection as _gc_disc
-            with _gc_disc() as _conn:
-                _conn.execute("""
-                    INSERT OR IGNORE INTO player_grid_exploration
-                    (telegram_id, location_slug, col, row, cell_type)
-                    VALUES (?, ?, 5, 0, 'normal')
-                """, (message.from_user.id, target.slug))
-                _conn.commit()
-        except Exception:
-            pass
-    else:
-        # Длинный переход — герой в пути
+    if travel["seconds"] > 10:
         await message.answer(
             f"🚶 Ты отправляешься в путь.\n"
             f"{from_name} → {to_name}\n"
             f"⏱ Время в пути: {travel['time_text']}\n\n"
-            f"Во время перехода нельзя исследовать и сражаться.\n"
-            f"Нажми 🚫 Отменить перемещение если хочешь остаться.",
-            reply_markup=main_menu(player.location_slug, player.current_district_slug,
-                                   is_traveling=True)
+            "Во время перехода нельзя исследовать и сражаться.\n"
+            "Нажми 🚫 Отменить перемещение, если хочешь остаться.",
+            reply_markup=_root_menu_for_player(player, message.from_user.id, traveling=True),
         )
         return
 
+    update_player_location(message.from_user.id, target.slug)
+    _mark_location_discovered(message.from_user.id, target.slug)
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
-    set_ui_screen(message.from_user.id, "main")
-
-    try:
-        from game.grid_exploration_service import render_exploration_panel as _grid_panel
-        _expl_panel = _grid_panel(message.from_user.id, target.slug)
-    except Exception as _e:
-        import logging
-        logging.getLogger(__name__).warning(f"grid panel failed: {_e}")
-        _expl_panel = ""
-    # Проверяем недельный квест при входе в регион
-    try:
-        _new_wq = check_and_assign_weekly_quest(message.from_user.id, target.slug)
-        _active_wq = get_active_weekly_quest(message.from_user.id, target.slug)
-    except Exception as _we:
-        import logging
-        logging.getLogger(__name__).warning(f"weekly quest failed: {_we}")
-        _new_wq = None
-        _active_wq = None
-    _wq_text = ""
-    if _new_wq:
-        _wq_text = f"\n\n🎉 Новый недельный квест!\n{render_weekly_quest(_new_wq)}"
-    elif _active_wq and not _active_wq["completed"]:
-        _wq_text = f"\n\n{render_weekly_quest(_active_wq)}"
-    text = f"🚶 Ты переместился в новую область.\n\n{render_location_card(target.slug)}\n\n{_expl_panel}{_wq_text}"
-    if story_done:
-        text += "\n\n" + apply_story_reward(message.from_user.id, story_done)
-
-    await send_location_image(message, target.slug, text,
-                               reply_markup=main_menu(target.slug, getattr(get_player(message.from_user.id), 'current_district_slug', None)))
-    # Inline-меню действий при прибытии
-    from game.dungeon_service import DUNGEONS
-    from game.emotion_birth_service import get_birth_panel, BIRTH_LOCATIONS
-    from game.grid_exploration_service import is_dungeon_available
-    from game.location_rules import is_city as _is_city
-    if not _is_city(target.slug):
-        try:
-            has_dungeon = target.slug in DUNGEONS and is_dungeon_available(message.from_user.id, target.slug)
-        except Exception:
-            has_dungeon = False
-        inline_kb = location_actions_inline(target.slug, has_dungeon=has_dungeon)
-        await message.answer("Что делать:", reply_markup=inline_kb)
-    # Панель рождения если это место ритуала
-    if target.slug in BIRTH_LOCATIONS:
-        birth_p = get_birth_panel(message.from_user.id, target.slug)
-        if birth_p:
-            await message.answer(birth_p)
+    set_ui_screen(message.from_user.id, "location")
+    await _show_arrival_screen(message, target.slug, story_done)
