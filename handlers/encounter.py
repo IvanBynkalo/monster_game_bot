@@ -13,8 +13,10 @@ from game.monster_abilities import get_attack_bonus, get_capture_bonus, mitigate
 from game.infection_service import apply_dominant_emotion_infection, render_infection_update
 from game.skill_service import resolve_skill_use, get_active_skill_label
 from game.story_service import apply_story_reward
+from game.dungeon_service import DUNGEONS
 from keyboards.encounter_menu import encounter_menu, encounter_inline_menu
 from keyboards.main_menu import main_menu
+from keyboards.location_menu import location_actions_inline
 from utils.logger import log_event
 from utils.cooldown import cooldown_guard
 from utils.analytics import track_battle_win, track_capture
@@ -25,6 +27,24 @@ from game.guild_quests import progress_quest as _gq_progress
 def _district_mood_from_player(player):
     district = get_district(player.location_slug, player.current_district_slug)
     return district["mood"] if district else None
+
+
+def _can_store_encounter_monster(player_id: int, encounter: dict):
+    """Проверяет, есть ли свободный кристалл до попытки поимки."""
+    try:
+        from game.crystal_service import can_receive_monster
+        preview_monster = {
+            "name": encounter.get("monster_name", "Неизвестный монстр"),
+            "rarity": encounter.get("rarity", "common"),
+            "level": encounter.get("level", 1),
+            "hp": encounter.get("hp", 1),
+            "max_hp": encounter.get("hp", 1),
+            "attack": encounter.get("attack", 1),
+            "mood": encounter.get("mood", "instinct"),
+        }
+        return can_receive_monster(player_id, monster=preview_monster)
+    except Exception:
+        return True, "", None
 
 def _apply_enemy_damage(player_id: int, result: dict):
     damage = result.get("player_damage", 0)
@@ -324,6 +344,19 @@ async def capture_handler(message: Message):
         await message.answer("Сейчас нет активной встречи.")
         return
 
+    can_store, store_msg, target_crystal = _can_store_encounter_monster(message.from_user.id, encounter)
+    if not can_store:
+        await message.answer(
+            store_msg + "
+
+💎 Сначала освободи место в кристаллах или купи новый кристалл в городе.",
+            reply_markup=encounter_inline_menu(
+                has_trap=get_item_count(message.from_user.id, 'basic_trap') > 0,
+                has_poison_trap=get_item_count(message.from_user.id, 'poison_trap') > 0
+            ),
+        )
+        return
+
     encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + min(
         0.20,
         0.03 * max(0, player.hunter_level - 1) + 0.02 * max(0, player.agility - 1),
@@ -363,19 +396,22 @@ async def capture_handler(message: Message):
             max(1, encounter["hp"]),
             encounter["attack"],
         )
-        # Помещаем в кристалл
+
+        crystal_warn = ""
+        crystal_success = ""
         if captured:
             try:
-                from game.crystal_service import auto_store_new_monster
-                _ok, _msg = auto_store_new_monster(message.from_user.id, captured["id"])
-                if not _ok:
-                    crystal_warn = f"\n\n{_msg}"
+                from game.crystal_service import store_monster_in_crystal, auto_store_new_monster
+                if target_crystal:
+                    _ok, _msg = store_monster_in_crystal(message.from_user.id, captured["id"], target_crystal["id"])
                 else:
-                    crystal_warn = ""
+                    _ok, _msg = auto_store_new_monster(message.from_user.id, captured["id"])
+                if _ok:
+                    crystal_success = f"\n💎 Монстр помещён в кристалл: {target_crystal['name'] if target_crystal else 'подходящий кристалл'}"
+                else:
+                    crystal_warn = f"\n\n{_msg}"
             except Exception:
                 crystal_warn = ""
-        else:
-            crystal_warn = ""
 
         rarity_xp = {
             "common": 1,
@@ -399,6 +435,10 @@ async def capture_handler(message: Message):
         )
 
         text += f"\n\n🐲 Монстр добавлен в коллекцию: {captured['name']}\nID: {captured['id']}"
+        if crystal_success:
+            text += crystal_success
+        if crystal_warn:
+            text += crystal_warn
 
         if hunter_gain:
             if hunter_gain.get("is_max_level"):
