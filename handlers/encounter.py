@@ -388,30 +388,37 @@ async def capture_handler(message: Message):
     if result.get("finished"):
         clear_pending_encounter(message.from_user.id)
 
-        captured = add_captured_monster(
-            message.from_user.id,
-            encounter["monster_name"],
-            encounter["rarity"],
-            encounter["mood"],
-            max(1, encounter["hp"]),
-            encounter["attack"],
-        )
+        # ✅ СНАЧАЛА СОЗДАЁМ
+captured = add_captured_monster(
+    message.from_user.id,
+    encounter["monster_name"],
+    encounter["rarity"],
+    encounter["mood"],
+    max(1, encounter["hp"]),
+    encounter["attack"],
+)
 
-        crystal_warn = ""
-        crystal_success = ""
-        if captured:
-            try:
-                from game.crystal_service import store_monster_in_crystal, auto_store_new_monster
-                if target_crystal:
-                    _ok, _msg = store_monster_in_crystal(message.from_user.id, captured["id"], target_crystal["id"])
-                else:
-                    _ok, _msg = auto_store_new_monster(message.from_user.id, captured["id"])
-                if _ok:
-                    crystal_success = f"\n💎 Монстр помещён в кристалл: {target_crystal['name'] if target_crystal else 'подходящий кристалл'}"
-                else:
-                    crystal_warn = f"\n\n{_msg}"
-            except Exception:
-                crystal_warn = ""
+# ❗ СРАЗУ КЛАДЁМ В КРИСТАЛЛ (без fallback'ов)
+from game.crystal_service import store_monster_in_crystal
+
+ok, msg = store_monster_in_crystal(
+    message.from_user.id,
+    captured["id"],
+    target_crystal["id"] if target_crystal else None
+)
+
+# ❌ ЕСЛИ НЕ УДАЛОСЬ — ОТКАТ
+if not ok:
+    from database.repositories import remove_player_monster
+    remove_player_monster(message.from_user.id, captured["id"])
+
+    await message.answer(
+        "❌ Ошибка хранения монстра:\n" + msg
+    )
+    return
+
+crystal_success = f"\n💎 Монстр помещён в кристалл: {target_crystal['name'] if target_crystal else 'кристалл'}"
+crystal_warn = ""
 
         rarity_xp = {
             "common": 1,
