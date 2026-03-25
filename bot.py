@@ -1001,7 +1001,7 @@ async def fight_inline_callback(callback: CallbackQuery):
             return
         capture_bon = get_capture_bonus(active)
         enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
-        result = resolve_capture(enc, active_monster=active)
+        result = resolve_capture(enc, active)
 
     elif action == "trap":
         from game.trap_service import apply_best_trap
