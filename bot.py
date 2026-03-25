@@ -1974,10 +1974,7 @@ async def errors_handler(event):
         pass
 
     try:
-        def log_exception(context, exception=None, user_id=None, **kwargs):
-    try:
-        exc_text = repr(exception) if exception is not None else "Unknown exception"
-        # твоя запись в БД / лог
+        log_exception(ctx, exception, uid)
     except Exception:
         pass
 
