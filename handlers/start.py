@@ -22,14 +22,12 @@ async def start_handler(message: Message):
     from game.player_service import ensure_player_crystal_state
     from keyboards.main_menu import main_menu
 
-    migration = ensure_player_crystal_state(message.from_user.id)
-
     player, created = get_or_create_player(
         message.from_user.id,
         message.from_user.first_name or "Игрок"
     )
 
-    starter_monster, starter_created = ensure_starter_monster(message.from_user.id)
+    migration = ensure_player_crystal_state(message.from_user.id)
 
     if created:
         track_new_player(message.from_user.id, player.name)
@@ -43,12 +41,15 @@ async def start_handler(message: Message):
             "Прислушайся к шёпоту деревьев и найди источник искажения."
         )
 
-    if starter_created and starter_monster:
-        await message.answer(
-            f"Ты получаешь стартового монстра: {starter_monster['name']}\n"
-            f"Редкость: {RARITY_LABELS.get(starter_monster['rarity'], starter_monster['rarity'])}\n"
-            f"Эмоция: {MOOD_LABELS.get(starter_monster['mood'], starter_monster['mood'])}"
-        )
+    if migration.get("starter_created"):
+        monsters = get_player_monsters(message.from_user.id)
+        if monsters:
+            starter_monster = monsters[0]
+            await message.answer(
+                f"Ты получаешь стартового монстра: {starter_monster['name']}\n"
+                f"Редкость: {RARITY_LABELS.get(starter_monster['rarity'], starter_monster['rarity'])}\n"
+                f"Эмоция: {MOOD_LABELS.get(starter_monster['mood'], starter_monster['mood'])}"
+            )
 
     # Ежедневный вход: streak + награда (рек. #12)
     streak_text = handle_login_streak(message.from_user.id)
