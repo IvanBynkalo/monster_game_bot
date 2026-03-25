@@ -375,6 +375,8 @@ dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты")
 dp.message.register(
     navigation_handler,
     text_is(
+        "🗺 Переходы",
+        "Переходы",
         "🗺 Мир / переходы",
         "Мир / переходы",
         "🧭 Перемещение",
@@ -436,8 +438,8 @@ dp.message.register(buy_item_handler, text_startswith("🛒 Купить:", "К�
 dp.message.register(buy_monster_handler, text_startswith("🛒 Купить монстра:", "Купить монстра:"))
 
 dp.message.register(world_handler, text_is("Мир", "🌍 Мир"))
-dp.message.register(map_handler, text_is("Карта", "🗺 Карта"))
-dp.message.register(location_handler, text_is("Локация", "📍 Локация"))
+dp.message.register(map_handler, text_is("Карта", "🗺 Карта", "🗺 Мир"))
+dp.message.register(location_handler, text_is("Локация", "📍 Локация", "🧭 Локация"))
 dp.message.register(district_handler, text_is("Район", "🧭 Район"))
 dp.message.register(heal_monster_handler, text_is("Лечить монстра", "❤️ Лечить монстра"))
 dp.message.register(revive_monster_handler, text_is("💎 Возродить монстра", "Возродить монстра"))
