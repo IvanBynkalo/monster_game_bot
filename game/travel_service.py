@@ -1,69 +1,89 @@
 """
 travel_service.py — Система перемещения между локациями.
 
-Механика:
-- У каждого перехода есть расстояние в у.е. (условных единицах)
-- Базовое время: расстояние × 60 секунд
-- Ловкость героя сокращает время: каждые 5 очков ловкости = −10% времени
-- Во время перехода герой «в пути» — нельзя исследовать/сражаться
-- По прибытии — push-уведомление
+Текущий режим для разработки:
+- Все переходы длятся фиксированно 5 секунд.
+- Экран путешествия успевает показаться.
+- Игрок не ждёт долго во время тестов.
+
+Важно:
+- Таблица расстояний оставлена на будущее.
+- Позже можно легко вернуть "реальные" времена,
+  если снова захочешь привязку к дистанции и ловкости.
 """
+
 import time
 from database.repositories import get_connection
 
-# Расстояния между локациями (симметричные)
-# Единица ≈ 1 минута базового времени
-# Расстояния в секундах (базовое время без ловкости)
-# Минимум 4 секунды
+# ──────────────────────────────────────────────────────────────────────────────
+# Настройки времени переходов
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Режим быстрой разработки:
+# все переходы занимают ровно 5 секунд.
+FIXED_TRAVEL_SECONDS = 5
+
+# Если позже захочешь вернуть старую систему,
+# можно поставить False и снова использовать DISTANCES + agility.
+USE_FIXED_TRAVEL_TIME = True
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Расстояния между локациями (сохранены на будущее)
+# ──────────────────────────────────────────────────────────────────────────────
+
 DISTANCES: dict[tuple[str, str], int] = {
-    # Стартовая зона (ур.1-3) — ощутимое время пути
-    ("silver_city",    "dark_forest"):    90,    # 1.5 мин
-    ("dark_forest",    "emerald_fields"): 120,   # 2 мин
+    ("silver_city", "dark_forest"): 90,
+    ("dark_forest", "emerald_fields"): 120,
 
-    # Средняя зона (ур.4-6)
-    ("dark_forest",    "shadow_marsh"):   180,   # 3 мин
-    ("emerald_fields", "stone_hills"):    180,   # 3 мин
-    ("shadow_marsh",   "shadow_swamp"):   240,   # 4 мин
-    ("stone_hills",    "ancient_ruins"):  240,   # 4 мин
+    ("dark_forest", "shadow_marsh"): 180,
+    ("emerald_fields", "stone_hills"): 180,
+    ("shadow_marsh", "shadow_swamp"): 240,
+    ("stone_hills", "ancient_ruins"): 240,
 
-    # Дальняя зона (ур.7-9)
-    ("shadow_swamp",   "bone_desert"):    360,   # 6 мин
-    ("ancient_ruins",  "bone_desert"):    360,   # 6 мин
+    ("shadow_swamp", "bone_desert"): 360,
+    ("ancient_ruins", "bone_desert"): 360,
 
-    # Эндгейм (ур.10+)
-    ("bone_desert",    "volcano_wrath"):  480,   # 8 мин
-    ("volcano_wrath",  "storm_ridge"):    420,   # 7 мин
-    ("storm_ridge",    "emotion_rift"):   600,   # 10 мин
+    ("bone_desert", "volcano_wrath"): 480,
+    ("volcano_wrath", "storm_ridge"): 420,
+    ("storm_ridge", "emotion_rift"): 600,
 }
 
 LOCATION_NAMES = {
-    "silver_city":    "🏙 Сереброград",
-    "dark_forest":    "🌲 Тёмный лес",
+    "silver_city": "🏙 Сереброград",
+    "dark_forest": "🌲 Тёмный лес",
     "emerald_fields": "🌿 Изумрудные поля",
-    "stone_hills":    "⛰ Каменные холмы",
-    "shadow_marsh":   "🕸 Болота теней",
-    "shadow_swamp":   "🌫 Болото теней",
-    "ancient_ruins":  "🏛 Древние руины",
-    "bone_desert":    "🏜 Пустыня костей",
-    "volcano_wrath":  "🔥 Вулкан ярости",
-    "storm_ridge":    "🏔 Хребет бурь",
-    "emotion_rift":   "🌌 Разлом эмоций",
+    "stone_hills": "⛰ Каменные холмы",
+    "shadow_marsh": "🕸 Болота теней",
+    "shadow_swamp": "🌫 Болото теней",
+    "ancient_ruins": "🏛 Древние руины",
+    "bone_desert": "🏜 Пустыня костей",
+    "volcano_wrath": "🔥 Вулкан ярости",
+    "storm_ridge": "🏔 Хребет бурь",
+    "emotion_rift": "🌌 Разлом эмоций",
 }
 
 
 def get_distance(from_slug: str, to_slug: str) -> int:
-    """Возвращает расстояние между локациями в у.е."""
+    """Возвращает базовую дистанцию между локациями."""
     key = (from_slug, to_slug)
     rev = (to_slug, from_slug)
-    return DISTANCES.get(key) or DISTANCES.get(rev) or 5
+    return DISTANCES.get(key) or DISTANCES.get(rev) or FIXED_TRAVEL_SECONDS
 
 
 def get_travel_seconds(from_slug: str, to_slug: str, agility: int = 0) -> int:
     """
-    Время перехода в секундах.
-    Базовое: из таблицы DISTANCES (уже в секундах).
-    Ловкость: каждые 5 очков = −10%, максимум −70%.
+    Возвращает время перехода в секундах.
+
+    Текущий режим:
+    - фиксированные 5 секунд для всех переходов.
+
+    Резервный режим:
+    - расчёт от дистанции и ловкости.
     """
+    if USE_FIXED_TRAVEL_TIME:
+        return FIXED_TRAVEL_SECONDS
+
     base_seconds = get_distance(from_slug, to_slug)
     agility_discount = min(0.70, (agility // 5) * 0.10)
     return max(4, int(base_seconds * (1 - agility_discount)))
@@ -81,7 +101,8 @@ def format_travel_time(seconds: int) -> str:
 
 def _ensure_travel_table():
     with get_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS player_travel (
                 telegram_id   INTEGER PRIMARY KEY,
                 from_slug     TEXT NOT NULL,
@@ -89,11 +110,14 @@ def _ensure_travel_table():
                 arrive_at     INTEGER NOT NULL,
                 notified      INTEGER NOT NULL DEFAULT 0
             )
-        """)
+            """
+        )
         conn.commit()
 
 
 _travel_table_ok = False
+
+
 def _lazy():
     global _travel_table_ok
     if not _travel_table_ok:
@@ -101,22 +125,39 @@ def _lazy():
         _travel_table_ok = True
 
 
-def start_travel(telegram_id: int, from_slug: str, to_slug: str,
-                 agility: int = 0, extra_speed_bonus: float = 0.0) -> dict:
-    """Начинает переход. Возвращает данные о путешествии."""
+def start_travel(
+    telegram_id: int,
+    from_slug: str,
+    to_slug: str,
+    agility: int = 0,
+    extra_speed_bonus: float = 0.0,
+) -> dict:
+    """
+    Начинает переход. Возвращает данные о путешествии.
+
+    В режиме фиксированного времени бонусы скорости не применяются,
+    чтобы переход всегда оставался равным 5 секундам.
+    """
     _lazy()
+
     seconds = get_travel_seconds(from_slug, to_slug, agility)
-    # Применяем бонус от сапог
-    if extra_speed_bonus > 0:
+
+    if not USE_FIXED_TRAVEL_TIME and extra_speed_bonus > 0:
         seconds = max(4, int(seconds * (1 - min(0.50, extra_speed_bonus))))
+
     arrive_at = int(time.time()) + seconds
+
     with get_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR REPLACE INTO player_travel
             (telegram_id, from_slug, to_slug, arrive_at, notified)
             VALUES (?,?,?,?,0)
-        """, (telegram_id, from_slug, to_slug, arrive_at))
+            """,
+            (telegram_id, from_slug, to_slug, arrive_at),
+        )
         conn.commit()
+
     return {
         "from_slug": from_slug,
         "to_slug": to_slug,
@@ -127,20 +168,22 @@ def start_travel(telegram_id: int, from_slug: str, to_slug: str,
 
 
 def get_travel(telegram_id: int) -> dict | None:
-    """Возвращает текущее путешествие или None если не в пути."""
+    """Возвращает текущее путешествие или None, если игрок не в пути."""
     _lazy()
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM player_travel WHERE telegram_id=?",
-            (telegram_id,)
+            (telegram_id,),
         ).fetchone()
+
     if not row:
         return None
+
     return dict(row)
 
 
 def is_traveling(telegram_id: int) -> bool:
-    """Герой в пути прямо сейчас?"""
+    """Игрок сейчас в пути?"""
     travel = get_travel(telegram_id)
     if not travel:
         return False
@@ -149,26 +192,40 @@ def is_traveling(telegram_id: int) -> bool:
 
 def check_arrival(telegram_id: int) -> dict | None:
     """
-    Проверяет прибытие. Если прибыл — обновляет локацию и удаляет запись.
-    Возвращает данные о прибытии или None.
+    Проверяет прибытие.
+    Если игрок прибыл — обновляет локацию и удаляет запись о путешествии.
     """
     _lazy()
     travel = get_travel(telegram_id)
     if not travel:
         return None
-    if int(time.time()) < travel["arrive_at"]:
-        # Ещё в пути
-        remaining = travel["arrive_at"] - int(time.time())
-        return {"in_progress": True, "remaining": remaining,
-                "to_slug": travel["to_slug"], "travel": travel}
-    # Прибыл
+
+    now = int(time.time())
+    if now < travel["arrive_at"]:
+        remaining = travel["arrive_at"] - now
+        return {
+            "in_progress": True,
+            "remaining": remaining,
+            "to_slug": travel["to_slug"],
+            "travel": travel,
+        }
+
     from database.repositories import update_player_location
+
     update_player_location(telegram_id, travel["to_slug"])
+
     with get_connection() as conn:
-        conn.execute("DELETE FROM player_travel WHERE telegram_id=?", (telegram_id,))
+        conn.execute(
+            "DELETE FROM player_travel WHERE telegram_id=?",
+            (telegram_id,),
+        )
         conn.commit()
-    return {"arrived": True, "to_slug": travel["to_slug"],
-            "from_slug": travel["from_slug"]}
+
+    return {
+        "arrived": True,
+        "to_slug": travel["to_slug"],
+        "from_slug": travel["from_slug"],
+    }
 
 
 def render_travel_status(travel: dict) -> str:
@@ -176,6 +233,7 @@ def render_travel_status(travel: dict) -> str:
     remaining = max(0, travel["arrive_at"] - int(time.time()))
     from_name = LOCATION_NAMES.get(travel["from_slug"], travel["from_slug"])
     to_name = LOCATION_NAMES.get(travel["to_slug"], travel["to_slug"])
+
     return (
         f"🚶 В пути: {from_name} → {to_name}\n"
         f"⏱ До прибытия: {format_travel_time(remaining)}"
@@ -183,14 +241,16 @@ def render_travel_status(travel: dict) -> str:
 
 
 def get_pending_arrivals() -> list[dict]:
-    """Все путешествия которые завершились но не были уведомлены."""
+    """Все путешествия, которые завершились, но ещё не были уведомлены."""
     _lazy()
     now = int(time.time())
+
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM player_travel WHERE arrive_at <= ? AND notified = 0",
-            (now,)
+            (now,),
         ).fetchall()
+
     return [dict(r) for r in rows]
 
 
@@ -198,6 +258,6 @@ def mark_notified(telegram_id: int):
     with get_connection() as conn:
         conn.execute(
             "UPDATE player_travel SET notified=1 WHERE telegram_id=?",
-            (telegram_id,)
+            (telegram_id,),
         )
         conn.commit()
