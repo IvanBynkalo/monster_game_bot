@@ -125,13 +125,10 @@ async def _show_location_actions(message: Message, location_slug: str):
         return
 
     try:
-        from game.dungeon_service import DUNGEONS
         from game.grid_exploration_service import is_dungeon_available
-
-        has_dungeon = location_slug in DUNGEONS and is_dungeon_available(
-            message.from_user.id,
-            location_slug,
-        )
+        # ✅ ИСПРАВЛЕНО: кнопка подземелья появляется если игрок стоит
+        # на клетке dungeon в гриде — не зависит от словаря DUNGEONS
+        has_dungeon = is_dungeon_available(message.from_user.id, location_slug)
     except Exception:
         has_dungeon = False
 
