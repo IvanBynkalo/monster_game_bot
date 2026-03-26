@@ -1,6 +1,8 @@
 import random
+from pathlib import Path
+import re
 
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from database.repositories import (
     add_item,
     add_player_experience,
@@ -62,6 +64,136 @@ from utils.cooldown import cooldown_guard
 from utils.analytics import track_explore
 from game.daily_service import progress_daily_tasks, render_daily_completions
 from game.season_pass_service import progress_season, render_season_completions
+
+ASSETS_ROOT = Path(__file__).resolve().parent.parent / "assets"
+MONSTER_DIR = ASSETS_ROOT / "monsters"
+
+MONSTER_NAME_TO_CODE = {
+    "Лесная лисица": "fox_forest",
+    "Лесной волк": "wolf_forest",
+    "Матёрый волк": "wolf_alpha",
+    "Бурый медведь": "bear_brown",
+    "Лесной великан": "giant_forest",
+    "Полевая мышь": "mouse_field",
+    "Луговой заяц": "rabbit_field",
+    "Рогатый олень": "deer_horned",
+    "Степной тур": "bull_steppe",
+    "Золотой орёл": "eagle_gold",
+    "Горный суслик": "groundhog_mountain",
+    "Каменная ящерица": "lizard_stone",
+    "Горный козёл": "goat_mountain",
+    "Скальный кабан": "boar_rock",
+    "Горный лев": "lion_mountain",
+    "Болотная жаба": "frog_swamp",
+    "Топяная крыса": "rat_swamp",
+    "Болотная змея": "snake_swamp",
+    "Топяной кабан": "boar_swamp",
+    "Болотный крокодил": "crocodile_swamp",
+    "Иловый уж": "snake_mud",
+    "Тёмная выдра": "otter_dark",
+    "Болотный варан": "varan_swamp",
+    "Пепельная ящерица": "lizard_ash",
+    "Лавовый краб": "crab_lava",
+    "Огненная саламандра": "salamander_fire",
+    "Вулканический волк": "wolf_volcano",
+    "Магматический кабан": "boar_magma",
+    "Ветряной заяц": "rabbit_wind",
+    "Лепестковый лис": "fox_flower",
+    "Златорогий олень": "deer_golden_horn",
+    "Гранитный зверь": "beast_granite",
+    "Чащобный альфа": "alpha_thicket",
+    "Топный ловчий": "hunter_bog",
+    "Багровый Следопыт": "crimson_stalker",
+    "Грозовой Фантом": "storm_phantom",
+    "Костяной Странник": "bone_wanderer",
+    "🌲 Древний страж леса": "forest_guardian",
+    "⛰ Колосс камня": "stone_colossus",
+    "🕸 Повелитель болот": "marsh_king",
+    "🌲 Хозяин корней": "root_master",
+    "⛰ Сердце монолита": "monolith_heart",
+    "🕸 Тёмный омутник": "dark_deep_dweller",
+}
+
+MONSTER_TYPE_IMAGES = {
+    "nature": "monster_nature.png",
+    "shadow": "monster_shadow.png",
+    "flame": "monster_flame.png",
+    "bone": "monster_bone.png",
+    "storm": "monster_storm.png",
+    "echo": "monster_echo.png",
+    "spirit": "monster_spirit.png",
+    "void": "monster_void.png",
+}
+
+SPECIAL_NAME_IMAGES = {
+    "🌲 Древний страж леса": "monster_world_forest.png",
+    "⛰ Колосс камня": "monster_world_stone.png",
+    "🕸 Повелитель болот": "monster_world_marsh.png",
+    "🌲 Хозяин корней": "monster_boss_forest.png",
+    "⛰ Сердце монолита": "monster_boss_stone.png",
+    "🕸 Тёмный омутник": "monster_boss_marsh.png",
+}
+
+
+def _slugify(value: str) -> str:
+    value = (value or "").strip().lower()
+    ru_map = {
+        "а": "a", "б": "b", "в": "v", "г": "g", "д": "d",
+        "е": "e", "ё": "e", "ж": "zh", "з": "z", "и": "i",
+        "й": "y", "к": "k", "л": "l", "м": "m", "н": "n",
+        "о": "o", "п": "p", "р": "r", "с": "s", "т": "t",
+        "у": "u", "ф": "f", "х": "h", "ц": "ts", "ч": "ch",
+        "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "",
+        "э": "e", "ю": "yu", "я": "ya",
+    }
+    value = "".join(ru_map.get(ch, ch) for ch in value)
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value).strip("_")
+    return value
+
+
+def _get_monster_image_path(monster_name: str | None = None, monster_type: str | None = None) -> Path | None:
+    if monster_name:
+        special = SPECIAL_NAME_IMAGES.get(monster_name)
+        if special:
+            path = MONSTER_DIR / special
+            if path.exists():
+                return path
+
+        code = MONSTER_NAME_TO_CODE.get(monster_name)
+        if code:
+            path = MONSTER_DIR / f"{code}.png"
+            if path.exists():
+                return path
+
+        slug = _slugify(monster_name)
+        if slug:
+            path = MONSTER_DIR / f"{slug}.png"
+            if path.exists():
+                return path
+
+    if monster_type:
+        filename = MONSTER_TYPE_IMAGES.get(monster_type)
+        if filename:
+            path = MONSTER_DIR / filename
+            if path.exists():
+                return path
+
+    fallback = MONSTER_DIR / "monster_default.png"
+    return fallback if fallback.exists() else None
+
+
+async def _send_monster_card_message(message: Message, monster_name: str | None, monster_type: str | None, text: str, reply_markup=None):
+    path = _get_monster_image_path(monster_name=monster_name, monster_type=monster_type)
+    if path and path.exists():
+        await message.answer_photo(
+            photo=FSInputFile(str(path)),
+            caption=text,
+            reply_markup=reply_markup,
+        )
+    else:
+        await message.answer(text, reply_markup=reply_markup)
+
 
 def _render_completed_quests(player_id: int, completed_now):
     parts = []
@@ -507,9 +639,14 @@ async def explore_handler(message: Message, forced_direction: str = None):
 
         if encounter["type"] == "monster":
             kb = encounter_inline_menu(has_trap=has_any_trap, has_poison_trap=has_ptrap)
-            from utils.images import send_monster_image
             mtype = locals().get("_encounter_monster_type", encounter.get("monster_type", "void"))
-            await send_monster_image(message, mtype, full_text, reply_markup=kb)
+            await _send_monster_card_message(
+                message,
+                monster_name=encounter.get("monster_name") or encounter.get("name"),
+                monster_type=mtype,
+                text=full_text,
+                reply_markup=kb,
+            )
         else:
             # Зверь — поймать нельзя, только бой
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -528,7 +665,13 @@ async def explore_handler(message: Message, forced_direction: str = None):
             else:
                 _wl_rows.append([InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
             wildlife_kb = InlineKeyboardMarkup(inline_keyboard=_wl_rows)
-            await message.answer(full_text, reply_markup=wildlife_kb)
+            await _send_monster_card_message(
+                message,
+                monster_name=encounter.get("name") or encounter.get("monster_name"),
+                monster_type=encounter.get("monster_type", "nature"),
+                text=full_text,
+                reply_markup=wildlife_kb,
+            )
     else:
         # ── СОБЫТИЕ: текст + меню ──
         player = get_player(message.from_user.id)
