@@ -982,34 +982,53 @@ async def fight_inline_callback(callback: CallbackQuery):
     _base_atk = int((active.get("attack", 3) + player.strength) * _crystal_multiplier)
 
     if action == "attack":
-        result = resolve_attack(enc,
+        result = resolve_attack(
+            enc,
             active_monster_attack=_base_atk,
             attacker_type=active.get("monster_type"),
-            active_monster=active)
+            active_monster=active,
+        )
 
     elif action == "skill":
         result = apply_skill(enc, active, player)
         if result is None:
-            result = resolve_attack(enc,
+            result = resolve_attack(
+                enc,
                 active_monster_attack=_base_atk,
                 attacker_type=active.get("monster_type"),
-                active_monster=active)
+                active_monster=active,
+            )
 
-   elif action == "capture":
-    if enc.get("type") == "wildlife":
-        await callback.message.answer("🐾 Зверей нельзя поймать — только монстров.")
-        return
+    elif action == "capture":
+        if enc.get("type") == "wildlife":
+            await callback.message.answer("🐾 Зверей нельзя поймать — только монстров.")
+            return
 
-    capture_bon = get_capture_bonus(active)
-    enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
-    result = resolve_capture(enc)
+        capture_bon = get_capture_bonus(active)
+        enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
+        result = resolve_capture(enc)
 
-elif action == "trap":
-    from game.trap_service import apply_best_trap
-    trap_result = apply_best_trap(uid)
-    if not trap_result:
+    elif action == "trap":
+        from game.trap_service import apply_best_trap
+
+        trap_result = apply_best_trap(uid)
+        if not trap_result:
+            await callback.message.answer(
+                "🪤 Нет подходящей ловушки.",
+                reply_markup=encounter_inline_menu(
+                    has_trap=has_trap,
+                    has_poison_trap=has_ptrap,
+                ),
+            )
+            return
+
+        enc["hp"] = max(0, enc["hp"] - trap_result.get("damage", 0))
+        if trap_result.get("skip_turn"):
+            enc["skip_turn"] = True
+
+        save_pending_encounter(uid, enc)
         await callback.message.answer(
-            "🪤 Нет подходящей ловушки.",
+            f"🪤 {trap_result.get('text', 'Ловушка сработала!')}\nHP врага: {enc['hp']}",
             reply_markup=encounter_inline_menu(
                 has_trap=has_trap,
                 has_poison_trap=has_ptrap,
@@ -1017,27 +1036,14 @@ elif action == "trap":
         )
         return
 
-    enc["hp"] = max(0, enc["hp"] - trap_result.get("damage", 0))
-    if trap_result.get("skip_turn"):
-        enc["skip_turn"] = True
-
-    save_pending_encounter(uid, enc)
-    await callback.message.answer(
-        f"🪤 {trap_result.get('text', 'Ловушка сработала!')}\nHP врага: {enc['hp']}",
-        reply_markup=encounter_inline_menu(
-            has_trap=has_trap,
-            has_poison_trap=has_ptrap,
-        ),
-    )
-    return
-
     elif action == "flee":
         flee_elixir = get_item_count(uid, "flee_elixir") > 0
-        result = resolve_flee(enc,
+        result = resolve_flee(
+            enc,
             player_level=player.level,
             agility=player.agility,
-            has_flee_elixir=flee_elixir)
-
+            has_flee_elixir=flee_elixir,
+        )
     if result is None:
         # Действие не дало результата — показываем меню заново
         await callback.answer("Действие недоступно.", show_alert=True)
