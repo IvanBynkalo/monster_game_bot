@@ -454,8 +454,8 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
 
     Логика отображения каждой клетки:
     1. Игрок          → 👣
-    2. Посещено       → реальный тип (🟩🟦🟥🟨🟢🕳💀)
-    3. Предсказание   → иконка картографа (зависит от уровня, без тумана)
+    2. Посещено       → реальный тип (🟩🟦🟥🟨🟢🕳💀) — ВСЕГДА, независимо от расстояния
+    3. Предсказание   → иконка картографа (зависит от уровня)
     4. Неизвестно     → ⬜
 
     Предсказания картографа (уровень 4+):
@@ -463,7 +463,6 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
     - Уровень 7-9:  2 круга
     - Уровень 10-12: 3 круга
     - Уровень 13+:  4 круга
-    Тумана нет — предсказание показывает иконку предполагаемого типа.
     """
     col_cur, row_cur = grid["current_pos"]
     cells = grid["cells"]
@@ -481,55 +480,42 @@ def render_mini_map(grid: dict, cart_level: int = 1) -> str:
     # Предсказания картографа — только вокруг текущей позиции
     predictions = _get_fog_cells(grid, cart_level, grid.get("location_slug", ""))
 
-    # Радиус прямой видимости от игрока (клетки в этом радиусе видны с реальным типом)
-    # Уровень 1-3: видит только свою клетку (radius=0 — нет, базовый radius=1)
-    # Но показываем реальный тип только для клеток В радиусе предсказаний (== predictions)
-    # Посещённые вне радиуса — серые ⬜ (были, но уже не видно)
-    # Зачищенные (cleared) — исключение: всегда показываем 🟢 чтобы игрок знал что безопасно
-
-    # Полная сетка 10×10 снизу вверх (row 9 = глубина вверху, row 0 = вход внизу)
     lines = []
     for row in range(9, -1, -1):
         row_str = ""
         for col in range(10):
             key = f"{col},{row}"
             cell = cells.get(key, {})
-            is_cleared = cell.get("cleared", False) or cell.get("type") == "cleared"
-
-            # Радиус 1 вокруг игрока — ближайшие клетки всегда показываем с типом
-            in_radius1 = abs(col - col_cur) <= 1 and abs(row - row_cur) <= 1
+            visited = cell.get("visited", False)
+            ctype = cell.get("type", "normal")
+            is_cleared = cell.get("cleared", False) or ctype == "cleared"
 
             if col == col_cur and row == row_cur:
+                # Позиция игрока
                 row_str += "👣"
-            elif is_cleared:
-                # Зачищенные — всегда видны 🟢
-                row_str += "🟢"
-            elif in_radius1 and cell.get("visited"):
-                # Посещённые в радиусе 1 — всегда показываем реальный тип
-                ctype = cell.get("type", "normal")
-                row_str += ICONS.get(ctype, "🟩")
-            elif key in predictions:
-                # В зоне предсказания картографа
-                if cell.get("visited"):
-                    ctype = cell.get("type", "normal")
-                    row_str += ICONS.get(ctype, "🟩")
+            elif visited:
+                # ✅ ИСПРАВЛЕНО: все посещённые клетки показываем с реальным типом
+                # Cleared-клетки — зелёные 🟢, остальные — по типу
+                if is_cleared:
+                    row_str += "🟢"
                 else:
-                    row_str += predictions[key]
-            elif cell.get("visited"):
-                # Посещена но далеко — серая
-                row_str += "⬜"
+                    row_str += ICONS.get(ctype, "🟩")
+            elif key in predictions:
+                # Предсказание картографа для непосещённых клеток
+                row_str += predictions[key]
             else:
+                # Не посещено и нет предсказания — серый туман
                 row_str += "⬜"
         lines.append(row_str)
 
     # Легенда
     lines.append("👣ты  🟩норм  🟦сбор  🟥опасно  🟨находка  🟢зачищ  🕳подзем  💀босс")
 
-    # Подпись предсказаний — только уникальные иконки что реально есть
+    # Подпись предсказаний картографа — только если они есть
     if cart_level >= 4 and predictions:
         used_icons = set(predictions.values())
         parts = []
-        for icon in ["🟫","🟧","🟡","🔴","🟢","▫️","▪️"]:
+        for icon in ["🟫", "🟧", "🟡", "🔴", "🟢", "▫️", "▪️"]:
             if icon in used_icons:
                 word = _FOG_LEGEND.get(icon, "?")
                 parts.append(f"{icon}{word}")
@@ -638,12 +624,28 @@ def render_exploration_panel(telegram_id: int, location_slug: str) -> str:
 
 
 def is_dungeon_available(telegram_id: int, location_slug: str) -> bool:
-    """Подземелье доступно когда игрок стоит на ячейке типа 'dungeon'."""
+    """
+    Подземелье доступно когда игрок стоит на ячейке типа 'dungeon' в гриде.
+    НЕ требует чтобы локация была в DUNGEONS — клетка dungeon может появиться
+    в любой локации через систему исследования сетки.
+    """
     grid = get_grid(telegram_id, location_slug)
     col, row = grid["current_pos"]
     key = f"{col},{row}"
     cell = grid["cells"].get(key, {})
     return cell.get("type") == "dungeon"
+
+
+def has_any_dungeon_cell(telegram_id: int, location_slug: str) -> bool:
+    """
+    Возвращает True если в гриде локации есть хоть одна посещённая клетка-подземелье.
+    Используется для подсказки игроку что подземелье существует в этой локации.
+    """
+    grid = get_grid(telegram_id, location_slug)
+    for cell in grid["cells"].values():
+        if cell.get("visited") and cell.get("type") == "dungeon":
+            return True
+    return False
 
 
 def is_world_boss_available(telegram_id: int, location_slug: str) -> bool:
