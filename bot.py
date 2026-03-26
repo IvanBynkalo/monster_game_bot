@@ -918,7 +918,7 @@ async def fight_inline_callback(callback: CallbackQuery):
         if player0:
             try:
                 from game.grid_exploration_service import is_dungeon_available
-                _hd = player0.location_slug in DUNGEONS and is_dungeon_available(uid, player0.location_slug)
+                _hd = is_dungeon_available(uid, player0.location_slug)
             except Exception:
                 _hd = False
             await callback.message.answer(
@@ -1243,7 +1243,7 @@ async def fight_inline_callback(callback: CallbackQuery):
         if player:
             try:
                 from game.grid_exploration_service import is_dungeon_available
-                _hd2 = player.location_slug in DUNGEONS and is_dungeon_available(uid, player.location_slug)
+                _hd2 = is_dungeon_available(uid, player.location_slug)
             except Exception:
                 _hd2 = False
             await callback.message.answer("Что делать:",
@@ -2048,7 +2048,7 @@ async def _notification_loop(bot_instance):
                     from game.grid_exploration_service import is_dungeon_available
                     from keyboards.location_menu import location_actions_inline
                     try:
-                        has_dng = travel["to_slug"] in DUNGEONS and is_dungeon_available(uid, travel["to_slug"])
+                        has_dng = is_dungeon_available(uid, travel["to_slug"])
                     except Exception:
                         has_dng = False
                     await bot_instance.send_message(
