@@ -545,7 +545,7 @@ dp.message.register(rest_hero_handler, text_is("Отдых героя", "😴 О
 
 dp.message.register(back_handler, text_is("⬅️ Назад", "Назад"))
 
-dp.message.register(move_handler, text_startswith("Перейти:", "🚶 "))
+dp.message.register(move_handler, text_startswith("Перейти:", "🚶 ", "❓ Неизведанная", "🚫 Отменить перемещение"))
 dp.message.register(district_move_handler, text_startswith("Район:", "🧭→ "))
 
 # ===== Обычный бой с монстром =====
