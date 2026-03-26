@@ -996,12 +996,14 @@ async def fight_inline_callback(callback: CallbackQuery):
                 active_monster=active)
 
     elif action == "capture":
-        if enc.get("type") == "wildlife":
-            await callback.message.answer("🐾 Зверей нельзя поймать — только монстров.")
-            return
-        capture_bon = get_capture_bonus(active)
-        enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
-        result = resolve_capture(enc, active)
+       if enc.get("type") == "wildlife":
+        await callback.message.answer("🐾 Зверей нельзя поймать — только монстров.")
+        return
+
+    capture_bon = get_capture_bonus(active)
+    enc["bonus_capture"] = enc.get("bonus_capture", 0.0) + capture_bon
+
+    result = resolve_capture(enc)
 
     elif action == "trap":
         from game.trap_service import apply_best_trap
