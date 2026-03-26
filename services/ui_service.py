@@ -7,7 +7,6 @@ from game.grid_exploration_service import is_dungeon_available
 from keyboards.main_menu import main_menu
 from keyboards.location_menu import location_actions_inline
 from utils.images import send_location_image
-from game.dungeon_service import DUNGEONS
 
 
 async def show_location_screen(message: Message, user_id: int):
@@ -16,22 +15,18 @@ async def show_location_screen(message: Message, user_id: int):
         await message.answer("Ошибка: игрок не найден")
         return
 
-    # Карточка локации уже сама включает данные по текущему району
-    # и доступным районам для конкретного игрока
     loc_text = render_location_card(
         player.location_slug,
         telegram_id=user_id,
         current_district_slug=getattr(player, "current_district_slug", None),
     )
 
-    # Главное меню (нижняя клавиатура)
     reply_kb = main_menu(
         player.location_slug,
         getattr(player, "current_district_slug", None),
         telegram_id=user_id,
     )
 
-    # Отправляем карточку локации
     await send_location_image(
         message,
         player.location_slug,
@@ -39,13 +34,11 @@ async def show_location_screen(message: Message, user_id: int):
         reply_markup=reply_kb,
     )
 
-    # Inline-действия для не-городских локаций
     if not is_city(player.location_slug):
         try:
-            has_dungeon = (
-                player.location_slug in DUNGEONS
-                and is_dungeon_available(user_id, player.location_slug)
-            )
+            # ✅ ИСПРАВЛЕНО: проверяем клетку грида, не словарь DUNGEONS
+            # Клетка dungeon может появиться в любой локации через исследование
+            has_dungeon = is_dungeon_available(user_id, player.location_slug)
         except Exception:
             has_dungeon = False
 
