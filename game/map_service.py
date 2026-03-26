@@ -321,12 +321,15 @@ def render_location_card(
     return "\n".join(lines)
 
 
-def build_map_caption(current_slug: str) -> str:
+def build_map_caption(current_slug: str, telegram_id: int | None = None) -> str:
     location = get_location(current_slug)
     if not location:
         return "🗺 Визуальная карта мира"
 
     neighbors = get_connected_locations(current_slug)
+    player = _get_player(telegram_id)
+    completed_ids = _get_completed_story_ids(telegram_id)
+
     lines = [
         "🗺 Визуальная карта мира",
         "",
@@ -338,7 +341,25 @@ def build_map_caption(current_slug: str) -> str:
 
     if neighbors:
         for item in neighbors:
-            lines.append(f"• {item.name}")
+            discovered = _is_location_discovered(telegram_id, item.slug)
+            if not discovered and item.slug not in STARTER_LOCATIONS:
+                lines.append("• ❓ Неизведанная территория")
+                continue
+
+            if player:
+                allowed, _ = check_location_access(player, item.slug, completed_ids)
+            else:
+                from game.location_rules import LOCATION_REQUIREMENTS
+                req = LOCATION_REQUIREMENTS.get(item.slug, {})
+                allowed = req.get("min_level", 1) <= 1
+
+            if allowed:
+                lines.append(f"• {item.name}")
+            else:
+                from game.location_rules import LOCATION_REQUIREMENTS
+                req = LOCATION_REQUIREMENTS.get(item.slug, {})
+                min_lvl = req.get("min_level", 1)
+                lines.append(f"• 🔒 {item.name} (ур.{min_lvl}+)")
     else:
         lines.append("• Нет соседних локаций")
 
