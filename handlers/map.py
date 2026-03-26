@@ -57,7 +57,10 @@ def _normalize_move_text(text: str) -> str:
     text = (text or "").strip()
     if text.startswith("Перейти: "):
         text = "🚶 " + text.replace("Перейти: ", "", 1)
+    # Убираем суффикс "(ур.X+)" — добавляется на заблокированных кнопках
     text = re.sub(r"\s*\(ур\.\d+\+\)\s*$", "", text).strip()
+    # Убираем замок — добавляется на заблокированных кнопках: "🚶 🔒 Название"
+    text = text.replace("🔒 ", "").strip()
     return text
 
 
@@ -71,9 +74,21 @@ def _root_menu_for_player(player, user_id: int, *, traveling: bool = False):
 
 
 async def _show_travel_status(message: Message, player) -> bool:
-    """Показывает статус путешествия. Возвращает True, если игрок сейчас в пути."""
+    """Показывает статус путешествия. Возвращает True, если игрок сейчас в пути.
+    Если игрок прибыл — показывает экран прибытия и возвращает False
+    (чтобы caller продолжил обычный flow и не дублировал сообщение).
+    """
     arrival = check_arrival(message.from_user.id)
     if arrival and arrival.get("arrived"):
+        # Игрок только что прибыл — показываем полный экран прибытия
+        target_slug = arrival.get("to_slug")
+        if target_slug:
+            player = get_player(message.from_user.id) or player
+            _mark_location_discovered(message.from_user.id, target_slug)
+            story_done = update_story_progress(message.from_user.id, "move", target_slug)
+            set_ui_screen(message.from_user.id, "location")
+            await _show_arrival_screen(message, target_slug, story_done)
+            return True  # экран уже показан, caller ничего не должен делать
         return False
 
     if not is_traveling(message.from_user.id):
@@ -89,7 +104,7 @@ async def _show_travel_status(message: Message, player) -> bool:
 
 
 async def _show_world_map(message: Message, player):
-    caption = build_map_caption(player.location_slug)
+    caption = build_map_caption(player.location_slug, telegram_id=message.from_user.id)
     set_ui_screen(message.from_user.id, "main")
 
     if WORLD_MAP_PATH.exists():
@@ -239,9 +254,17 @@ async def navigation_handler(message: Message):
         await message.answer("Сначала напиши /start")
         return
 
+    # Если игрок только что прибыл — показываем экран прибытия
     arrival = check_arrival(message.from_user.id)
     if arrival and arrival.get("arrived"):
-        player = get_player(message.from_user.id) or player
+        target_slug = arrival.get("to_slug")
+        if target_slug:
+            player = get_player(message.from_user.id) or player
+            _mark_location_discovered(message.from_user.id, target_slug)
+            story_done = update_story_progress(message.from_user.id, "move", target_slug)
+            set_ui_screen(message.from_user.id, "location")
+            await _show_arrival_screen(message, target_slug, story_done)
+            return
 
     if is_traveling(message.from_user.id):
         travel_data = get_travel(message.from_user.id)
@@ -295,6 +318,16 @@ async def move_handler(message: Message):
 
     text = (message.text or "").strip()
 
+    # ── Нажата кнопка "Неизведанная территория" ──────────────────────────────
+    if text == "❓ Неизведанная территория":
+        await message.answer(
+            "🌫 Неизведанная территория\n\n"
+            "Этот путь ещё не разведан. Сначала исследуй соседние локации — "
+            "возможно, ты откроешь доступ к новым землям.",
+            reply_markup=_root_menu_for_player(player, message.from_user.id),
+        )
+        return
+
     if text == "🚫 Отменить перемещение":
         from database.repositories import get_connection
 
@@ -314,10 +347,11 @@ async def move_handler(message: Message):
     arrival = check_arrival(message.from_user.id)
     if arrival and arrival.get("arrived"):
         player = get_player(message.from_user.id) or player
-        await message.answer(
-            f"✅ Ты прибыл в {LOCATION_NAMES.get(player.location_slug, player.location_slug)}!",
-            reply_markup=_root_menu_for_player(player, message.from_user.id),
-        )
+        target_slug = arrival.get("to_slug", player.location_slug)
+        _mark_location_discovered(message.from_user.id, target_slug)
+        story_done = update_story_progress(message.from_user.id, "move", target_slug)
+        set_ui_screen(message.from_user.id, "location")
+        await _show_arrival_screen(message, target_slug, story_done)
         return
 
     if is_traveling(message.from_user.id):
@@ -358,7 +392,17 @@ async def move_handler(message: Message):
     completed_ids = story.get("completed_ids", []) if story else []
     allowed, reason = check_location_access(player, target.slug, completed_ids)
     if not allowed:
-        await message.answer(reason)
+        # Показываем детальное сообщение с уровнем требований
+        from game.location_rules import LOCATION_REQUIREMENTS
+        req = LOCATION_REQUIREMENTS.get(target.slug, {})
+        min_lvl = req.get("min_level", 1)
+        lock_text = (
+            f"{reason}\n\n"
+            f"👤 Твой уровень: {player.level}"
+        )
+        if min_lvl > player.level:
+            lock_text += f"\n📈 До разблокировки: {min_lvl - player.level} ур."
+        await message.answer(lock_text)
         return
 
     travel = start_travel(
@@ -381,6 +425,12 @@ async def move_handler(message: Message):
             reply_markup=_root_menu_for_player(player, message.from_user.id, traveling=True),
         )
         return
+
+    # Мгновенный переход (≤ 10 сек) — удаляем запись из БД, сразу показываем прибытие
+    from database.repositories import get_connection
+    with get_connection() as conn:
+        conn.execute("DELETE FROM player_travel WHERE telegram_id=?", (message.from_user.id,))
+        conn.commit()
 
     update_player_location(message.from_user.id, target.slug)
     _mark_location_discovered(message.from_user.id, target.slug)
