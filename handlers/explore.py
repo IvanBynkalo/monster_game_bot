@@ -260,8 +260,20 @@ async def explore_handler(message: Message, forced_direction: str = None):
         await message.answer("Сначала напиши /start")
         return
     if player.is_defeated:
-        await message.answer("☠️ Герой повержен. Сначала вылечи его в Сереброграде.", reply_markup=main_menu(player.location_slug))
-        return
+        # Авто-сброс если HP > 0 (зависший флаг после перезапуска)
+        if player.hp > 0:
+            try:
+                from database.repositories import _update_player_field
+                _update_player_field(message.from_user.id, is_defeated=0)
+                player = get_player(message.from_user.id) or player
+            except Exception:
+                pass
+        if player.is_defeated:
+            await message.answer(
+                f"☠️ Герой повержен (HP: {player.hp}/{player.max_hp}). Сначала вылечи его в Сереброграде.",
+                reply_markup=main_menu(player.location_slug)
+            )
+            return
 
     # Проверка путешествия — нельзя исследовать в пути
     from game.travel_service import is_traveling as _is_tr, get_travel as _get_tr, render_travel_status as _rts, check_arrival as _check_arr

@@ -69,6 +69,16 @@ async def start_handler(message: Message):
     from database.repositories import get_player as _get_fresh
     _player = _get_fresh(message.from_user.id)
 
+    # Авто-восстановление: сбрасываем зависший is_defeated если монстры живы
+    if _player and _player.is_defeated:
+        try:
+            from database.repositories import has_living_monster, heal_player_hp
+            if has_living_monster(message.from_user.id):
+                heal_player_hp(message.from_user.id, _player.max_hp)
+                _player = _get_fresh(message.from_user.id)
+        except Exception:
+            pass
+
     # Открываем соседние локации как видимые при каждом входе
     # (важно для игроков которые уже играли до добавления этой механики)
     try:
