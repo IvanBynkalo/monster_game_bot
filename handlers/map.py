@@ -196,11 +196,38 @@ async def _show_arrival_screen(message: Message, target_slug: str, story_done):
         pass
 
 
-def _mark_location_discovered(user_id: int, location_slug: str):
+def _is_location_discovered_for_player(user_id: int, location_slug: str) -> bool:
+    """Проверяет известна ли локация игроку (посещена или видна как сосед)."""
+    from game.map_service import STARTER_LOCATIONS
+    if location_slug in STARTER_LOCATIONS:
+        return True
     try:
         from database.repositories import get_connection
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
+                (user_id, location_slug)
+            ).fetchone()
+        return (row[0] > 0) if row else False
+    except Exception:
+        return True
+
+
+def _mark_location_discovered(user_id: int, location_slug: str):
+    """
+    Отмечает локацию как посещённую И открывает всех её соседей как видимые.
+    Сосед становится 'visible' (игрок знает что там что-то есть),
+    но не 'visited' — для этого нужно туда перейти.
+    Тип ячейки:
+      'normal'  — посещённая локация
+      'visible' — сосед, виден но не посещён (игрок знает о существовании)
+    """
+    try:
+        from database.repositories import get_connection
+        from game.map_service import TRAVEL_GRAPH
 
         with get_connection() as conn:
+            # Отмечаем саму локацию как посещённую
             conn.execute(
                 """
                 INSERT OR IGNORE INTO player_grid_exploration
@@ -209,6 +236,17 @@ def _mark_location_discovered(user_id: int, location_slug: str):
                 """,
                 (user_id, location_slug),
             )
+            # Открываем всех соседей как видимые (если ещё не открыты)
+            neighbors = TRAVEL_GRAPH.get(location_slug, [])
+            for neighbor_slug in neighbors:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO player_grid_exploration
+                    (telegram_id, location_slug, col, row, cell_type)
+                    VALUES (?, ?, 5, 0, 'visible')
+                    """,
+                    (user_id, neighbor_slug),
+                )
             conn.commit()
     except Exception as exc:
         _log_exc("mark discovered failed", exc=exc, extra={"location_slug": location_slug})
@@ -329,12 +367,40 @@ async def move_handler(message: Message):
 
     # ── Нажата кнопка "Неизведанная территория" ──────────────────────────────
     if text == "❓ Неизведанная территория":
-        await message.answer(
-            "🌫 Неизведанная территория\n\n"
-            "Этот путь ещё не разведан. Сначала исследуй соседние локации — "
-            "возможно, ты откроешь доступ к новым землям.",
-            reply_markup=_root_menu_for_player(player, message.from_user.id),
-        )
+        # Определяем какие именно соседние локации ещё не открыты
+        from game.map_service import get_connected_locations, TRAVEL_GRAPH
+        from game.location_rules import LOCATION_REQUIREMENTS
+        from game.travel_service import LOCATION_NAMES
+
+        unknown_neighbors = []
+        for neighbor in get_connected_locations(player.location_slug):
+            if not _is_location_discovered_for_player(message.from_user.id, neighbor.slug):
+                req = LOCATION_REQUIREMENTS.get(neighbor.slug, {})
+                min_lvl = req.get("min_level", 1)
+                unknown_neighbors.append((neighbor, min_lvl))
+
+        if unknown_neighbors:
+            hints = []
+            for loc, min_lvl in unknown_neighbors:
+                if player.level >= min_lvl:
+                    hints.append(f"• {loc.name} — попробуй исследовать соседние пути")
+                else:
+                    hints.append(f"• {loc.name} — нужен уровень {min_lvl} (у тебя {player.level})")
+            hint_text = "\n".join(hints)
+            await message.answer(
+                f"🌫 Неизведанная территория\n\n"
+                f"Ты чувствуешь что где-то рядом есть новые земли, но путь к ним не ясен.\n\n"
+                f"Что делать:\n{hint_text}\n\n"
+                f"💡 Переходи в соседние локации — при каждом переходе открываются новые пути.",
+                reply_markup=_root_menu_for_player(player, message.from_user.id),
+            )
+        else:
+            await message.answer(
+                "🌫 Неизведанная территория\n\n"
+                "Все соседние пути уже разведаны. "
+                "Возможно, этот маршрут откроется позже.",
+                reply_markup=_root_menu_for_player(player, message.from_user.id),
+            )
         return
 
     if text == "🚫 Отменить перемещение":
