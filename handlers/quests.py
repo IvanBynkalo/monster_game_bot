@@ -135,7 +135,6 @@ def _render_hunting_quests(user_id: int) -> list[str]:
     lines: list[str] = ["🏹 Квесты охоты", ""]
     try:
         from game.hunting_quests import get_active_hunting_quests
-        import time
         active = get_active_hunting_quests(user_id)
         if not active:
             lines.append("Нет активных квестов охоты.")
@@ -155,6 +154,9 @@ def _render_hunting_quests(user_id: int) -> list[str]:
     except Exception:
         lines.append("Информация о квестах охоты недоступна.")
     return lines
+
+
+def _render_today_tasks(user_id: int) -> list[str]:
     lines: list[str] = ["📅 Сегодня", ""]
 
     try:
@@ -166,7 +168,6 @@ def _render_hunting_quests(user_id: int) -> list[str]:
         lines.append("Сегодняшние задания пока недоступны.")
         return lines
 
-    # daily_service уже красиво рендерит блок — используем его целиком
     lines.append(get_daily_panel(user_id))
     return lines
 

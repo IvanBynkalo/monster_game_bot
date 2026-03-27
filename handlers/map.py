@@ -85,6 +85,14 @@ async def _show_travel_status(message: Message, player) -> bool:
         if target_slug:
             player = get_player(message.from_user.id) or player
             _mark_location_discovered(message.from_user.id, target_slug)
+            # Устанавливаем первый доступный район новой локации
+            try:
+                from database.repositories import update_player_district
+                from game.district_service import get_unlocked_districts
+                _first_d = get_unlocked_districts(message.from_user.id, target_slug)
+                update_player_district(message.from_user.id, _first_d[0]["slug"] if _first_d else "")
+            except Exception:
+                pass
             story_done = update_story_progress(message.from_user.id, "move", target_slug)
             set_ui_screen(message.from_user.id, "location")
             await _show_arrival_screen(message, target_slug, story_done)
@@ -205,7 +213,7 @@ def _is_location_discovered_for_player(user_id: int, location_slug: str) -> bool
         from database.repositories import get_connection
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
+                "SELECT COUNT(*) FROM player_location_visibility WHERE telegram_id=? AND location_slug=?",
                 (user_id, location_slug)
             ).fetchone()
         return (row[0] > 0) if row else False
@@ -215,35 +223,40 @@ def _is_location_discovered_for_player(user_id: int, location_slug: str) -> bool
 
 def _mark_location_discovered(user_id: int, location_slug: str):
     """
-    Отмечает локацию как посещённую И открывает всех её соседей как видимые.
-    Сосед становится 'visible' (игрок знает что там что-то есть),
-    но не 'visited' — для этого нужно туда перейти.
-    Тип ячейки:
-      'normal'  — посещённая локация
-      'visible' — сосед, виден но не посещён (игрок знает о существовании)
+    Отмечает локацию как посещённую и открывает всех её соседей.
+    Использует отдельную таблицу player_location_visibility чтобы не
+    конфликтовать с player_grid_exploration (которая хранит JSON-сетку).
     """
     try:
         from database.repositories import get_connection
         from game.map_service import TRAVEL_GRAPH
 
         with get_connection() as conn:
-            # Отмечаем саму локацию как посещённую
+            # Создаём таблицу если не существует (lazy migration)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS player_location_visibility (
+                    telegram_id   INTEGER NOT NULL,
+                    location_slug TEXT    NOT NULL,
+                    cell_type     TEXT    NOT NULL DEFAULT 'normal',
+                    PRIMARY KEY   (telegram_id, location_slug)
+                )
+            """)
+            # Посещённая локация
             conn.execute(
                 """
-                INSERT OR IGNORE INTO player_grid_exploration
-                (telegram_id, location_slug, col, row, cell_type)
-                VALUES (?, ?, 5, 0, 'normal')
+                INSERT OR REPLACE INTO player_location_visibility
+                (telegram_id, location_slug, cell_type)
+                VALUES (?, ?, 'normal')
                 """,
                 (user_id, location_slug),
             )
-            # Открываем всех соседей как видимые (если ещё не открыты)
-            neighbors = TRAVEL_GRAPH.get(location_slug, [])
-            for neighbor_slug in neighbors:
+            # Соседи — видимые (INSERT OR IGNORE чтобы не перезаписать 'normal' на 'visible')
+            for neighbor_slug in TRAVEL_GRAPH.get(location_slug, []):
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO player_grid_exploration
-                    (telegram_id, location_slug, col, row, cell_type)
-                    VALUES (?, ?, 5, 0, 'visible')
+                    INSERT OR IGNORE INTO player_location_visibility
+                    (telegram_id, location_slug, cell_type)
+                    VALUES (?, ?, 'visible')
                     """,
                     (user_id, neighbor_slug),
                 )
@@ -511,6 +524,17 @@ async def move_handler(message: Message):
 
     update_player_location(message.from_user.id, target.slug)
     _mark_location_discovered(message.from_user.id, target.slug)
+    # Устанавливаем первый доступный район новой локации
+    try:
+        from database.repositories import update_player_district
+        from game.district_service import get_unlocked_districts
+        _first_districts = get_unlocked_districts(message.from_user.id, target.slug)
+        if _first_districts:
+            update_player_district(message.from_user.id, _first_districts[0]["slug"])
+        else:
+            update_player_district(message.from_user.id, "")
+    except Exception:
+        pass
     story_done = update_story_progress(message.from_user.id, "move", target.slug)
     set_ui_screen(message.from_user.id, "location")
     await _show_arrival_screen(message, target.slug, story_done)

@@ -389,14 +389,36 @@ async def monster_callback(callback: CallbackQuery):
     await callback.answer()
     monsters = get_player_monsters(uid)
 
+    async def _safe_edit(text, markup=None):
+        """edit_text падает на фото-сообщениях — используем answer как fallback."""
+        try:
+            if markup:
+                await callback.message.edit_text(text, reply_markup=markup)
+            else:
+                await callback.message.edit_text(text)
+        except Exception:
+            if markup:
+                await callback.message.answer(text, reply_markup=markup)
+            else:
+                await callback.message.answer(text)
+
     if data == "mon:list":
         if not monsters:
-            await callback.message.edit_text("Нет монстров.")
+            try:
+                await callback.message.edit_text("Нет монстров.")
+            except Exception:
+                await callback.message.answer("Нет монстров.")
             return
-        await callback.message.edit_text(
-            "🐲 Твои монстры — выбери:",
-            reply_markup=_monsters_list_inline(monsters)
-        )
+        try:
+            await callback.message.edit_text(
+                "🐲 Твои монстры — выбери:",
+                reply_markup=_monsters_list_inline(monsters)
+            )
+        except Exception:
+            await callback.message.answer(
+                "🐲 Твои монстры — выбери:",
+                reply_markup=_monsters_list_inline(monsters)
+            )
 
     elif data.startswith("mon:view:"):
         mid = int(data.split(":")[-1])
@@ -407,7 +429,7 @@ async def monster_callback(callback: CallbackQuery):
             return
         text = _render_monster_card_full(monster, uid)
         try:
-            await callback.message.edit_text(text, reply_markup=_monster_nav_inline(monsters, mid, uid))
+            await _safe_edit(text, _monster_nav_inline(monsters, mid, uid))
         except Exception:
             await callback.message.answer(text, reply_markup=_monster_nav_inline(monsters, mid, uid))
 
