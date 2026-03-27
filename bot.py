@@ -1483,6 +1483,7 @@ async def set_district_callback(callback: CallbackQuery):
     """Переключение района внутри текущей локации."""
     uid = callback.from_user.id
     district_slug = callback.data.split(":", 1)[1]
+    from database.repositories import get_player
     player = get_player(uid)
     if not player:
         await callback.answer("Ошибка.")
