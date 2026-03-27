@@ -1007,6 +1007,15 @@ async def fight_inline_callback(callback: CallbackQuery):
 
     elif action == "skill":
         result = apply_skill(enc, active, player)
+        # v3: применяем DoT эффекты после хода навыка
+        try:
+            from game.skill_service import apply_dot_effects
+            _dot_text = apply_dot_effects(enc)
+            if _dot_text and result and isinstance(result, dict):
+                result["text"] = result.get("text", "") + "\n" + _dot_text
+                save_pending_encounter(uid, enc)
+        except Exception:
+            pass
         if result is None:
             result = resolve_attack(
                 enc,
@@ -1114,6 +1123,22 @@ async def fight_inline_callback(callback: CallbackQuery):
                 _max_hp = active.get("max_hp", active.get("hp", 10))
                 _regen = max(1, _max_hp // 5)
                 _heal_post(uid, _regen)
+        except Exception:
+            pass
+
+        # v3: DoT эффекты после обычной атаки/попытки поимки
+        try:
+            if not result.get("finished"):
+                from game.skill_service import apply_dot_effects as _dot_fn
+                _enc_fresh = get_pending_encounter(uid)
+                if _enc_fresh:
+                    _dot_log = _dot_fn(_enc_fresh)
+                    if _dot_log:
+                        save_pending_encounter(uid, _enc_fresh)
+                        lines.append(_dot_log)
+                        if _enc_fresh.get("hp", 1) <= 0:
+                            clear_pending_encounter(uid)
+                            lines.append(f"💀 {_enc_fresh.get('monster_name', 'Враг')} уничтожен DoT-эффектом!")
         except Exception:
             pass
 
