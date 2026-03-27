@@ -705,11 +705,11 @@ async def explore_handler(message: Message, forced_direction: str = None):
             await message.answer(_next_prompt, reply_markup=_dir_kb_next)
             if _is_on_dungeon:
                 from keyboards.location_menu import location_actions_inline as _lai
-                # ✅ ИСПРАВЛЕНО: кнопка подземелья показывается всегда когда
-                # игрок стоит на клетке dungeon, без проверки словаря DUNGEONS
+                from game.dungeon_service import DUNGEONS
+                _dng_has = player.location_slug in DUNGEONS
                 await message.answer(
                     "🕳 Ты нашёл вход в подземелье!",
-                    reply_markup=_lai(player.location_slug, has_dungeon=True)
+                    reply_markup=_lai(player.location_slug, has_dungeon=_dng_has)
                 )
         else:
             # Обычное исследование — возвращаем главное меню
