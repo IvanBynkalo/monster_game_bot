@@ -198,12 +198,20 @@ def _lazy():
         _grid_table_ensured = True
 
 
-def get_grid(telegram_id: int, location_slug: str) -> dict:
+def _grid_key(location_slug: str, district_slug: str | None = None) -> str:
+    """Составной ключ хранения: location:district или просто location."""
+    if district_slug:
+        return f"{location_slug}:{district_slug}"
+    return location_slug
+
+
+def get_grid(telegram_id: int, location_slug: str, district_slug: str | None = None) -> dict:
     _lazy()
+    key = _grid_key(location_slug, district_slug)
     with get_connection() as conn:
         row = conn.execute(
             "SELECT grid_data FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
-            (telegram_id, location_slug)
+            (telegram_id, key)
         ).fetchone()
     if row:
         grid = json.loads(row["grid_data"])
@@ -213,18 +221,19 @@ def get_grid(telegram_id: int, location_slug: str) -> dict:
             cell.setdefault("original_type", cell.get("type"))
         return grid
     grid = generate_grid(location_slug)
-    _save_grid(telegram_id, location_slug, grid)
+    _save_grid(telegram_id, location_slug, grid, district_slug)
     return grid
 
 
-def _save_grid(telegram_id: int, location_slug: str, grid: dict):
+def _save_grid(telegram_id: int, location_slug: str, grid: dict, district_slug: str | None = None):
     _lazy()
+    key = _grid_key(location_slug, district_slug)
     with get_connection() as conn:
         conn.execute("""
             INSERT INTO player_grid_exploration (telegram_id, location_slug, grid_data)
             VALUES (?,?,?)
             ON CONFLICT(telegram_id, location_slug) DO UPDATE SET grid_data=?
-        """, (telegram_id, location_slug, json.dumps(grid), json.dumps(grid)))
+        """, (telegram_id, key, json.dumps(grid), json.dumps(grid)))
         conn.commit()
 
 
@@ -320,14 +329,14 @@ def get_available_directions(grid: dict) -> list:
 
 # ── Исследование клетки ───────────────────────────────────────────────────────
 
-def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
+def explore_cell(telegram_id: int, location_slug: str, direction: str, district_slug: str | None = None) -> dict:
     from game.exploration_service import _lazy_ensure, get_cartographer_level, _add_cartographer_exp
     _lazy_ensure()
 
     # Суточный респаун перед каждым шагом
     try_daily_respawn(telegram_id, location_slug)
 
-    grid = get_grid(telegram_id, location_slug)
+    grid = get_grid(telegram_id, location_slug, district_slug)
     directions = get_available_directions(grid)
 
     chosen = next((d for d in directions if d["dir"] == direction), None)
@@ -356,7 +365,7 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
         pass
 
     grid["current_pos"] = [nc, nr]
-    _save_grid(telegram_id, location_slug, grid)
+    _save_grid(telegram_id, location_slug, grid, district_slug)
 
     cart_level = get_cartographer_level(telegram_id)
     _add_cartographer_exp(telegram_id, 1)
@@ -618,8 +627,8 @@ def render_exploration_result(result: dict, location_slug: str) -> str:
     return "\n".join(lines)
 
 
-def render_exploration_panel(telegram_id: int, location_slug: str) -> str:
-    grid = get_grid(telegram_id, location_slug)
+def render_exploration_panel(telegram_id: int, location_slug: str, district_slug: str | None = None) -> str:
+    grid = get_grid(telegram_id, location_slug, district_slug)
     pct = min(100, grid["visited_count"])
     col, row = grid["current_pos"]
 
@@ -643,7 +652,7 @@ def render_exploration_panel(telegram_id: int, location_slug: str) -> str:
     return "\n".join(lines)
 
 
-def is_dungeon_available(telegram_id: int, location_slug: str) -> bool:
+def is_dungeon_available(telegram_id: int, location_slug: str, district_slug: str | None = None) -> bool:
     """
     Подземелье доступно если:
     1. Локация есть в словаре DUNGEONS (подземелье для неё предусмотрено).
