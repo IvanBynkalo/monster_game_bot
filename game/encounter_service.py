@@ -402,23 +402,25 @@ def render_encounter_text(encounter: dict, attacker_type: str | None = None):
 def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_type: str | None = None,
                    active_monster: dict | None = None):
     """
-    Боевое разрешение атаки.
-    - Применяет таблицу типов (рек. #3) — реально влияет на урон
-    - Применяет комбо-бонусы к атаке (рек. #6)
-    - Учитывает lifesteal из комбо-мутации
+    Боевое разрешение атаки — Combat Layer v3.
+    Формула: final_damage = base × type_modifier × emotion_modifier × trait_modifier
+    Типы: ×1.5 преимущество, ×0.7 слабость (полная матрица из ТЗ)
     """
     if encounter["type"] not in ("monster", "wildlife"):
         return {"ok": False, "text": "Здесь не на кого нападать."}
-    # Нормализуем поля для зверей
     if encounter["type"] == "wildlife":
         if "monster_name" not in encounter:
             encounter["monster_name"] = encounter.get("name", "Зверь")
         if "monster_type" not in encounter:
             encounter["monster_type"] = "nature"
 
-    # ── Тип-множитель (рек. #3) ──────────────────────────────────────────────
-    multiplier = get_damage_multiplier(attacker_type, encounter.get("monster_type"))
-    hint       = render_type_hint(attacker_type, encounter.get("monster_type"))
+    # ── Полная матрица типов v3 ───────────────────────────────────────────────
+    attacker_emotion = active_monster.get("mood") if active_monster else None
+    from game.type_service import get_damage_multiplier as _get_mult, get_defense_multiplier
+    multiplier, hint = _get_mult(attacker_type, encounter.get("monster_type"), attacker_emotion)
+
+    # Защитный множитель врага (resistance/vulnerability)
+    def_mult = get_defense_multiplier(encounter.get("monster_type"), attacker_type)
 
     # ── Комбо-бонус к атаке (рек. #6) ───────────────────────────────────────
     combo_atk_bonus = 0
@@ -429,10 +431,12 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
         combo_atk_bonus = combo.get("atk_bonus", 0)
         special_effect  = combo.get("special")
 
-    # ── Расчёт урона игрока ──────────────────────────────────────────────────
+    # ── Расчёт урона игрока (v3 формула) ────────────────────────────────────
     base_dmg      = active_monster_attack + combo_atk_bonus
     player_attack = random.randint(max(4, base_dmg - 2), base_dmg + 3)
-    player_attack = max(1, int(round(player_attack * multiplier)))
+    # type_modifier × emotion_modifier (уже в multiplier) × rand(0.9–1.1)
+    rand_factor = random.uniform(0.9, 1.1)
+    player_attack = max(1, int(round(player_attack * multiplier * rand_factor * def_mult)))
 
     encounter["hp"] -= player_attack
 
