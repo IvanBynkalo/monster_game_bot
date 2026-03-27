@@ -304,7 +304,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
     _clear_enc(message.from_user.id)
 
     # Сетка 10x10: получаем доступные направления
-    _grid = get_grid(message.from_user.id, player.location_slug)
+    _grid = get_grid(message.from_user.id, player.location_slug, player.current_district_slug)
     _directions = get_available_directions(_grid)
 
     # Если выбор направления задан явно (из кнопок reply-клавиатуры) — пропускаем показ меню
@@ -332,12 +332,12 @@ async def explore_handler(message: Message, forced_direction: str = None):
         try:
             from game.grid_exploration_service import render_mini_map
             from game.exploration_service import get_cartographer_level as _gcl
-            _grid_fresh = get_grid(message.from_user.id, player.location_slug)
+            _grid_fresh = get_grid(message.from_user.id, player.location_slug, player.current_district_slug)
             _mini = render_mini_map(_grid_fresh, cart_level=_gcl(message.from_user.id))
         except Exception:
             _mini = ""
 
-        _panel = render_exploration_panel(message.from_user.id, player.location_slug)
+        _panel = render_exploration_panel(message.from_user.id, player.location_slug, player.current_district_slug)
         _prompt = "Куда идти?\n\n" + _panel
         if _mini:
             _prompt += "\n\n" + _mini
@@ -349,7 +349,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
         _chosen_dir = forced_direction
     else:
         _chosen_dir = _directions[0]['dir'] if _directions else 'forward'
-    _expl_result = explore_cell(message.from_user.id, player.location_slug, _chosen_dir)
+    _expl_result = explore_cell(message.from_user.id, player.location_slug, _chosen_dir, _district_slug)
     _expl_text = render_exploration_result(_expl_result, player.location_slug)
     _expl_bonuses = get_current_cell_bonuses(message.from_user.id, player.location_slug)
 
@@ -731,7 +731,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
         player = get_player(message.from_user.id)
         if forced_direction:
             # Продолжаем исследование — показываем следующие направления
-            _grid_next = get_grid(message.from_user.id, player.location_slug)
+            _grid_next = get_grid(message.from_user.id, player.location_slug, player.current_district_slug)
             _dirs_next = get_available_directions(_grid_next)
             from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
             _dir_labels_next = {d['dir']: d['label'] for d in _dirs_next}
@@ -749,7 +749,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
                 _mini_ev = render_mini_map(_grid_next, cart_level=_gcl_ev(message.from_user.id))
             except Exception:
                 _mini_ev = ""
-            _panel_ev = render_exploration_panel(message.from_user.id, player.location_slug)
+            _panel_ev = render_exploration_panel(message.from_user.id, player.location_slug, player.current_district_slug)
             _next_prompt = "Куда дальше?\n\n" + _panel_ev
             if _mini_ev:
                 _next_prompt += "\n\n" + _mini_ev

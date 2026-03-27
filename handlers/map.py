@@ -157,7 +157,7 @@ async def _show_arrival_screen(message: Message, target_slug: str, story_done):
     try:
         from game.grid_exploration_service import render_exploration_panel
 
-        exploration_panel = render_exploration_panel(message.from_user.id, target_slug)
+        exploration_panel = render_exploration_panel(message.from_user.id, target_slug, getattr(player, "current_district_slug", None))
     except Exception as exc:
         _log_exc("grid panel failed", exc=exc)
         exploration_panel = ""
