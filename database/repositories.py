@@ -814,6 +814,33 @@ def heal_all_monsters(telegram_id: int) -> list[dict]:
         save_monster(m)
     return monsters
 
+# ── v3: роль-зависимый рост статов ──────────────────────────────────────────
+
+_ROLE_FROM_TYPE = {
+    "flame": "assault", "storm": "hunter",  "void": "hybrid",
+    "nature": "hybrid", "shadow": "controller", "echo": "controller",
+    "bone": "tank",     "spirit": "support",
+}
+
+_LEVELUP_GAINS = {
+    # (hp_gain, atk_gain)
+    "assault":    (3,  2),   # больше атаки
+    "tank":       (8,  1),   # много HP
+    "hunter":     (4,  2),   # скорость → атака
+    "controller": (4,  1),   # сбалансированный
+    "support":    (6,  1),   # много HP
+    "hybrid":     (4,  1),   # стандарт
+}
+
+
+def _infer_role_from_type(monster_type: str) -> str:
+    return _ROLE_FROM_TYPE.get(monster_type, "hybrid")
+
+
+def _get_levelup_gains(role: str) -> tuple[int, int]:
+    return _LEVELUP_GAINS.get(role, (4, 1))
+
+
 def add_active_monster_experience(telegram_id: int, amount: int) -> tuple[dict | None, list]:
     m = get_active_monster(telegram_id)
     if not m:
@@ -823,10 +850,14 @@ def add_active_monster_experience(telegram_id: int, amount: int) -> tuple[dict |
     while m["experience"] >= m.get("level",1) * 5:
         m["experience"] -= m.get("level",1) * 5
         m["level"] = m.get("level",1) + 1
-        m["max_hp"] += 4
-        m["attack"] += 1
+        # v3: Рост статов по роли монстра
+        _role = m.get("role") or _infer_role_from_type(m.get("monster_type", "void"))
+        _hp_gain, _atk_gain = _get_levelup_gains(_role)
+        m["max_hp"] += _hp_gain
+        m["attack"] += _atk_gain
         m["current_hp"] = m["max_hp"]
-        level_ups.append({"level":m["level"],"max_hp":m["max_hp"],"attack":m["attack"]})
+        level_ups.append({"level":m["level"],"max_hp":m["max_hp"],"attack":m["attack"],
+                          "hp_gain":_hp_gain,"atk_gain":_atk_gain,"role":_role})
     save_monster(m)
     return m, level_ups
 
