@@ -557,7 +557,8 @@ def heal_player_hp(telegram_id: int, amount: int) -> Player | None:
     if not p or amount <= 0:
         return p
     new_hp = min(p.max_hp, p.hp + amount)
-    defeated = 0 if new_hp > 1 else p.is_defeated
+    # Сбрасываем is_defeated как только HP > 0
+    defeated = 0 if new_hp > 0 else p.is_defeated
     _update_player_field(telegram_id, hp=new_hp, is_defeated=int(defeated))
     return get_player(telegram_id)
 
