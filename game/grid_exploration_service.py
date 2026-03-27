@@ -115,14 +115,34 @@ def _get_zone(row: int) -> str:
     return "extreme"
 
 
-def _weighted_cell_type(row: int, explored_pct: int) -> str:
+def _weighted_cell_type(row: int, explored_pct: int, location_slug: str = "") -> str:
     zone = _get_zone(row)
     weights = dict(ZONE_WEIGHTS[zone])
-    # Подземелье может появиться в любой момент на средней/глубокой зоне
-    # boss_zone только после 60% (территория всё равно сложная)
-    if explored_pct < THRESHOLDS["boss_zone_unlocks"]:
+
+    # ✅ Подземелье генерируется ТОЛЬКО в локациях из словаря DUNGEONS.
+    # boss_zone генерируется ТОЛЬКО если в локации есть мировой босс.
+    # Во всех остальных локациях эти клетки заменяются на "discovery".
+    from game.dungeon_service import DUNGEONS
+    if location_slug not in DUNGEONS:
+        weights["dungeon"] = 0
+
+    try:
+        from game.world_boss_service import WORLD_BOSSES
+        has_world_boss = location_slug in WORLD_BOSSES
+    except Exception:
+        has_world_boss = False
+
+    if not has_world_boss or explored_pct < THRESHOLDS["boss_zone_unlocks"]:
         weights["boss_zone"] = 0
+
+    # Перераспределяем обнулённые веса в "discovery" чтобы не потерять интерес
+    removed = (ZONE_WEIGHTS[zone].get("dungeon", 0) if weights["dungeon"] == 0 else 0) + \
+              (ZONE_WEIGHTS[zone].get("boss_zone", 0) if weights["boss_zone"] == 0 else 0)
+    weights["discovery"] = weights.get("discovery", 0) + removed
+
     total = sum(weights.values())
+    if total <= 0:
+        return "normal"
     roll = random.uniform(0, total)
     cur = 0
     for ctype, w in weights.items():
@@ -322,9 +342,9 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str) -> dict:
     visited_before = cell["visited"]
 
     if not visited_before:
-        # Новая клетка — генерируем тип
+        # Новая клетка — генерируем тип с учётом локации
         explored_pct = int(grid["visited_count"] / 100 * 100)
-        cell_type = _weighted_cell_type(nr, explored_pct)
+        cell_type = _weighted_cell_type(nr, explored_pct, location_slug=location_slug)
         cell["type"] = cell_type
         cell["original_type"] = cell_type
         cell["visited"] = True
@@ -409,7 +429,7 @@ def _get_fog_cells(grid: dict, cart_level: int, location_slug: str = "") -> dict
         if cell.get("predicted_type"):
             return cell["predicted_type"]
         pct = min(100, grid.get("visited_count", 1))
-        ctype = _weighted_cell_type(row, pct)
+        ctype = _weighted_cell_type(row, pct, location_slug=location_slug)
         cell["predicted_type"] = ctype
         return ctype
 
@@ -625,10 +645,15 @@ def render_exploration_panel(telegram_id: int, location_slug: str) -> str:
 
 def is_dungeon_available(telegram_id: int, location_slug: str) -> bool:
     """
-    Подземелье доступно когда игрок стоит на ячейке типа 'dungeon' в гриде.
-    НЕ требует чтобы локация была в DUNGEONS — клетка dungeon может появиться
-    в любой локации через систему исследования сетки.
+    Подземелье доступно если:
+    1. Локация есть в словаре DUNGEONS (подземелье для неё предусмотрено).
+    2. Игрок стоит на клетке типа 'dungeon' в гриде.
+    Клетка 'dungeon' генерируется только в локациях из DUNGEONS (см. _weighted_cell_type),
+    поэтому двойная проверка защищает от любых edge-case.
     """
+    from game.dungeon_service import DUNGEONS
+    if location_slug not in DUNGEONS:
+        return False
     grid = get_grid(telegram_id, location_slug)
     col, row = grid["current_pos"]
     key = f"{col},{row}"
@@ -639,8 +664,10 @@ def is_dungeon_available(telegram_id: int, location_slug: str) -> bool:
 def has_any_dungeon_cell(telegram_id: int, location_slug: str) -> bool:
     """
     Возвращает True если в гриде локации есть хоть одна посещённая клетка-подземелье.
-    Используется для подсказки игроку что подземелье существует в этой локации.
     """
+    from game.dungeon_service import DUNGEONS
+    if location_slug not in DUNGEONS:
+        return False
     grid = get_grid(telegram_id, location_slug)
     for cell in grid["cells"].values():
         if cell.get("visited") and cell.get("type") == "dungeon":
