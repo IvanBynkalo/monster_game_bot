@@ -190,6 +190,7 @@ async def _show_arrival_screen(message: Message, target_slug: str, story_done):
         target_slug,
         text,
         reply_markup=_root_menu_for_player(player, message.from_user.id),
+        district_slug=getattr(player, "current_district_slug", None),
     )
     await _show_location_actions(message, target_slug)
 
