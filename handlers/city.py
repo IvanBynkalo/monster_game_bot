@@ -864,15 +864,64 @@ def bort_main_inline(player_id: int):
 def bort_sell_inline(player_id: int, city_slug: str):
     resources = get_resources(player_id)
     rows = []
+
+    # Группируем ресурсы по типу и показываем цену продажи
+    CATEGORY_ORDER = ["herb", "ore", "crystal", "trophy", "loot", "other"]
+    CATEGORY_LABELS = {
+        "herb": "🌿 Травы и растения",
+        "ore":  "⛏ Руда и камни",
+        "crystal": "💎 Кристаллы",
+        "trophy": "🏆 Трофеи",
+        "loot": "📦 Добыча",
+        "other": "📦 Прочее",
+    }
+
+    def _get_category(slug: str) -> str:
+        herb_keys = ["herb", "flower", "leaf", "moss", "spore", "root", "petal", "grass"]
+        ore_keys = ["ore", "stone", "coal", "mineral", "rock"]
+        crystal_keys = ["crystal", "gem", "shard", "jewel"]
+        trophy_keys = ["trophy", "horn", "fang", "claw", "scale", "skin", "hide", "fur", "bone", "feather", "pearl"]
+        s = slug.lower()
+        if any(k in s for k in crystal_keys): return "crystal"
+        if any(k in s for k in trophy_keys): return "trophy"
+        if any(k in s for k in herb_keys): return "herb"
+        if any(k in s for k in ore_keys): return "ore"
+        return "other"
+
+    from game.market_service import get_city_resource_sell_price
+    categorized = {}
     for slug, qty in resources.items():
         if qty <= 0:
             continue
-        rows.append([InlineKeyboardButton(
-            text=f"💰 {get_resource_label(slug)} x{qty}",
-            callback_data=f"marketnpc:bort_sell:{slug}",
-        )])
-    if not rows:
+        cat = _get_category(slug)
+        if cat not in categorized:
+            categorized[cat] = []
+        try:
+            price = get_city_resource_sell_price(city_slug, slug, merchant_level=1, amount=1)
+        except Exception:
+            price = 0
+        categorized[cat].append((slug, qty, price))
+
+    if not categorized:
         rows.append([InlineKeyboardButton(text="Нет ресурсов для продажи", callback_data="marketnpc:noop")])
+    else:
+        for cat in CATEGORY_ORDER:
+            items = categorized.get(cat, [])
+            if not items:
+                continue
+            # Заголовок категории как неактивная кнопка
+            rows.append([InlineKeyboardButton(
+                text=CATEGORY_LABELS[cat],
+                callback_data="marketnpc:noop"
+            )])
+            for slug, qty, price in sorted(items, key=lambda x: x[0]):
+                label = get_resource_label(slug)
+                price_str = f"{price}з" if price > 0 else "нет цены"
+                rows.append([InlineKeyboardButton(
+                    text=f"💰 {label} ×{qty} → {price_str}",
+                    callback_data=f"marketnpc:bort_sell:{slug}",
+                )])
+
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
