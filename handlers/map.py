@@ -151,14 +151,14 @@ async def _show_arrival_screen(message: Message, target_slug: str, story_done):
 
         exploration_panel = render_exploration_panel(message.from_user.id, target_slug)
     except Exception as exc:
-        _log_exc("grid panel failed", exc=exc, extra={"target_slug": target_slug})
+        _log_exc("grid panel failed", exc=exc)
         exploration_panel = ""
 
     try:
         new_weekly = check_and_assign_weekly_quest(message.from_user.id, target_slug)
         active_weekly = get_active_weekly_quest(message.from_user.id, target_slug)
     except Exception as exc:
-        _log_exc("weekly quest failed", exc=exc, extra={"target_slug": target_slug})
+        _log_exc("weekly quest failed", exc=exc)
         new_weekly = None
         active_weekly = None
 
@@ -249,7 +249,7 @@ def _mark_location_discovered(user_id: int, location_slug: str):
                 )
             conn.commit()
     except Exception as exc:
-        _log_exc("mark discovered failed", exc=exc, extra={"location_slug": location_slug})
+        _log_exc("mark discovered failed", exc=exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,6 +312,9 @@ async def navigation_handler(message: Message):
             )
         return
 
+    # При каждом открытии навигации открываем соседей текущей локации
+    _mark_location_discovered(message.from_user.id, player.location_slug)
+
     set_ui_screen(message.from_user.id, "navigation")
 
     district_slug = getattr(player, "current_district_slug", None)
@@ -368,9 +371,8 @@ async def move_handler(message: Message):
     # ── Нажата кнопка "Неизведанная территория" ──────────────────────────────
     if text == "❓ Неизведанная территория":
         # Определяем какие именно соседние локации ещё не открыты
-        from game.map_service import get_connected_locations, TRAVEL_GRAPH
+        from game.map_service import get_connected_locations
         from game.location_rules import LOCATION_REQUIREMENTS
-        from game.travel_service import LOCATION_NAMES
 
         unknown_neighbors = []
         for neighbor in get_connected_locations(player.location_slug):

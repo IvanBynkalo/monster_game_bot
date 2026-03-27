@@ -69,6 +69,14 @@ async def start_handler(message: Message):
     from database.repositories import get_player as _get_fresh
     _player = _get_fresh(message.from_user.id)
 
+    # Открываем соседние локации как видимые при каждом входе
+    # (важно для игроков которые уже играли до добавления этой механики)
+    try:
+        from handlers.map import _mark_location_discovered
+        _mark_location_discovered(message.from_user.id, _player.location_slug)
+    except Exception:
+        pass
+
     from utils.images import send_location_image
     from keyboards.location_menu import location_actions_inline
     from game.dungeon_service import DUNGEONS

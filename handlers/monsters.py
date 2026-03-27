@@ -2,6 +2,7 @@
 monsters.py — Просмотр и управление монстрами.
 Показывает по одному монстру с полной информацией + кристалл + совместимость.
 """
+import re
 from pathlib import Path
 
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
