@@ -10,9 +10,8 @@ STARTER_LOCATIONS = {"silver_city", "dark_forest", "emerald_fields"}
 
 def _is_location_discovered(telegram_id: int, location_slug: str) -> bool:
     """
-    Локация считается «известной» если игрок её посетил (cell_type='normal')
-    или видел как сосед (cell_type='visible').
-    Только полностью неизвестные локации показываются как ❓.
+    Локация известна если посещена или видна как сосед.
+    Читает из player_location_visibility (отдельная от grid_data таблица).
     """
     if location_slug in STARTER_LOCATIONS:
         return True
@@ -22,7 +21,7 @@ def _is_location_discovered(telegram_id: int, location_slug: str) -> bool:
         from database.repositories import get_connection
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
+                "SELECT COUNT(*) FROM player_location_visibility WHERE telegram_id=? AND location_slug=?",
                 (telegram_id, location_slug)
             ).fetchone()
         return (row[0] > 0) if row else False
