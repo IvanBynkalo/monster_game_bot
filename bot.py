@@ -1428,6 +1428,7 @@ async def location_inline_callback(callback: CallbackQuery):
     elif action == "district":
         await callback.answer()  # всегда первым!
         try:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             from game.district_service import (
                 get_unlocked_districts, get_explored_pct,
                 DISTRICT_UNLOCK_PCT, get_districts_for_location
