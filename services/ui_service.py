@@ -36,9 +36,11 @@ async def show_location_screen(message: Message, user_id: int):
 
     if not is_city(player.location_slug):
         try:
-            # ✅ ИСПРАВЛЕНО: проверяем клетку грида, не словарь DUNGEONS
-            # Клетка dungeon может появиться в любой локации через исследование
-            has_dungeon = is_dungeon_available(user_id, player.location_slug)
+            from game.dungeon_service import DUNGEONS
+            has_dungeon = (
+                player.location_slug in DUNGEONS
+                and is_dungeon_available(user_id, player.location_slug)
+            )
         except Exception:
             has_dungeon = False
 
