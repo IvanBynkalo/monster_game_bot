@@ -10,11 +10,12 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
 
-def encounter_inline_menu(has_trap: bool = True, has_poison_trap: bool = True) -> InlineKeyboardMarkup:
-    """Inline-меню боя — 2 ряда по 2 кнопки + ловушки если есть."""
-    # Ряд 1: Атака + Навык
-    # Ряд 2: Поймать + Убежать
-    # Ряд 3 (опционально): Ловушка + Яд. ловушка
+def encounter_inline_menu(
+    has_trap: bool = True,
+    has_poison_trap: bool = True,
+    has_multiple_monsters: bool = False,
+) -> InlineKeyboardMarkup:
+    """Inline-меню боя — 2 ряда по 2 кнопки + ловушки + смена монстра."""
     rows = [
         [
             InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
@@ -32,6 +33,11 @@ def encounter_inline_menu(has_trap: bool = True, has_poison_trap: bool = True) -
         trap_row.append(InlineKeyboardButton(text="☠️ Яд. ловушка", callback_data="fight:poison_trap"))
     if trap_row:
         rows.append(trap_row)
+    # Кнопка смены монстра — если у игрока есть другие живые монстры
+    if has_multiple_monsters:
+        rows.append([
+            InlineKeyboardButton(text="🔄 Сменить монстра", callback_data="fight:switch")
+        ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
