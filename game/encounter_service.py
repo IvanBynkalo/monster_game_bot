@@ -434,9 +434,48 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
     # ── Расчёт урона игрока (v3 формула) ────────────────────────────────────
     base_dmg      = active_monster_attack + combo_atk_bonus
     player_attack = random.randint(max(4, base_dmg - 2), base_dmg + 3)
-    # type_modifier × emotion_modifier (уже в multiplier) × rand(0.9–1.1)
-    rand_factor = random.uniform(0.9, 1.1)
-    player_attack = max(1, int(round(player_attack * multiplier * rand_factor * def_mult)))
+    rand_factor   = random.uniform(0.9, 1.1)
+
+    # ── Биомная синергия (пункт 7) ────────────────────────────────────────────
+    biome_mult = 1.0
+    biome_log  = ""
+    if active_monster:
+        try:
+            from game.combat_profiles import get_biome_synergy_bonus, render_biome_synergy_text
+            _biome = encounter.get("location_biome", "")
+            _mtype = active_monster.get("monster_type", "void")
+            biome_mult = get_biome_synergy_bonus(_mtype, _biome)
+            if biome_mult > 1.0:
+                biome_log = render_biome_synergy_text(_mtype, _biome)
+        except Exception:
+            pass
+
+    player_attack = max(1, int(round(player_attack * multiplier * rand_factor * def_mult * biome_mult)))
+
+    # ── Трейт монстра ─────────────────────────────────────────────────────────
+    trait_log  = ""
+    biome_log  = ""
+    if active_monster:
+        try:
+            from game.combat_skills import apply_trait_to_damage
+            trait_id  = active_monster.get("trait")
+            is_boss   = encounter.get("is_boss", False)
+            player_attack, trait_log = apply_trait_to_damage(
+                player_attack, trait_id, encounter.get("monster_type"), is_boss
+            )
+        except Exception:
+            pass
+
+    # ── Пассивка атакующего (frenzy, void_hunger, sharp_instinct) ────────────
+    passive_atk_log = ""
+    if active_monster:
+        try:
+            from game.combat_skills import apply_passive_in_combat
+            player_attack, passive_atk_log = apply_passive_in_combat(
+                active_monster, player_attack, is_attacker=True
+            )
+        except Exception:
+            pass
 
     encounter["hp"] -= player_attack
 
@@ -457,6 +496,12 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
         if multiplier > 1.0:
             text += f" ({hint})"
         text += f" и побеждаешь {encounter['monster_name']}!"
+        if biome_log:
+            text += f"\n{biome_log}"
+        if trait_log:
+            text += f"\n{trait_log}"
+        if passive_atk_log:
+            text += f"\n{passive_atk_log}"
         if heal_amount:
             text += f"\n🩸 Кража жизни: +{heal_amount} HP"
         return {
@@ -479,6 +524,29 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
     enemy_attack = max(0, enemy_attack - combo_def_bonus)
     encounter["counter_multiplier"] = 1.0
 
+    # ── Пассивная защита монстра (thick_hide, bone_armor, evasive_form) ───────
+    passive_def_log = ""
+    if active_monster and enemy_attack > 0:
+        try:
+            from game.combat_skills import apply_passive_in_combat
+            enemy_attack, passive_def_log = apply_passive_in_combat(
+                active_monster, enemy_attack, is_attacker=False
+            )
+        except Exception:
+            pass
+
+    # ── Пассивная регенерация (support) ──────────────────────────────────────
+    regen_log = ""
+    if active_monster:
+        try:
+            from game.combat_skills import apply_passive_regen
+            regen_amt, regen_log = apply_passive_regen(active_monster)
+            if regen_amt > 0:
+                from database.repositories import save_monster
+                save_monster(active_monster)
+        except Exception:
+            pass
+
     text_parts = [f"⚔️ Ты наносишь {player_attack} урона."]
     if multiplier != 1.0:
         text_parts.append(hint)
@@ -488,6 +556,10 @@ def resolve_attack(encounter: dict, active_monster_attack: int = 10, attacker_ty
         f"{encounter['monster_name']} ещё держится. "
         f"HP: {max(0, encounter['hp'])}/{encounter.get('max_hp', encounter['hp'])}"
     )
+    if passive_def_log:
+        text_parts.append(passive_def_log)
+    if regen_log:
+        text_parts.append(regen_log)
     if enemy_attack > 0:
         text_parts.append(f"В ответ монстр атакует на {enemy_attack}.")
         if combo_def_bonus > 0:
@@ -580,3 +652,64 @@ def resolve_flee(encounter: dict, player_level: int = 1, agility: int = 0,
     }
 
 
+
+
+# ── Боссовые фазы (Этап 3 ТЗ) ────────────────────────────────────────────────
+
+BOSS_PHASE_THRESHOLD = 0.40  # При HP < 40% — смена фазы
+
+
+def check_boss_phase(encounter: dict) -> str | None:
+    """
+    Проверяет смену боссовой фазы.
+    Возвращает текст события если фаза сменилась, иначе None.
+    """
+    if not encounter.get("is_boss"):
+        return None
+    max_hp = encounter.get("max_hp", encounter["hp"])
+    current_hp = encounter["hp"]
+    already_phased = encounter.get("_phase_triggered", False)
+
+    if not already_phased and current_hp <= max_hp * BOSS_PHASE_THRESHOLD and current_hp > 0:
+        encounter["_phase_triggered"] = True
+
+        # Усиление босса: +20% атаки, скорость контратаки
+        old_atk = encounter.get("attack", 10)
+        new_atk = int(old_atk * 1.20)
+        encounter["attack"] = new_atk
+        encounter["counter_multiplier"] = encounter.get("counter_multiplier", 1.0) * 1.1
+
+        boss_name = encounter.get("monster_name", "Босс")
+        phase_texts = {
+            "forest": f"🌲 {boss_name} входит в ярость! Корни леса тянутся к тебе...",
+            "stone":  f"⛰ {boss_name} раскалывается! Из трещин вырываются каменные шипы...",
+            "marsh":  f"🕸 {boss_name} погружается в болото и атакует из тьмы...",
+            "flame":  f"🔥 {boss_name} охватывает пламя! Температура стремительно растёт...",
+            "void":   f"🌀 {boss_name} искажает пространство! Реальность трещит по швам...",
+        }
+        theme = encounter.get("theme", "forest")
+        text = phase_texts.get(theme, f"💀 {boss_name} входит в смертельную фазу!")
+        text += "\n⚠️ Атака босса возросла: " + str(old_atk) + " → " + str(new_atk)
+        return text
+
+    return None
+
+
+def apply_boss_regen(encounter: dict) -> str:
+    """
+    Боссы частично регенерируют HP между фазами (первые 2 раза).
+    """
+    if not encounter.get("is_boss"):
+        return ""
+    regen_count = encounter.get("_boss_regen_used", 0)
+    if regen_count >= 2:
+        return ""
+    max_hp = encounter.get("max_hp", 100)
+    current_hp = encounter["hp"]
+    # Только если HP между 60-80%
+    if 0.60 <= current_hp / max(1, max_hp) <= 0.80:
+        regen = max(1, int(max_hp * 0.05))
+        encounter["hp"] = min(max_hp, current_hp + regen)
+        encounter["_boss_regen_used"] = regen_count + 1
+        return f"💚 {encounter.get('monster_name', 'Босс')} восстанавливает {regen} HP!"
+    return ""

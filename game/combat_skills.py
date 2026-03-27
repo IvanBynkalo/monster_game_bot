@@ -315,3 +315,172 @@ def render_skills_card(skills: dict) -> str:
             lines.append(f"   {p['desc']}")
 
     return "\n".join(lines)
+
+
+# ── Трейты из ТЗ monster_traits.json ─────────────────────────────────────────
+
+TRAITS_POOL = {
+    "anti_nature":    {"type": "damage_bonus",     "target": "nature",  "value": 1.2,  "desc": "+20% урона по Природе"},
+    "anti_flame":     {"type": "damage_bonus",     "target": "flame",   "value": 1.2,  "desc": "+20% урона по Пламени"},
+    "anti_shadow":    {"type": "damage_bonus",     "target": "shadow",  "value": 1.2,  "desc": "+20% урона по Тени"},
+    "resist_shadow":  {"type": "damage_reduction", "target": "shadow",  "value": 0.8,  "desc": "-20% урона от Тени"},
+    "resist_flame":   {"type": "damage_reduction", "target": "flame",   "value": 0.8,  "desc": "-20% урона от Пламени"},
+    "armor_break":    {"type": "ignore_defense",   "value": 0.2,        "desc": "Игнорирует 20% защиты врага"},
+    "anti_boss":      {"type": "damage_bonus",     "target": "boss",    "value": 1.25, "desc": "+25% урона по боссам"},
+    "double_strike":  {"type": "extra_hit_chance", "value": 0.25,       "desc": "25% шанс второго удара"},
+    "life_drain":     {"type": "lifesteal",        "value": 0.15,       "desc": "Крадёт 15% нанесённого урона"},
+    "endurance":      {"type": "hp_regen",         "value": 0.05,       "desc": "Восстанавливает 5% HP в конце хода"},
+}
+
+
+def get_trait_info(trait_id: str) -> dict:
+    return TRAITS_POOL.get(trait_id, {"desc": trait_id})
+
+
+def apply_trait_to_damage(
+    base_damage: int,
+    trait_id: str | None,
+    enemy_type: str | None,
+    is_boss: bool = False,
+) -> tuple[int, str]:
+    """
+    Применяет трейт монстра к урону.
+    Возвращает (modified_damage, log_text).
+    """
+    if not trait_id:
+        return base_damage, ""
+    trait = TRAITS_POOL.get(trait_id)
+    if not trait:
+        return base_damage, ""
+
+    ttype = trait["type"]
+    log = ""
+
+    if ttype == "damage_bonus":
+        target = trait.get("target", "")
+        if (target == enemy_type) or (target == "boss" and is_boss):
+            bonus = trait["value"]
+            base_damage = max(1, int(base_damage * bonus))
+            log = f"🔱 Трейт: +{int((bonus-1)*100)}% урона ({trait['desc']})"
+
+    elif ttype == "ignore_defense":
+        ignore = trait["value"]
+        bonus_dmg = max(0, int(base_damage * ignore))
+        base_damage += bonus_dmg
+        log = f"💥 Трейт: пробой защиты +{bonus_dmg}"
+
+    elif ttype == "extra_hit_chance":
+        if random.random() < trait["value"]:
+            extra = max(1, base_damage // 2)
+            base_damage += extra
+            log = f"⚡ Трейт: двойной удар +{extra}"
+
+    return base_damage, log
+
+
+def apply_passive_in_combat(
+    monster: dict,
+    incoming_damage: int,
+    is_attacker: bool = False,
+) -> tuple[int, str]:
+    """
+    Применяет пассивную способность монстра.
+    is_attacker=True — монстр атакует (frenzy, void_hunger).
+    is_attacker=False — монстр защищается (thick_hide, bone_armor, evasive_form).
+    Возвращает (modified_damage, log_text).
+    """
+    passive_id = monster.get("passive_skill") or _infer_passive(monster)
+    if not passive_id:
+        return incoming_damage, ""
+
+    log = ""
+    hp = monster.get("current_hp", monster.get("hp", 1))
+    max_hp = monster.get("max_hp", monster.get("hp", 1))
+
+    if not is_attacker:
+        # Защитные пассивки
+        if passive_id == "thick_hide":
+            reduction = max(1, int(incoming_damage * 0.10))
+            incoming_damage = max(1, incoming_damage - reduction)
+            log = f"🛡 Толстая шкура: -{reduction} урона"
+
+        elif passive_id == "bone_armor":
+            # Особенно против burst (условно — просто снижаем)
+            reduction = max(1, int(incoming_damage * 0.12))
+            incoming_damage = max(1, incoming_damage - reduction)
+            log = f"🦴 Костяная броня: -{reduction} урона"
+
+        elif passive_id == "arc_shield":
+            # Снижает первый удар (через флаг в монстре)
+            if not monster.get("_arc_used"):
+                reduction = max(1, int(incoming_damage * 0.20))
+                incoming_damage = max(1, incoming_damage - reduction)
+                monster["_arc_used"] = True
+                log = f"🌀 Дуговой щит: -{reduction} первого удара"
+
+        elif passive_id == "evasive_form":
+            if random.random() < 0.10:
+                incoming_damage = 0
+                log = "💨 Уклончивая форма: полное уклонение!"
+
+        elif passive_id == "spirit_grace":
+            # Сопротивление контролю — уже в эффектах, здесь снижаем урон от control
+            reduction = max(0, int(incoming_damage * 0.08))
+            incoming_damage = max(1, incoming_damage - reduction)
+
+    else:
+        # Атакующие пассивки — модифицируют outgoing damage
+        if passive_id == "frenzy":
+            if hp <= max_hp * 0.5:
+                bonus = max(1, int(incoming_damage * 0.15))
+                incoming_damage += bonus
+                log = f"😤 Исступление: +{bonus} урона (HP < 50%)"
+
+        elif passive_id == "void_hunger":
+            # Бонус против ослабленных — через enc флаг
+            bonus = max(1, int(incoming_damage * 0.10))
+            incoming_damage += bonus
+            log = f"🌀 Голод пустоты: +{bonus} урона"
+
+        elif passive_id == "sharp_instinct":
+            # +10% точности — шанс доп.урона
+            if random.random() < 0.10:
+                bonus = max(1, incoming_damage // 5)
+                incoming_damage += bonus
+                log = f"🎯 Острый инстинкт: точный удар +{bonus}"
+
+        elif passive_id == "resonance":
+            # Дебаффы длятся дольше — не влияет на урон напрямую
+            pass
+
+    return incoming_damage, log
+
+
+def apply_passive_regen(monster: dict) -> tuple[int, str]:
+    """
+    Проверяет пассивную регенерацию в конце хода.
+    Возвращает (healed_amount, log_text).
+    """
+    passive_id = monster.get("passive_skill") or _infer_passive(monster)
+    if passive_id != "regeneration":
+        return 0, ""
+    max_hp = monster.get("max_hp", monster.get("hp", 1))
+    regen = max(1, int(max_hp * 0.06))
+    new_hp = min(max_hp, monster.get("current_hp", 0) + regen)
+    monster["current_hp"] = new_hp
+    return regen, f"🌿 Регенерация: +{regen} HP"
+
+
+def _infer_passive(monster: dict) -> str | None:
+    """Определяет пассивку монстра по типу если не задана явно."""
+    from game.type_service import get_monster_role
+    role = monster.get("role") or get_monster_role(monster.get("monster_type", "void"))
+    role_passives = {
+        "assault":    "frenzy",
+        "tank":       "thick_hide",
+        "hunter":     "sharp_instinct",
+        "controller": "resonance",
+        "support":    "regeneration",
+        "hybrid":     "arc_shield",
+    }
+    return role_passives.get(role)
