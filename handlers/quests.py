@@ -131,7 +131,30 @@ def _render_guild_quests(user_id: int) -> list[str]:
     return lines
 
 
-def _render_today_tasks(user_id: int) -> list[str]:
+def _render_hunting_quests(user_id: int) -> list[str]:
+    lines: list[str] = ["🏹 Квесты охоты", ""]
+    try:
+        from game.hunting_quests import get_active_hunting_quests
+        import time
+        active = get_active_hunting_quests(user_id)
+        if not active:
+            lines.append("Нет активных квестов охоты.")
+            lines.append("Выдаются автоматически при победе над зверями.")
+            return lines
+        for q in active:
+            prog = q.get("progress", 0)
+            total = q.get("count", 1)
+            pct = int(prog / max(1, total) * 10)
+            bar = "█" * pct + "░" * (10 - pct)
+            target_name = q.get("target", "?")
+            if prog >= total:
+                status = "✅ Выполнено! Сдай в гильдии."
+            else:
+                status = f"[{bar}] {prog}/{total} — цель: {target_name}"
+            lines.append(f"• {q['title']}: {status}")
+    except Exception:
+        lines.append("Информация о квестах охоты недоступна.")
+    return lines
     lines: list[str] = ["📅 Сегодня", ""]
 
     try:
@@ -169,6 +192,7 @@ def _render_quests_screen(user_id: int, location_slug: str) -> str:
         _render_starter_quests(get_active_player_quests(user_id)),
         _render_story_quest(user_id),
         _render_guild_quests(user_id),
+        _render_hunting_quests(user_id),
         _render_today_tasks(user_id),
         _render_weekly_task(user_id, location_slug),
     ]
