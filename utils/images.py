@@ -50,6 +50,34 @@ LOCATION_IMAGES: dict[str, str] = {
     "emotion_rift": "emotion_rift.png",
 }
 
+# Картинки районов: district_slug → файл в assets/locations/districts/
+# Добавь файлы в assets/locations/districts/ — бот подхватит автоматически
+DISTRICT_IMAGES: dict[str, str] = {
+    # Изумрудные поля
+    "green_meadow":   "district_green_meadow.png",
+    "flower_valley":  "district_flower_valley.png",
+    # Каменные холмы
+    "old_mine":       "district_old_mine.png",
+    "rock_pass":      "district_rock_pass.png",
+    # Болота теней
+    "fog_pool":       "district_fog_pool.png",
+    "sunken_ruins":   "district_sunken_ruins.png",
+    # Тёмный лес
+    "mushroom_path":  "district_mushroom_path.png",
+    "wet_thicket":    "district_wet_thicket.png",
+    "whisper_den":    "district_whisper_den.png",
+    # Болота (доп.)
+    "black_water":    "district_black_water.png",
+    "fog_trail":      "district_fog_trail.png",
+    "grave_of_voices":"district_grave_of_voices.png",
+    # Вулкан
+    "ash_slope":      "district_ash_slope.png",
+    "lava_bridge":    "district_lava_bridge.png",
+    "heart_of_magma": "district_heart_of_magma.png",
+}
+
+DISTRICT_DIR = LOCATION_DIR / "districts"
+
 # Типы монстров: monster_type → файл
 MONSTER_TYPE_IMAGES: dict[str, str] = {
     "nature": "monster_nature.png",
@@ -267,8 +295,27 @@ async def send_city_image(message: Message, context: str, caption: str, reply_ma
     await send_image(message, CITY_DIR / filename, caption, reply_markup)
 
 
-async def send_location_image(message: Message, location_slug: str, caption: str, reply_markup=None):
-    """Картинка локации при переходе или карте."""
+async def send_location_image(
+    message: Message,
+    location_slug: str,
+    caption: str,
+    reply_markup=None,
+    district_slug: str | None = None,
+):
+    """
+    Картинка локации при переходе или карте.
+    Если передан district_slug и для него есть картинка — показывает её.
+    Иначе fallback на картинку локации.
+    """
+    # Сначала пробуем картинку района
+    if district_slug:
+        district_filename = DISTRICT_IMAGES.get(district_slug)
+        district_path = (DISTRICT_DIR / district_filename) if district_filename else None
+        if district_path and district_path.exists():
+            await send_image(message, district_path, caption, reply_markup)
+            return
+
+    # Fallback на картинку локации
     filename = LOCATION_IMAGES.get(location_slug)
     path = (LOCATION_DIR / filename) if filename else None
     await send_image(message, path, caption, reply_markup)
