@@ -1341,11 +1341,84 @@ async def location_inline_callback(callback: CallbackQuery):
         )
         await navigation_handler(fake_msg)
 
+    elif action == "district":
+        await callback.answer()  # всегда первым!
+        try:
+            from game.district_service import (
+                get_unlocked_districts, get_explored_pct,
+                DISTRICT_UNLOCK_PCT, get_districts_for_location
+            )
+            player_loc = get_player(uid)
+            if not player_loc:
+                await callback.message.answer("Ошибка: игрок не найден.")
+                return
+            loc_slug = player_loc.location_slug
+            unlocked = get_unlocked_districts(uid, loc_slug)
+            current_pct = get_explored_pct(uid, loc_slug)
+            all_d = get_districts_for_location(loc_slug)
+
+            if not all_d:
+                await callback.message.answer("В этой локации нет районов.")
+                return
+
+            lines = [f"🧭 Районы — {loc_slug} (исследовано: {current_pct}%)", ""]
+            kbd_rows = []
+            for d in all_d:
+                is_unlocked = any(u["slug"] == d["slug"] for u in unlocked)
+                is_cur = d["slug"] == player_loc.current_district_slug
+                if is_unlocked:
+                    marker = "📍 " if is_cur else ""
+                    status = " (текущий)" if is_cur else ""
+                    lines.append(f"{marker}{d['name']}{status}")
+                    if not is_cur:
+                        kbd_rows.append([InlineKeyboardButton(
+                            text=f"→ {d['name']}",
+                            callback_data=f"setdistrict:{d['slug']}"
+                        )])
+                else:
+                    req = DISTRICT_UNLOCK_PCT.get(d.get("danger", 1), 0)
+                    lines.append(f"🔒 {d['name']} — нужно {req}% исследования (сейчас {current_pct}%)")
+
+            await callback.message.answer(
+                "\n".join(lines),
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=kbd_rows) if kbd_rows else None
+            )
+        except Exception as _e:
+            await callback.message.answer(f"Ошибка при загрузке районов: {_e}")
+
     elif action == "birth":
         fake_msg = callback.message.model_copy(
             update={"from_user": callback.from_user}
         )
         await birth_cmd(fake_msg)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("setdistrict:"))
+async def set_district_callback(callback: CallbackQuery):
+    """Переключение района внутри текущей локации."""
+    uid = callback.from_user.id
+    district_slug = callback.data.split(":", 1)[1]
+    player = get_player(uid)
+    if not player:
+        await callback.answer("Ошибка.")
+        return
+
+    from game.district_service import get_unlocked_districts, get_district
+    unlocked = get_unlocked_districts(uid, player.location_slug)
+    if not any(d["slug"] == district_slug for d in unlocked):
+        await callback.answer("Этот район ещё не открыт.", show_alert=True)
+        return
+
+    from database.repositories import update_player_district
+    update_player_district(uid, district_slug)
+
+    district = get_district(player.location_slug, district_slug)
+    name = district["name"] if district else district_slug
+    await callback.answer(f"✅ Район изменён: {name}")
+    # Обновляем карточку локации
+    from services.ui_service import show_location_screen
+    fake_msg = callback.message.model_copy(update={"from_user": callback.from_user})
+    await show_location_screen(fake_msg, uid)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("monster:"))
