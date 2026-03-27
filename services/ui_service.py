@@ -32,6 +32,7 @@ async def show_location_screen(message: Message, user_id: int):
         player.location_slug,
         loc_text,
         reply_markup=reply_kb,
+        district_slug=getattr(player, "current_district_slug", None),
     )
 
     if not is_city(player.location_slug):
