@@ -151,6 +151,12 @@ def get_craftable_recipe_ids(player, resources: dict):
 
 
 def render_craft_text(player, resources: dict):
+    """
+    Компактный вид мастерской:
+    - Доступные к созданию (✅) — вверху
+    - Недостаточно ресурсов (🔴) — в середине
+    - Заблокированы уровнем (🔒) — внизу
+    """
     lines = ["🛠 Мастерская", ""]
 
     visible_ids = get_visible_recipe_ids(player)
@@ -159,36 +165,52 @@ def render_craft_text(player, resources: dict):
         lines.append("Рецепты пока не открыты.")
         return "\n".join(lines)
 
+    ready, need_res, need_lvl = [], [], []
+
     for recipe_id in visible_ids:
         recipe = RECIPES[recipe_id]
+        enough = all(resources.get(s, 0) >= n for s, n in recipe["ingredients"].items())
+        can_alch = meets_alchemy_requirement(player, recipe)
 
-        lines.append(f"{recipe['emoji']} {recipe['name']}")
-        lines.append(recipe["description"])
-        lines.append(
-            f"Требования: герой {recipe['hero_level']} ур. | алхимия {recipe['alchemy_level']} ур."
-        )
-        lines.append("Нужно:")
-
-        enough_resources = True
-        for slug, need in recipe["ingredients"].items():
-            have = resources.get(slug, 0)
-            if have < need:
-                enough_resources = False
-            lines.append(f"- {RESOURCE_LABELS.get(slug, slug)}: {have}/{need}")
-
-        if not meets_alchemy_requirement(player, recipe):
-            lines.append(
-                f"Недостаточный уровень алхимии ❌ "
-                f"(нужно {recipe['alchemy_level']}, сейчас {player.alchemist_level})"
-            )
-        elif enough_resources:
-            lines.append("Готово к созданию ✅")
+        if can_alch and enough:
+            ready.append(recipe_id)
+        elif not can_alch:
+            need_lvl.append(recipe_id)
         else:
-            lines.append("Недостаточно ресурсов ❌")
+            need_res.append(recipe_id)
 
+    def _fmt_recipe(recipe_id, show_ingredients=True):
+        recipe = RECIPES[recipe_id]
+        r = [f"{recipe['emoji']} {recipe['name']}"]
+        if show_ingredients:
+            parts = []
+            for slug, need in recipe["ingredients"].items():
+                have = resources.get(slug, 0)
+                parts.append(f"{RESOURCE_LABELS.get(slug, slug)}: {have}/{need}")
+            r.append("  " + " | ".join(parts))
+        return r
+
+    if ready:
+        lines.append("✅ Готово к созданию:")
+        for rid in ready:
+            lines.extend(_fmt_recipe(rid))
         lines.append("")
 
-    lines.append("Новые рецепты открываются по уровню героя.")
-    lines.append("Создание доступно только при нужном уровне алхимии и наличии ресурсов.")
+    if need_res:
+        lines.append("🔴 Нужны ресурсы:")
+        for rid in need_res:
+            lines.extend(_fmt_recipe(rid))
+        lines.append("")
 
+    if need_lvl:
+        lines.append("🔒 Нужен уровень алхимии:")
+        for rid in need_lvl:
+            recipe = RECIPES[rid]
+            lines.append(
+                f"{recipe['emoji']} {recipe['name']} "
+                f"(алхимия {recipe['alchemy_level']} ур., у тебя {player.alchemist_level})"
+            )
+        lines.append("")
+
+    lines.append(f"Уровень алхимии: {player.alchemist_level} | Герой: {player.level} ур.")
     return "\n".join(lines)
