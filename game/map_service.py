@@ -168,6 +168,9 @@ def _get_completed_story_ids(telegram_id: int | None) -> list[str]:
 
 
 def _is_location_discovered(telegram_id: int | None, location_slug: str) -> bool:
+    """
+    Локация известна если посещена ('normal') или видна как сосед ('visible').
+    """
     if location_slug in STARTER_LOCATIONS:
         return True
     if not telegram_id:
@@ -189,7 +192,6 @@ def _is_location_discovered(telegram_id: int | None, location_slug: str) -> bool
 
         return row["cnt"] > 0
     except Exception:
-        # Лучше показать зону, чем сломать экран
         return True
 
 
