@@ -97,16 +97,48 @@ def roll_wildlife(location_slug: str) -> dict | None:
     atk = max(1, chosen["attack"] + random.randint(-1, 1))
     gold = chosen["gold"] + random.randint(0, chosen["gold"] // 3)
 
+    # Определяем тип зверя по локации для правильного фолбэка картинки
+    _LOCATION_BIOME_TYPE = {
+        "dark_forest":    "nature", "shadow_marsh":   "shadow",
+        "shadow_swamp":   "void",   "emerald_fields":  "nature",
+        "stone_hills":    "bone",   "volcano_wrath":   "flame",
+        "ancient_ruins":  "echo",   "storm_ridge":     "storm",
+        "bone_desert":    "bone",   "emotion_rift":    "spirit",
+    }
+    _ANIMAL_TYPE = {
+        "Лесная лисица": "nature",  "Лесной волк": "nature",
+        "Матёрый волк": "shadow",   "Бурый медведь": "nature",
+        "Лесной великан": "nature", "Полевая мышь": "nature",
+        "Луговой заяц": "nature",   "Рогатый олень": "spirit",
+        "Степной тур": "nature",    "Золотой орёл": "storm",
+        "Горный суслик": "bone",    "Каменная ящерица": "bone",
+        "Горный козёл": "bone",     "Скальный кабан": "bone",
+        "Горный лев": "storm",      "Болотная жаба": "shadow",
+        "Топяная крыса": "shadow",  "Болотная змея": "void",
+        "Топяной кабан": "shadow",  "Болотный крокодил": "void",
+        "Иловый уж": "shadow",      "Тёмная выдра": "shadow",
+        "Болотный варан": "void",   "Пепельная ящерица": "flame",
+        "Лавовый краб": "flame",    "Огненная саламандра": "flame",
+        "Вулканический волк": "flame", "Магматический кабан": "bone",
+        "Ветряной заяц": "storm",   "Лепестковый лис": "nature",
+        "Златорогий олень": "spirit", "Гранитный зверь": "bone",
+        "Чащобный альфа": "nature", "Топный ловчий": "shadow",
+    }
+    animal_type = _ANIMAL_TYPE.get(chosen["name"],
+                  _LOCATION_BIOME_TYPE.get(location_slug, "nature"))
+
     return {
         "type":          "wildlife",
         "name":          chosen["name"],
+        "monster_name":  chosen["name"],
+        "monster_type":  animal_type,
         "hp":            hp,
         "max_hp":        hp,
         "attack":        atk,
         "reward_gold":   gold,
         "reward_exp":    chosen["exp"],
         "loot_slug":     chosen.get("loot"),
-        "capture_chance":0.0,   # зверей нельзя поймать — только победить
+        "capture_chance":0.0,
         "counter_multiplier": 1.0,
         "bonus_capture": 0.0,
     }
