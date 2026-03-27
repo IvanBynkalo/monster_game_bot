@@ -31,6 +31,15 @@ def location_actions_inline(location_slug: str, has_dungeon: bool = False) -> In
     if has_dungeon:
         rows.append([InlineKeyboardButton(text="🕳 Подземелье", callback_data="loc:dungeon")])
 
+    # Смена района — если в локации есть несколько районов
+    try:
+        from game.district_service import get_districts_for_location
+        districts = get_districts_for_location(location_slug)
+        if len(districts) > 1:
+            rows.append([InlineKeyboardButton(text="🧭 Сменить район", callback_data="loc:district")])
+    except Exception:
+        pass
+
     # Карта / Перемещение
     rows.append([InlineKeyboardButton(text="🗺 Карта / Перемещение", callback_data="loc:navigate")])
 
