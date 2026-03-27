@@ -169,7 +169,8 @@ def _get_completed_story_ids(telegram_id: int | None) -> list[str]:
 
 def _is_location_discovered(telegram_id: int | None, location_slug: str) -> bool:
     """
-    Локация известна если посещена ('normal') или видна как сосед ('visible').
+    Локация известна если посещена или видна как сосед.
+    Читает из player_location_visibility (отдельная таблица).
     """
     if location_slug in STARTER_LOCATIONS:
         return True
@@ -180,7 +181,7 @@ def _is_location_discovered(telegram_id: int | None, location_slug: str) -> bool
         from database.repositories import get_connection
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
+                "SELECT COUNT(*) AS cnt FROM player_location_visibility WHERE telegram_id=? AND location_slug=?",
                 (telegram_id, location_slug),
             ).fetchone()
 
