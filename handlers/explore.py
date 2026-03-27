@@ -547,11 +547,35 @@ async def explore_handler(message: Message, forced_direction: str = None):
         save_pending_encounter(message.from_user.id, encounter)
         # Картинка монстра будет заголовком — описание района не нужно
         text = render_encounter_text(encounter, attacker_type=attacker_type)
+        # Добавляем HP активного монстра к тексту встречи
+        try:
+            from database.repositories import get_active_monster as _gam
+            _am = _gam(message.from_user.id)
+            if _am:
+                _hp = _am.get("current_hp", _am.get("hp", 0))
+                _mhp = _am.get("max_hp", _am.get("hp", 1))
+                _hp_bar_filled = int(_hp / max(1, _mhp) * 8)
+                _hp_bar = "❤️" * _hp_bar_filled + "🖤" * (8 - _hp_bar_filled)
+                text += f"\n\n🐲 {_am['name']}: {_hp_bar} {_hp}/{_mhp} HP"
+        except Exception:
+            pass
         _encounter_monster_type = encounter.get("monster_type", "void")
     elif encounter["type"] == "wildlife":
         save_pending_encounter(message.from_user.id, encounter)
         from game.wildlife_service import render_wildlife_encounter as _rwe
         text = _rwe(encounter)
+        # HP активного монстра при встрече со зверем
+        try:
+            from database.repositories import get_active_monster as _gam2
+            _am2 = _gam2(message.from_user.id)
+            if _am2:
+                _hp2 = _am2.get("current_hp", _am2.get("hp", 0))
+                _mhp2 = _am2.get("max_hp", _am2.get("hp", 1))
+                _filled2 = int(_hp2 / max(1, _mhp2) * 8)
+                _bar2 = "❤️" * _filled2 + "🖤" * (8 - _filled2)
+                text += f"\n\n🐲 {_am2['name']}: {_bar2} {_hp2}/{_mhp2} HP"
+        except Exception:
+            pass
     else:
         event = world_event or encounter
         event_text = event.get("text") or event.get("title") or "Тишина окутывает местность."

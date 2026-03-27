@@ -108,25 +108,55 @@ def _render_guild_quests(user_id: int) -> list[str]:
         lines.append("Активных гильдейских поручений нет.")
         return lines
 
-    guild_labels = {
-        "hunter": "🎯 Ловцы",
-        "gatherer": "🌿 Собиратели",
-        "geologist": "⛏ Геологи",
-        "alchemist": "⚗ Алхимики",
+    GUILD_META = {
+        "hunter":   ("🎯 Ловцы охотников",     "game.guild_quests"),
+        "gatherer": ("🌿 Собиратели",           "game.guild_quests"),
+        "geologist":("⛏ Геологи",              "game.guild_quests"),
+        "alchemist":("⚗ Алхимики",             "game.guild_quests"),
     }
 
-    for quest in sorted(active, key=lambda x: (x.get("guild_key") or "", x.get("title") or "")):
-        progress = int(quest.get("progress", 0) or 0)
-        target = int(quest.get("count", 0) or 0)
-        guild_name = guild_labels.get(quest.get("guild_key"), quest.get("guild_key") or "Гильдия")
-        lines.extend(
-            [
-                f"• {quest.get('title', 'Поручение')} — {guild_name}",
-                f"  Прогресс: {progress}/{target}",
-                f"  Награда: 💰 {quest.get('reward_gold', 0)} | ✨ {quest.get('reward_exp', 0)}",
-                "",
-            ]
-        )
+    # Получаем описания квестов из пула
+    quest_descriptions = {}
+    try:
+        from game.guild_quests import GUILD_QUEST_POOL, WEEKLY_GUILD_QUESTS
+        for guild, pool in GUILD_QUEST_POOL.items():
+            for q in pool:
+                quest_descriptions[q["id"]] = q.get("desc", "")
+        for guild, wq in WEEKLY_GUILD_QUESTS.items():
+            quest_descriptions[wq["id"]] = wq.get("desc", "")
+    except Exception:
+        pass
+
+    # Группируем по гильдии
+    by_guild: dict = {}
+    for quest in active:
+        gk = quest.get("guild_key") or "other"
+        if gk not in by_guild:
+            by_guild[gk] = []
+        by_guild[gk].append(quest)
+
+    for gk, guild_quests in sorted(by_guild.items()):
+        guild_label = GUILD_META.get(gk, (gk.title(), ""))[0]
+        lines.append(f"── {guild_label} ──")
+        for quest in guild_quests:
+            progress = int(quest.get("progress", 0) or 0)
+            target = int(quest.get("count", 0) or 0)
+            pct = int(progress / max(1, target) * 10)
+            bar = "█" * pct + "░" * (10 - pct)
+            qid = quest.get("quest_id", "")
+            desc = quest_descriptions.get(qid, "")
+            weekly_mark = " 🌟" if qid.startswith("wh_") else ""
+
+            if quest.get("completed"):
+                status = "✅ Готово к сдаче!"
+            else:
+                status = f"[{bar}] {progress}/{target}"
+
+            lines.append(f"• {quest.get('title', 'Поручение')}{weekly_mark}")
+            if desc:
+                lines.append(f"  📋 {desc}")
+            lines.append(f"  {status} | 💰{quest.get('reward_gold', 0)} ✨{quest.get('reward_exp', 0)}")
+        lines.append("")
 
     return lines
 
