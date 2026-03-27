@@ -232,14 +232,39 @@ def _slugify(value: str) -> str:
     return value
 
 
+# Фолбэк тип по имени зверя (синхронизирован с explore.py)
+_WILDLIFE_TYPE_FALLBACK: dict[str, str] = {
+    "Лесная лисица": "nature",    "Лесной волк": "nature",
+    "Матёрый волк": "shadow",     "Бурый медведь": "nature",
+    "Лесной великан": "nature",   "Полевая мышь": "nature",
+    "Луговой заяц": "nature",     "Рогатый олень": "spirit",
+    "Степной тур": "nature",      "Золотой орёл": "storm",
+    "Горный суслик": "bone",      "Каменная ящерица": "bone",
+    "Горный козёл": "bone",       "Скальный кабан": "bone",
+    "Горный лев": "storm",        "Болотная жаба": "shadow",
+    "Топяная крыса": "shadow",    "Болотная змея": "void",
+    "Топяной кабан": "shadow",    "Болотный крокодил": "void",
+    "Иловый уж": "shadow",        "Тёмная выдра": "shadow",
+    "Болотный варан": "void",     "Пепельная ящерица": "flame",
+    "Лавовый краб": "flame",      "Огненная саламандра": "flame",
+    "Вулканический волк": "flame","Магматический кабан": "bone",
+    "Ветряной заяц": "storm",     "Лепестковый лис": "nature",
+    "Златорогий олень": "spirit", "Гранитный зверь": "bone",
+    "Чащобный альфа": "nature",   "Топный ловчий": "shadow",
+    "Багровый Следопыт": "flame", "Грозовой Фантом": "storm",
+    "Костяной Странник": "bone",
+}
+
+
 def get_monster_image_path(monster_name: str | None = None, monster_type: str | None = None) -> Path | None:
     """
     Ищет картинку монстра/зверя по имени, а если не находит — по типу.
     Приоритет:
     1. Прямой маппинг MONSTER_NAME_TO_CODE -> MONSTER_NAME_IMAGES
     2. Авто slug по имени -> <slug>.png
-    3. Картинка по monster_type
-    4. monster_default.png
+    3. Умный фолбэк по типу зверя (_WILDLIFE_TYPE_FALLBACK)
+    4. Картинка по monster_type
+    5. monster_default.png
     """
     if monster_name:
         code = MONSTER_NAME_TO_CODE.get(monster_name)
@@ -253,6 +278,14 @@ def get_monster_image_path(monster_name: str | None = None, monster_type: str | 
         direct = _existing(MONSTER_DIR / f"{slug}.png")
         if direct:
             return direct
+
+        # Умный фолбэк — картинка типа зверя
+        wl_type = _WILDLIFE_TYPE_FALLBACK.get(monster_name) or monster_type
+        if wl_type:
+            filename = MONSTER_TYPE_IMAGES.get(wl_type)
+            path = _existing(MONSTER_DIR / filename) if filename else None
+            if path:
+                return path
 
     if monster_type:
         filename = MONSTER_TYPE_IMAGES.get(monster_type)
