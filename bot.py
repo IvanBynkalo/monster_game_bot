@@ -949,6 +949,22 @@ async def fight_inline_callback(callback: CallbackQuery):
 
     player = get_player(uid)
     active = get_active_monster(uid)
+
+    # Если монстр жив (is_dead=0) но HP=0 — автоматически восстанавливаем
+    # Это происходит когда накопленный урон довёл HP до 0 но монстр не помер формально
+    if not active and player:
+        from database.repositories import get_connection as _gc2
+        with _gc2() as _c2:
+            _zombie = _c2.execute(
+                "SELECT * FROM player_monsters WHERE telegram_id=? AND is_active=1 AND is_dead=0 LIMIT 1",
+                (uid,)
+            ).fetchone()
+        if _zombie:
+            # Восстанавливаем до полного HP — монстр регенерировал между боями
+            from database.repositories import heal_active_monster as _ham
+            _ham(uid, 9999)
+            active = get_active_monster(uid)
+
     if not player or not active:
         await callback.message.answer("Ошибка: нет игрока или монстра.")
         return
@@ -1087,6 +1103,17 @@ async def fight_inline_callback(callback: CallbackQuery):
         clear_pending_encounter(uid)
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+        # Частичное восстановление HP монстра после победы (20% от макс.)
+        try:
+            _is_victory = bool(result.get("victory") or result.get("captured"))
+            if _is_victory and active:
+                from database.repositories import heal_active_monster as _heal_post
+                _max_hp = active.get("max_hp", active.get("hp", 10))
+                _regen = max(1, _max_hp // 5)
+                _heal_post(uid, _regen)
         except Exception:
             pass
 
