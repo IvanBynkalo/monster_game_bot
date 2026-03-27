@@ -272,7 +272,18 @@ def _build_district_section(location_slug: str, current_district_slug: str | Non
         if district["slug"] in visible_slugs:
             lines.append(f"{marker} {district['name']}")
         else:
-            lines.append(f"{marker} 🔒 Неоткрытый район")
+            # Показываем % исследования необходимый для открытия
+            from game.district_service import DISTRICT_UNLOCK_PCT
+            danger = district.get("danger", 1)
+            required_pct = DISTRICT_UNLOCK_PCT.get(danger, 0)
+            if required_pct > 0:
+                current_pct = 0
+                if telegram_id:
+                    from game.district_service import get_explored_pct
+                    current_pct = get_explored_pct(telegram_id, location_slug)
+                lines.append(f"{marker} 🔒 Неоткрытый район ({current_pct}%/{required_pct}% исследовано)")
+            else:
+                lines.append(f"{marker} 🔒 Неоткрытый район")
 
     return lines
 
