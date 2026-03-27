@@ -278,26 +278,36 @@ async def navigation_handler(message: Message):
 
     district_slug = getattr(player, "current_district_slug", None)
     current_location_name = LOCATION_NAMES.get(player.location_slug, player.location_slug)
+
+    from game.district_service import get_district_name, get_districts_for_location
+    district_name = get_district_name(player.location_slug, district_slug) if district_slug else None
+
     lines = [
         "🗺 Переходы",
         "",
         f"Сейчас ты находишься: {current_location_name}",
     ]
 
-    if district_slug:
-        lines.append(f"Текущий район: {district_slug}")
+    if district_name and district_slug:
+        lines.append(f"Текущий район: {district_name}")
 
     if is_city(player.location_slug):
         lines += [
             "",
-            "Здесь можно переходить между городскими районами или выйти через главные ворота.",
+            "Выбери район города или выйди через главные ворота.",
         ]
     else:
         lines += [
             "",
-            "Здесь показаны соседние локации и доступные районы текущей зоны.",
-            "Чтобы посмотреть описание места и действия в нём, нажми «🧭 Локация».",
+            "Выбери соседнюю локацию для перехода.",
+            "Для смены района текущей локации нажми «🧭 Локация».",
         ]
+
+        # Показываем доступные районы как информацию, но не как кнопки
+        districts = get_districts_for_location(player.location_slug)
+        if districts:
+            district_list = "  ".join(d["name"] for d in districts)
+            lines.append(f"Районы здесь: {district_list}")
 
     await message.answer(
         "\n".join(lines),
