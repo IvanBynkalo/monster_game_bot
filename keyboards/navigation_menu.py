@@ -9,6 +9,11 @@ STARTER_LOCATIONS = {"silver_city", "dark_forest", "emerald_fields"}
 
 
 def _is_location_discovered(telegram_id: int, location_slug: str) -> bool:
+    """
+    Локация считается «известной» если игрок её посетил (cell_type='normal')
+    или видел как сосед (cell_type='visible').
+    Только полностью неизвестные локации показываются как ❓.
+    """
     if location_slug in STARTER_LOCATIONS:
         return True
     if not telegram_id:
@@ -59,20 +64,19 @@ def navigation_menu(location_slug: str, district_slug: str | None = None, telegr
     else:
         # Поле: только переходы в соседние локации
         player = _get_player(telegram_id)
-        seen_unknown = False  # одна кнопка «неизведанное» на все неоткрытые локации
+        seen_unknown = False  # только одна кнопка ❓ на все неизвестные
 
         for location in get_connected_locations(location_slug):
             discovered = _is_location_discovered(telegram_id, location.slug)
 
             if not discovered and location.slug not in STARTER_LOCATIONS:
-                # Показываем «неизведанную» только один раз,
-                # чтобы не дублировать кнопку если соседей несколько
+                # Полностью неизвестная локация — игрок никогда не был рядом
                 if not seen_unknown:
                     buttons.append([KeyboardButton(text="❓ Неизведанная территория")])
                     seen_unknown = True
                 continue
 
-            # Проверка доступности по уровню/квестам
+            # Локация известна (visited или visible) — показываем с замком или без
             allowed = True
             min_level = 1
 
@@ -91,7 +95,8 @@ def navigation_menu(location_slug: str, district_slug: str | None = None, telegr
             if allowed:
                 cmd = f"🚶 {location.name}"
             else:
-                # Замок + уровень; нормализатор в move_handler уберёт суффикс
+                # Заблокирована — показываем с замком и уровнем
+                # Кнопка начинается с "🚶" — нормализатор в move_handler уберёт суффикс
                 cmd = f"🚶 🔒 {location.name} (ур.{min_level}+)"
 
             buttons.append([KeyboardButton(text=cmd)])
