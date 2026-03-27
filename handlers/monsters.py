@@ -267,10 +267,11 @@ def _render_monster_card_full(monster: dict, telegram_id: int) -> str:
         infection_text,
     ]
 
-    # ── v3: боевой профиль — роль, матчапы, скиллы ───────────────────────────
+    # ── v3: боевой профиль — роль, матчапы, скиллы, маркировка ─────────────
     try:
-        from game.combat_profiles import build_combat_profile, render_monster_matchup
+        from game.combat_profiles import build_combat_profile, render_monster_matchup, get_matchup_badge
         from game.type_service import get_role_label, get_type_strengths_text
+        from database.repositories import get_pending_encounter as _gpe
         profile = build_combat_profile(monster)
         mtype = monster.get("monster_type", "void")
         role_label = get_role_label(profile.get("role"))
@@ -279,6 +280,14 @@ def _render_monster_card_full(monster: dict, telegram_id: int) -> str:
         lines.append(f"⚖️ Роль: {role_label}")
         if strengths_text:
             lines.append(strengths_text)
+
+        # Маркировка — если идёт бой, показываем бейдж против текущего врага
+        _cur_enc = _gpe(telegram_id)
+        if _cur_enc:
+            _enemy_type = _cur_enc.get("monster_type", "void")
+            _badge = get_matchup_badge(mtype, _enemy_type)
+            lines.append(f"Против текущего врага: {_badge}")
+
         # Скиллы
         from game.combat_skills import render_skills_card
         skills_card = render_skills_card(profile.get("skills", {}))
