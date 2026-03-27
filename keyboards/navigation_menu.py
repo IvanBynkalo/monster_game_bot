@@ -36,9 +36,18 @@ def _get_player(telegram_id: int):
 
 
 def navigation_menu(location_slug: str, district_slug: str | None = None, telegram_id: int = None):
+    """
+    Меню переходов между локациями.
+
+    Для города: переходы между районами (это городской аналог локаций).
+    Для поля: ТОЛЬКО переходы в соседние локации — без кнопок районов.
+    Районы полевой локации переключаются через карточку локации (🧭 Локация),
+    чтобы не смешивать два разных действия в одном меню.
+    """
     buttons = []
 
     if is_city(location_slug):
+        # Город: кнопки переходов между районами
         for cmd in get_district_move_commands(location_slug, telegram_id=telegram_id):
             buttons.append([KeyboardButton(text=cmd)])
 
@@ -48,17 +57,22 @@ def navigation_menu(location_slug: str, district_slug: str | None = None, telegr
         buttons.append([KeyboardButton(text="🗺 Карта")])
 
     else:
+        # Поле: только переходы в соседние локации
         player = _get_player(telegram_id)
+        seen_unknown = False  # одна кнопка «неизведанное» на все неоткрытые локации
 
         for location in get_connected_locations(location_slug):
             discovered = _is_location_discovered(telegram_id, location.slug)
 
-            # Локация не открыта — показываем заглушку
             if not discovered and location.slug not in STARTER_LOCATIONS:
-                buttons.append([KeyboardButton(text="❓ Неизведанная территория")])
+                # Показываем «неизведанную» только один раз,
+                # чтобы не дублировать кнопку если соседей несколько
+                if not seen_unknown:
+                    buttons.append([KeyboardButton(text="❓ Неизведанная территория")])
+                    seen_unknown = True
                 continue
 
-            # Определяем доступность по уровню/квестам
+            # Проверка доступности по уровню/квестам
             allowed = True
             min_level = 1
 
@@ -75,18 +89,11 @@ def navigation_menu(location_slug: str, district_slug: str | None = None, telegr
             min_level = req.get("min_level", 1)
 
             if allowed:
-                # Доступная — чистая кнопка
                 cmd = f"🚶 {location.name}"
             else:
-                # Заблокированная — замок + требуемый уровень
-                # Префикс "🚶" сохранён — нормализатор в move_handler уберёт суффикс "(ур.X+)"
+                # Замок + уровень; нормализатор в move_handler уберёт суффикс
                 cmd = f"🚶 🔒 {location.name} (ур.{min_level}+)"
 
-            buttons.append([KeyboardButton(text=cmd)])
-
-        # Районы текущей локации
-        district_cmds = get_district_move_commands(location_slug, telegram_id=telegram_id)
-        for cmd in district_cmds:
             buttons.append([KeyboardButton(text=cmd)])
 
         buttons.append([KeyboardButton(text="🗺 Карта")])
