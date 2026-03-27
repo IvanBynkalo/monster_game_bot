@@ -679,8 +679,15 @@ def get_player_monsters(telegram_id: int) -> list[dict]:
     return [_monster_row_to_dict(r) for r in rows]
 
 def get_active_monster(telegram_id: int) -> dict | None:
+    """Возвращает активного живого монстра (current_hp>0, is_dead=0).
+    Используем lazy migration для is_dead чтобы не ломать старые БД.
+    """
+    _lazy_monster_dead()
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM player_monsters WHERE telegram_id=? AND is_active=1 LIMIT 1", (telegram_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM player_monsters WHERE telegram_id=? AND is_active=1 AND is_dead=0 AND current_hp>0 LIMIT 1",
+            (telegram_id,)
+        ).fetchone()
     return _monster_row_to_dict(row) if row else None
 
 
