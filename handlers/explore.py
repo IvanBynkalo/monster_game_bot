@@ -545,20 +545,38 @@ async def explore_handler(message: Message, forced_direction: str = None):
         if capture_bonus:
             encounter["bonus_capture"] = encounter.get("bonus_capture", 0.0) + capture_bonus
         save_pending_encounter(message.from_user.id, encounter)
-        # Картинка монстра будет заголовком — описание района не нужно
         text = render_encounter_text(encounter, attacker_type=attacker_type)
-        # Добавляем HP активного монстра к тексту встречи
+
+        # ── v3: предпросмотр врага + HP монстра + матчап ─────────────────────
         try:
             from database.repositories import get_active_monster as _gam
+            from database.repositories import get_player_monsters as _gpm
+            from game.combat_profiles import render_enemy_preview, render_pre_battle_selector
             _am = _gam(message.from_user.id)
+            _enemy_type = encounter.get("monster_type", "void")
+
+            # HP активного монстра
             if _am:
                 _hp = _am.get("current_hp", _am.get("hp", 0))
                 _mhp = _am.get("max_hp", _am.get("hp", 1))
                 _hp_bar_filled = int(_hp / max(1, _mhp) * 8)
                 _hp_bar = "❤️" * _hp_bar_filled + "🖤" * (8 - _hp_bar_filled)
                 text += f"\n\n🐲 {_am['name']}: {_hp_bar} {_hp}/{_mhp} HP"
+
+            # Предпросмотр врага
+            enemy_preview = render_enemy_preview(encounter)
+            if enemy_preview:
+                text = enemy_preview + "\n\n" + text
+
+            # Матчап — показываем если у игрока больше 1 монстра
+            all_monsters = _gpm(message.from_user.id)
+            alive = [m for m in all_monsters if not m.get("is_dead") and m.get("current_hp", 1) > 0]
+            if len(alive) > 1:
+                selector = render_pre_battle_selector(alive, _enemy_type)
+                text += "\n\n" + selector
         except Exception:
             pass
+
         _encounter_monster_type = encounter.get("monster_type", "void")
     elif encounter["type"] == "wildlife":
         save_pending_encounter(message.from_user.id, encounter)

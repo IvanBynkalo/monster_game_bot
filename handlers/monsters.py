@@ -266,6 +266,28 @@ def _render_monster_card_full(monster: dict, telegram_id: int) -> str:
         abilities_text,
         infection_text,
     ]
+
+    # ── v3: боевой профиль — роль, матчапы, скиллы ───────────────────────────
+    try:
+        from game.combat_profiles import build_combat_profile, render_monster_matchup
+        from game.type_service import get_role_label, get_type_strengths_text
+        profile = build_combat_profile(monster)
+        mtype = monster.get("monster_type", "void")
+        role_label = get_role_label(profile.get("role"))
+        strengths_text = get_type_strengths_text(mtype)
+        lines.append(f"")
+        lines.append(f"⚖️ Роль: {role_label}")
+        if strengths_text:
+            lines.append(strengths_text)
+        # Скиллы
+        from game.combat_skills import render_skills_card
+        skills_card = render_skills_card(profile.get("skills", {}))
+        if skills_card:
+            lines.append("")
+            lines.append(skills_card)
+    except Exception:
+        pass
+
     if dead_block:
         lines.append(dead_block)
     return "\n".join(l for l in lines if l is not None)
