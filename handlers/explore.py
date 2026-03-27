@@ -134,6 +134,39 @@ SPECIAL_NAME_IMAGES = {
     "🕸 Тёмный омутник": "monster_boss_marsh.png",
 }
 
+# Фолбэк тип по имени зверя — используется если нет уникальной картинки
+# чтобы вместо monster_default.png показывать хотя бы правильный тип
+WILDLIFE_NAME_TO_TYPE: dict[str, str] = {
+    # Лес → nature/shadow
+    "Лесная лисица": "nature",    "Лесной волк": "nature",
+    "Матёрый волк": "shadow",     "Бурый медведь": "nature",
+    "Лесной великан": "nature",
+    # Поля → nature/spirit
+    "Полевая мышь": "nature",     "Луговой заяц": "nature",
+    "Рогатый олень": "spirit",    "Степной тур": "nature",
+    "Золотой орёл": "storm",
+    # Горы → bone/storm
+    "Горный суслик": "bone",      "Каменная ящерица": "bone",
+    "Горный козёл": "bone",       "Скальный кабан": "bone",
+    "Горный лев": "storm",
+    # Болота → shadow/void
+    "Болотная жаба": "shadow",    "Топяная крыса": "shadow",
+    "Болотная змея": "void",      "Топяной кабан": "shadow",
+    "Болотный крокодил": "void",  "Иловый уж": "shadow",
+    "Тёмная выдра": "shadow",     "Болотный варан": "void",
+    # Вулкан → flame/bone
+    "Пепельная ящерица": "flame", "Лавовый краб": "flame",
+    "Огненная саламандра": "flame","Вулканический волк": "flame",
+    "Магматический кабан": "bone",
+    # Цветочная долина → nature/spirit
+    "Ветряной заяц": "storm",     "Лепестковый лис": "nature",
+    "Златорогий олень": "spirit",
+    # Элитки
+    "Гранитный зверь": "bone",    "Чащобный альфа": "nature",
+    "Топный ловчий": "shadow",    "Багровый Следопыт": "flame",
+    "Грозовой Фантом": "storm",   "Костяной Странник": "bone",
+}
+
 
 def _slugify(value: str) -> str:
     value = (value or "").strip().lower()
@@ -154,31 +187,45 @@ def _slugify(value: str) -> str:
 
 def _get_monster_image_path(monster_name: str | None = None, monster_type: str | None = None) -> Path | None:
     if monster_name:
+        # 1. Спецкартинки боссов и мировых монстров
         special = SPECIAL_NAME_IMAGES.get(monster_name)
         if special:
-            path = MONSTER_DIR / special
-            if path.exists():
-                return path
+            p = MONSTER_DIR / special
+            if p.exists():
+                return p
 
+        # 2. Уникальная картинка по имени
         code = MONSTER_NAME_TO_CODE.get(monster_name)
         if code:
-            path = MONSTER_DIR / f"{code}.png"
-            if path.exists():
-                return path
+            p = MONSTER_DIR / f"{code}.png"
+            if p.exists():
+                return p
 
+        # 3. Автослаг по имени
         slug = _slugify(monster_name)
         if slug:
-            path = MONSTER_DIR / f"{slug}.png"
-            if path.exists():
-                return path
+            p = MONSTER_DIR / f"{slug}.png"
+            if p.exists():
+                return p
 
+        # 4. Умный фолбэк для зверей — картинка по типу из WILDLIFE_NAME_TO_TYPE
+        wl_type = WILDLIFE_NAME_TO_TYPE.get(monster_name)
+        if wl_type:
+            filename = MONSTER_TYPE_IMAGES.get(wl_type)
+            if filename:
+                p = MONSTER_DIR / filename
+                if p.exists():
+                    return p
+
+    # 5. Картинка по типу монстра
     if monster_type:
         filename = MONSTER_TYPE_IMAGES.get(monster_type)
         if filename:
-            path = MONSTER_DIR / filename
-            if path.exists():
-                return path
+            p = MONSTER_DIR / filename
+            if p.exists():
+                return p
 
+    # 6. Дефолтная заглушка
     fallback = MONSTER_DIR / "monster_default.png"
     return fallback if fallback.exists() else None
 
@@ -345,6 +392,11 @@ async def explore_handler(message: Message, forced_direction: str = None):
         return
 
     # Если направление задано явно — используем его; иначе выбираем автоматически
+    # Проверяем что current_district_slug принадлежит текущей локации
+    from game.district_service import get_districts_for_location as _gdfl
+    _valid_district_slugs = {d["slug"] for d in _gdfl(player.location_slug)}
+    _district_slug = player.current_district_slug if player.current_district_slug in _valid_district_slugs else None
+
     if forced_direction:
         _chosen_dir = forced_direction
     else:
@@ -365,10 +417,6 @@ async def explore_handler(message: Message, forced_direction: str = None):
     _season_done = progress_season(message.from_user.id, "explore")
     story_done = update_story_progress(message.from_user.id, "explore", player.location_slug)
 
-    # Проверяем что current_district_slug принадлежит текущей локации, а не старой (например городу)
-    from game.district_service import get_districts_for_location as _gdfl
-    _valid_district_slugs = {d["slug"] for d in _gdfl(player.location_slug)}
-    _district_slug = player.current_district_slug if player.current_district_slug in _valid_district_slugs else None
     district = get_district(player.location_slug, _district_slug) if _district_slug else None
     district_mood = district["mood"] if district else None
     intro = get_district_explore_text(player.location_slug, _district_slug) if _district_slug else "Ты исследуешь местность."
@@ -486,7 +534,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
 
         # Загружаем ОБНОВЛЁННУЮ сетку (после explore_cell) для правильной позиции на карте
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-        _grid_cl = get_grid(message.from_user.id, _player_cleared.location_slug)
+        _grid_cl = get_grid(message.from_user.id, _player_cleared.location_slug, _district_slug)
         _dirs_cl = get_available_directions(_grid_cl)
         _dlabels = {d["dir"]: d["label"] for d in _dirs_cl}
 
@@ -512,7 +560,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
         except Exception:
             _mini_cl = ""
 
-        _panel_cl = render_exploration_panel(message.from_user.id, _player_cleared.location_slug)
+        _panel_cl = render_exploration_panel(message.from_user.id, _player_cleared.location_slug, _district_slug)
         _cleared_text = (
             f"🟢 Зачищенная территория.\n"
             f"Монстры сюда ещё не вернулись. Можно собирать ресурсы.\n\n"
