@@ -161,6 +161,7 @@ def progress_hunting_kill(telegram_id: int, animal_name: str) -> list[dict]:
 def claim_hunting_reward(telegram_id: int, quest_id: str) -> dict | None:
     """Забрать награду за выполненный квест."""
     _lazy()
+    import time
     all_quests = DAILY_HUNTING_QUESTS + GUILD_HUNTING_QUESTS + SPECIAL_HUNTING_QUESTS
     q = next((x for x in all_quests if x["id"] == quest_id), None)
     if not q:
@@ -174,5 +175,82 @@ def claim_hunting_reward(telegram_id: int, quest_id: str) -> dict | None:
             return None
         conn.execute("DELETE FROM player_hunting_quests WHERE telegram_id=? AND quest_id=?",
                      (telegram_id, quest_id))
+        # Кулдаун: дневные — 24 ч, гильдейские/особые — 3 дня
+        is_guild = quest_id.startswith("ghunt_") or quest_id.startswith("special_")
+        cooldown = 3 * 86400 if is_guild else 86400
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS player_hunting_completions (
+                    telegram_id  INTEGER NOT NULL,
+                    quest_id     TEXT    NOT NULL,
+                    completed_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                    cooldown_sec INTEGER NOT NULL DEFAULT 86400,
+                    PRIMARY KEY (telegram_id, quest_id)
+                )
+            """)
+            conn.execute("""
+                INSERT OR REPLACE INTO player_hunting_completions
+                (telegram_id, quest_id, completed_at, cooldown_sec)
+                VALUES (?,?,?,?)
+            """, (telegram_id, quest_id, int(time.time()), cooldown))
+        except Exception:
+            pass
         conn.commit()
     return q
+
+
+def render_hunting_quests_panel(telegram_id: int) -> str:
+    """Панель всех активных квестов охоты с прогрессом."""
+    _lazy()
+    import time
+    now = int(time.time())
+    active = get_active_hunting_quests(telegram_id)
+
+    lines = ["🏹 Квесты охоты", ""]
+
+    if active:
+        lines.append("📋 Активные:")
+        for q in active:
+            prog = q.get("progress", 0)
+            total = q.get("count", 1)
+            pct = int(prog / max(1, total) * 10)
+            bar = "█" * pct + "░" * (10 - pct)
+            target = q.get("target", "?")
+            if prog >= total:
+                status = "✅ Выполнено! Сдай квест."
+            else:
+                status = f"[{bar}] {prog}/{total} — цель: {target}"
+            lines.append(f"• {q['title']}: {status}")
+        lines.append("")
+
+    # Квесты на кулдауне
+    try:
+        with get_connection() as conn:
+            cooling = conn.execute(
+                "SELECT quest_id, completed_at, cooldown_sec FROM player_hunting_completions "
+                "WHERE telegram_id=?", (telegram_id,)
+            ).fetchall()
+        all_q = DAILY_HUNTING_QUESTS + GUILD_HUNTING_QUESTS + SPECIAL_HUNTING_QUESTS
+        quest_map = {q["id"]: q for q in all_q}
+        cooling_lines = []
+        for r in cooling:
+            elapsed = now - r["completed_at"]
+            if elapsed < r["cooldown_sec"]:
+                remaining = r["cooldown_sec"] - elapsed
+                h = remaining // 3600
+                m = (remaining % 3600) // 60
+                q = quest_map.get(r["quest_id"])
+                name = q["title"] if q else r["quest_id"]
+                cooling_lines.append(f"• 🕐 {name} — через {h}ч. {m}мин.")
+        if cooling_lines:
+            lines.append("🔒 На перезарядке:")
+            lines.extend(cooling_lines)
+            lines.append("")
+    except Exception:
+        pass
+
+    if not active:
+        lines.append("Нет активных квестов охоты.")
+        lines.append("Они выдаются автоматически при победе над зверями.")
+
+    return "\n".join(lines)

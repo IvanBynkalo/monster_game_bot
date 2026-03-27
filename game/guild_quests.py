@@ -159,11 +159,38 @@ from database.repositories import get_connection
 
 def _ensure_guild_quest_table():
     with get_connection() as conn:
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(player_guild_quests)").fetchall()]
-        if "guild_key" not in cols:
-            # Table exists but might need new columns
-            pass
-        # Ensure all needed columns exist
+        # Основная таблица активных/взятых квестов
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS player_guild_quests (
+                telegram_id  INTEGER NOT NULL,
+                quest_id     TEXT    NOT NULL,
+                guild_key    TEXT    NOT NULL DEFAULT '',
+                action_type  TEXT    NOT NULL DEFAULT '',
+                count        INTEGER NOT NULL DEFAULT 1,
+                title        TEXT    NOT NULL DEFAULT '',
+                reward_gold  INTEGER NOT NULL DEFAULT 0,
+                reward_exp   INTEGER NOT NULL DEFAULT 0,
+                reward_skill INTEGER NOT NULL DEFAULT 0,
+                is_weekly    INTEGER NOT NULL DEFAULT 0,
+                expires_at   INTEGER DEFAULT NULL,
+                progress     INTEGER NOT NULL DEFAULT 0,
+                completed    INTEGER NOT NULL DEFAULT 0,
+                taken_at     INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                PRIMARY KEY (telegram_id, quest_id)
+            )
+        """)
+        # История завершённых квестов — предотвращает повторное взятие до кулдауна
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS player_quest_completions (
+                telegram_id   INTEGER NOT NULL,
+                quest_id      TEXT    NOT NULL,
+                guild_key     TEXT    NOT NULL DEFAULT '',
+                is_weekly     INTEGER NOT NULL DEFAULT 0,
+                completed_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                PRIMARY KEY (telegram_id, quest_id)
+            )
+        """)
+        # Добавляем недостающие колонки в старые таблицы (миграция)
         needed = {
             "guild_key":   "TEXT NOT NULL DEFAULT ''",
             "action_type": "TEXT NOT NULL DEFAULT ''",
@@ -174,6 +201,7 @@ def _ensure_guild_quest_table():
             "reward_skill":"INTEGER NOT NULL DEFAULT 0",
             "is_weekly":   "INTEGER NOT NULL DEFAULT 0",
             "expires_at":  "INTEGER DEFAULT NULL",
+            "taken_at":    "INTEGER NOT NULL DEFAULT 0",
         }
         existing = [r[1] for r in conn.execute("PRAGMA table_info(player_guild_quests)").fetchall()]
         for col, definition in needed.items():
@@ -196,7 +224,7 @@ def _lazy():
 # ── Получение доступных квестов ───────────────────────────────────────────────
 
 def get_available_quests(telegram_id: int, profession: str) -> list[dict]:
-    """Квесты доступные для взятия (по уровню профессии, ещё не взятые)."""
+    """Квесты доступные для взятия (по уровню профессии, ещё не взятые и не в кулдауне)."""
     _lazy()
     from database.repositories import get_player
     player = get_player(telegram_id)
@@ -206,21 +234,40 @@ def get_available_quests(telegram_id: int, profession: str) -> list[dict]:
     level_field = PROFESSION_NAMES.get(profession, ("gatherer_level",))[0]
     prof_level = getattr(player, level_field, 1)
 
-    # Активные квесты игрока
+    import time
+    now = int(time.time())
+
+    # Активные квесты (взятые, не сданные)
     with get_connection() as conn:
         active_ids = {r["quest_id"] for r in conn.execute(
             "SELECT quest_id FROM player_guild_quests WHERE telegram_id=? AND guild_key=?",
             (telegram_id, profession)
         ).fetchall()}
 
-    # Фильтруем по уровню и уже взятым
+    # Завершённые в кулдауне:
+    # - обычные: 24 часа (нельзя взять ту же задачу снова сегодня)
+    # - еженедельные: 7 дней
+    with get_connection() as conn:
+        cooldown_rows = conn.execute(
+            "SELECT quest_id, is_weekly, completed_at FROM player_quest_completions "
+            "WHERE telegram_id=? AND guild_key=?",
+            (telegram_id, profession)
+        ).fetchall()
+
+    on_cooldown = set()
+    for r in cooldown_rows:
+        cooldown_secs = 7 * 86400 if r["is_weekly"] else 86400
+        if now - r["completed_at"] < cooldown_secs:
+            on_cooldown.add(r["quest_id"])
+
     pool = GUILD_QUEST_POOL.get(profession, [])
     available = [
         q for q in pool
         if q["id"] not in active_ids
+        and q["id"] not in on_cooldown
         and q["min_level"] <= prof_level <= q["max_level"]
     ]
-    return available[:3]  # Показываем максимум 3
+    return available[:3]
 
 
 def get_active_quests(telegram_id: int, profession: str) -> list[dict]:
@@ -265,7 +312,12 @@ def take_quest(telegram_id: int, quest_id: str, profession: str) -> tuple[bool, 
     if not quest:
         return False, "Поручение не найдено."
 
+    import time
+    now = int(time.time())
+    is_weekly = quest["id"].startswith("wh_")
+
     with get_connection() as conn:
+        # Проверяем: не взято ли уже
         exists = conn.execute(
             "SELECT quest_id FROM player_guild_quests WHERE telegram_id=? AND quest_id=?",
             (telegram_id, quest_id)
@@ -273,18 +325,33 @@ def take_quest(telegram_id: int, quest_id: str, profession: str) -> tuple[bool, 
         if exists:
             return False, "Ты уже взял это поручение."
 
-        import time
-        expires = int(time.time()) + 7 * 86400 if quest.get("id","").startswith("wh_") else None
+        # Проверяем кулдаун после завершения
+        hist = conn.execute(
+            "SELECT completed_at, is_weekly FROM player_quest_completions "
+            "WHERE telegram_id=? AND quest_id=?",
+            (telegram_id, quest_id)
+        ).fetchone()
+        if hist:
+            cooldown_secs = 7 * 86400 if hist["is_weekly"] else 86400
+            elapsed = now - hist["completed_at"]
+            if elapsed < cooldown_secs:
+                remaining_h = (cooldown_secs - elapsed) // 3600
+                remaining_m = ((cooldown_secs - elapsed) % 3600) // 60
+                if remaining_h > 0:
+                    return False, f"🕐 Это поручение снова доступно через {remaining_h} ч. {remaining_m} мин."
+                return False, f"🕐 Это поручение снова доступно через {remaining_m} мин."
+
+        expires = now + 7 * 86400 if is_weekly else None
         conn.execute("""
             INSERT INTO player_guild_quests
             (telegram_id, quest_id, guild_key, action_type, count, title,
-             reward_gold, reward_exp, reward_skill, is_weekly, expires_at, progress, completed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)
+             reward_gold, reward_exp, reward_skill, is_weekly, expires_at, progress, completed, taken_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,?)
         """, (
             telegram_id, quest_id, profession,
-            quest.get("type",""), quest.get("target",1), quest["title"],
-            quest["reward_gold"], quest["reward_exp"], quest.get("reward_skill",1),
-            1 if quest["id"].startswith("wh_") else 0, expires
+            quest.get("type", ""), quest.get("target", 1), quest["title"],
+            quest["reward_gold"], quest["reward_exp"], quest.get("reward_skill", 1),
+            1 if is_weekly else 0, expires, now
         ))
         conn.commit()
     return True, f"✅ Поручение взято: {quest['title']}"
@@ -359,9 +426,11 @@ def progress_quest(telegram_id: int, profession: str, action_type: str,
 def claim_quest(telegram_id: int, quest_id: str, profession: str) -> tuple[bool, str]:
     """Сдаёт выполненное поручение и выдаёт награду."""
     _lazy()
+    import time
+
     with get_connection() as conn:
         row = conn.execute("""
-            SELECT title, reward_gold, reward_exp, reward_skill, completed
+            SELECT title, reward_gold, reward_exp, reward_skill, completed, is_weekly
             FROM player_guild_quests
             WHERE telegram_id=? AND quest_id=?
         """, (telegram_id, quest_id)).fetchone()
@@ -386,18 +455,30 @@ def claim_quest(telegram_id: int, quest_id: str, profession: str) -> tuple[bool,
             cur_exp = getattr(player, exp_field, 0)
             _update_player_field(telegram_id, **{exp_field: cur_exp + skill_pts})
 
+    now = int(time.time())
+    is_weekly = bool(row["is_weekly"])
+
     with get_connection() as conn:
+        # Удаляем из активных
         conn.execute(
             "DELETE FROM player_guild_quests WHERE telegram_id=? AND quest_id=?",
             (telegram_id, quest_id)
         )
+        # Записываем в историю завершённых (кулдаун)
+        conn.execute("""
+            INSERT OR REPLACE INTO player_quest_completions
+            (telegram_id, quest_id, guild_key, is_weekly, completed_at)
+            VALUES (?,?,?,?,?)
+        """, (telegram_id, quest_id, profession, 1 if is_weekly else 0, now))
         conn.commit()
 
+    cooldown_str = "7 дней" if is_weekly else "24 часа"
     return True, (
         f"✅ Поручение сдано: {row['title']}\n"
         f"💰 +{row['reward_gold']} золота\n"
         f"✨ +{row['reward_exp']} опыта\n"
-        f"📈 +{row['reward_skill']} опыта навыка «{profession}»"
+        f"📈 +{row['reward_skill']} опыта навыка «{profession}»\n"
+        f"🕐 Повторно доступно через {cooldown_str}"
     )
 
 
@@ -407,6 +488,9 @@ def render_guild_panel(telegram_id: int, profession: str,
                        guild_name: str, description: str) -> str:
     """Полная панель гильдии с квестами."""
     _lazy()
+    import time
+    now = int(time.time())
+
     active = get_active_quests(telegram_id, profession)
     available = get_available_quests(telegram_id, profession)
     weekly = WEEKLY_GUILD_QUESTS.get(profession, {})
@@ -421,8 +505,11 @@ def render_guild_panel(telegram_id: int, profession: str,
             total = q.get("target", 1)
             pct = int(prog / max(1, total) * 10)
             bar = "█" * pct + "░" * (10 - pct)
-            status = "✅ Готово к сдаче!" if q.get("completed") else f"[{bar}] {prog}/{total}"
             weekly_mark = " 🌟" if q.get("id", "").startswith("wh_") else ""
+            if q.get("completed"):
+                status = "✅ Готово к сдаче! Нажми кнопку ниже."
+            else:
+                status = f"[{bar}] {prog}/{total}"
             lines.append(f"• {q['title']}{weekly_mark}: {status}")
         lines.append("")
 
@@ -439,15 +526,28 @@ def render_guild_panel(telegram_id: int, profession: str,
         lines.append("")
 
     # Еженедельное
-    weekly_active = next((q for q in active if q.get("id","").startswith("wh_")), None)
+    weekly_active = next((q for q in active if q.get("id", "").startswith("wh_")), None)
     if weekly and not weekly_active:
-        lines.append(
-            f"🌟 Недельное: {weekly['title']}\n"
-            f"  {weekly['desc']}\n"
-            f"  💰{weekly['reward_gold']}з ✨{weekly['reward_exp']}оп 📈+{weekly['reward_skill']} навык"
-        )
+        # Проверяем кулдаун на еженедельное
+        with get_connection() as conn:
+            hist = conn.execute(
+                "SELECT completed_at FROM player_quest_completions "
+                "WHERE telegram_id=? AND quest_id=?",
+                (telegram_id, weekly["id"])
+            ).fetchone()
+        if hist and (now - hist["completed_at"]) < 7 * 86400:
+            remaining = 7 * 86400 - (now - hist["completed_at"])
+            days = remaining // 86400
+            hours = (remaining % 86400) // 3600
+            lines.append(f"🌟 Недельное: {weekly['title']} — 🕐 доступно через {days}д. {hours}ч.")
+        else:
+            lines.append(
+                f"🌟 Недельное: {weekly['title']}\n"
+                f"  {weekly['desc']}\n"
+                f"  💰{weekly['reward_gold']}з ✨{weekly['reward_exp']}оп 📈+{weekly['reward_skill']} навык"
+            )
 
     if not active and not available and not (weekly and not weekly_active):
-        lines.append("Все поручения выполнены или ещё недоступны по уровню.")
+        lines.append("Все поручения выполнены или недоступны. Возвращайся позже!")
 
     return "\n".join(lines)
