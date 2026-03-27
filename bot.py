@@ -897,6 +897,7 @@ async def fight_inline_callback(callback: CallbackQuery):
         get_player, get_active_monster, damage_active_monster, damage_player_hp,
         add_player_gold, add_player_experience, add_active_monster_experience,
         kill_active_monster, has_living_monster, add_resource, get_item_count,
+        get_player_monsters, set_active_monster,
     )
     from game.encounter_service import resolve_attack, resolve_capture, resolve_flee
     from game.monster_abilities import get_capture_bonus
@@ -1057,8 +1058,49 @@ async def fight_inline_callback(callback: CallbackQuery):
             reply_markup=encounter_inline_menu(
                 has_trap=has_trap,
                 has_poison_trap=has_ptrap,
+                has_multiple_monsters=len([m for m in get_player_monsters(uid) if not m.get("is_dead") and m.get("current_hp",1)>0]) > 1,
             ),
         )
+        return
+
+    elif action == "switch":
+        # Показываем список монстров для смены прямо в бою
+        all_m = get_player_monsters(uid)
+        alive = [m for m in all_m if not m.get("is_dead") and m.get("current_hp", 1) > 0]
+        if len(alive) <= 1:
+            await callback.message.answer("Нет других живых монстров для смены.")
+            return
+        enc_for_switch = get_pending_encounter(uid)
+        enemy_type = enc_for_switch.get("monster_type", "void") if enc_for_switch else "void"
+        try:
+            from game.combat_profiles import render_pre_battle_selector
+            selector_text = render_pre_battle_selector(alive, enemy_type)
+        except Exception:
+            selector_text = "Выбери монстра:"
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kbd = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"{'📍' if m.get('is_active') else '→'} {m['name']} ур.{m.get('level',1)} HP:{m.get('current_hp',m.get('hp',0))}/{m.get('max_hp',m.get('hp',1))}",
+                callback_data=f"fight:switchto:{m['id']}"
+            )] for m in alive
+        ])
+        await callback.message.answer(selector_text, reply_markup=kbd)
+        return
+
+    elif action.startswith("switchto:"):
+        monster_id = int(action.split(":")[1])
+        new_active = set_active_monster(uid, monster_id)
+        if new_active:
+            enc_sw = get_pending_encounter(uid)
+            enemy_type_sw = enc_sw.get("monster_type", "void") if enc_sw else "void"
+            from game.type_service import get_type_label
+            from game.combat_profiles import render_monster_matchup
+            matchup = render_monster_matchup(new_active, enemy_type_sw)
+            await callback.message.answer(
+                "✅ Активный монстр: " + new_active['name'] + "\n\n" + matchup,
+            )
+        else:
+            await callback.message.answer("Не удалось сменить монстра.")
         return
 
     elif action == "flee":
@@ -1139,6 +1181,23 @@ async def fight_inline_callback(callback: CallbackQuery):
                         if _enc_fresh.get("hp", 1) <= 0:
                             clear_pending_encounter(uid)
                             lines.append(f"💀 {_enc_fresh.get('monster_name', 'Враг')} уничтожен DoT-эффектом!")
+        except Exception:
+            pass
+
+        # v3: Проверка боссовой фазы
+        try:
+            if not result.get("finished"):
+                from game.encounter_service import check_boss_phase, apply_boss_regen
+                _enc_bp = get_pending_encounter(uid)
+                if _enc_bp:
+                    _phase_text = check_boss_phase(_enc_bp)
+                    if _phase_text:
+                        save_pending_encounter(uid, _enc_bp)
+                        lines.append(_phase_text)
+                    _regen_text = apply_boss_regen(_enc_bp)
+                    if _regen_text:
+                        save_pending_encounter(uid, _enc_bp)
+                        lines.append(_regen_text)
         except Exception:
             pass
 
@@ -1320,7 +1379,7 @@ async def fight_inline_callback(callback: CallbackQuery):
             _wl_rows.append([InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
         kb = InlineKeyboardMarkup(inline_keyboard=_wl_rows)
     else:
-        kb = encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap)
+        kb = encounter_inline_menu(has_trap=has_trap, has_poison_trap=has_ptrap, has_multiple_monsters=len([m for m in get_player_monsters(uid) if not m.get("is_dead") and m.get("current_hp",1)>0]) > 1)
 
     await callback.message.answer("\n".join(l for l in lines if l), reply_markup=kb)
 
