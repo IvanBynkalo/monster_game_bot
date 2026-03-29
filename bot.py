@@ -1271,6 +1271,46 @@ async def fight_inline_callback(callback: CallbackQuery):
             for lu in lvlups:
                 lines.append(f"⬆️ Монстр достиг уровня {lu['level']}!")
 
+            # ── Прогресс гильдейских квестов: победа, поимка ────────────────
+            try:
+                from game.guild_quests import progress_quest as _pgq
+                _player_fresh = get_player(uid)
+                _enc_type = enc.get("type", "")
+                _enc_rarity = enc.get("rarity", "common")
+
+                if result.get("captured") and _enc_type == "monster":
+                    # Поимка монстра → "capture" + "capture_rare" + board capture
+                    _done_cap = _pgq(uid, "hunter", "capture", 1)
+                    _done_cap += _pgq(uid, "hunter", "capture_rare", 1,
+                                      extra={"rarity": _enc_rarity}) if _enc_rarity in ("epic","legendary","mythic") else []
+                    from database.repositories import progress_guild_quests as _pgq_board
+                    _done_cap += _pgq_board(uid, "capture", amount=1)
+                    for _q in _done_cap:
+                        _qd = _q[1] if isinstance(_q, tuple) else _q
+                        lines.append(f"✅ Поручение выполнено: {_qd.get('title','Поручение')}")
+
+                elif result.get("victory") and _enc_type == "monster":
+                    # Победа над монстром → "win" для board квестов
+                    from database.repositories import progress_guild_quests as _pgq_board2
+                    _done_win = _pgq_board2(uid, "win", amount=1)
+                    for _q in _done_win:
+                        _qd = _q[1] if isinstance(_q, tuple) else _q
+                        lines.append(f"✅ Поручение выполнено: {_qd.get('title','Поручение')}")
+
+                elif result.get("victory") and _enc_type == "wildlife":
+                    # Убийство зверя → "kill_wildlife" для hunter гильдии
+                    _animal_name = enc.get("name", "")
+                    _done_kill = _pgq(uid, "hunter", "kill_wildlife", 1,
+                                      extra={"location_slug": _player_fresh.location_slug if _player_fresh else ""})
+                    _done_kill += _pgq(uid, "hunter", "kill_wildlife_loc", 1,
+                                       extra={"location": _player_fresh.location_slug if _player_fresh else ""})
+                    for _q in _done_kill:
+                        _qd = _q[1] if isinstance(_q, tuple) else _q
+                        lines.append(f"✅ Поручение выполнено: {_qd.get('title','Поручение')}")
+
+            except Exception as _gqe:
+                pass
+
             # Поимка монстра — добавляем в коллекцию игрока
             if result.get("captured") and enc.get("type") == "monster":
                 try:
@@ -1430,8 +1470,8 @@ async def location_inline_callback(callback: CallbackQuery):
         try:
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             from game.district_service import (
-                get_unlocked_districts, get_explored_pct,
-                DISTRICT_UNLOCK_PCT, get_districts_for_location
+                get_unlocked_districts, get_district_explored_pct,
+                get_districts_for_location
             )
             player_loc = get_player(uid)
             if not player_loc:
@@ -1439,30 +1479,40 @@ async def location_inline_callback(callback: CallbackQuery):
                 return
             loc_slug = player_loc.location_slug
             unlocked = get_unlocked_districts(uid, loc_slug)
-            current_pct = get_explored_pct(uid, loc_slug)
+            unlocked_slugs = {d["slug"] for d in unlocked}
             all_d = get_districts_for_location(loc_slug)
 
             if not all_d:
                 await callback.message.answer("В этой локации нет районов.")
                 return
 
-            lines = [f"🧭 Районы — {loc_slug} (исследовано: {current_pct}%)", ""]
+            PREV_UNLOCK = {2: 30, 3: 50, 4: 70}
+            lines = ["🧭 Выбор района", ""]
             kbd_rows = []
-            for d in all_d:
-                is_unlocked = any(u["slug"] == d["slug"] for u in unlocked)
+
+            for i, d in enumerate(all_d):
+                is_unlocked = d["slug"] in unlocked_slugs
                 is_cur = d["slug"] == player_loc.current_district_slug
+                danger = d.get("danger", 1)
+
                 if is_unlocked:
-                    marker = "📍 " if is_cur else ""
-                    status = " (текущий)" if is_cur else ""
-                    lines.append(f"{marker}{d['name']}{status}")
+                    # Показываем % исследования этого района
+                    pct = get_district_explored_pct(uid, loc_slug, d["slug"])
+                    marker = "📍" if is_cur else "✅"
+                    lines.append(f"{marker} {d['name']} — исследовано {pct}%")
                     if not is_cur:
                         kbd_rows.append([InlineKeyboardButton(
                             text=f"→ {d['name']}",
                             callback_data=f"setdistrict:{d['slug']}"
                         )])
                 else:
-                    req = DISTRICT_UNLOCK_PCT.get(d.get("danger", 1), 0)
-                    lines.append(f"🔒 {d['name']} — нужно {req}% исследования (сейчас {current_pct}%)")
+                    # Показываем прогресс предыдущего района
+                    req = PREV_UNLOCK.get(danger, 30)
+                    prev_pct = 0
+                    if i > 0:
+                        prev_d = all_d[i - 1]
+                        prev_pct = get_district_explored_pct(uid, loc_slug, prev_d["slug"])
+                    lines.append(f"🔒 {d['name']} — {prev_pct}%/{req}% (исследуй предыдущий)")
 
             await callback.message.answer(
                 "\n".join(lines),
