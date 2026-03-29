@@ -73,7 +73,7 @@ async def gather_handler(message: Message):
     if not await cooldown_guard(message, kind="gather", seconds=1.5):
         return
 
-    result = gather_resource(player, player.location_slug)
+    result = gather_resource(player, player.location_slug, getattr(player, "current_district_slug", None))
 
     if not result:
         await message.answer("В этой области пока нечего собрать.")

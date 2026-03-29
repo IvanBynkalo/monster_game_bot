@@ -154,6 +154,20 @@ async def _show_arrival_screen(message: Message, target_slug: str, story_done):
         await message.answer("Сначала напиши /start")
         return
 
+    # Автоматически устанавливаем первый открытый район новой локации
+    from game.location_rules import is_city
+    if not is_city(target_slug):
+        try:
+            from database.repositories import update_player_district
+            from game.district_service import get_unlocked_districts
+            _unlocked = get_unlocked_districts(message.from_user.id, target_slug)
+            if _unlocked:
+                # Берём первый район (danger=1, всегда открыт)
+                update_player_district(message.from_user.id, _unlocked[0]["slug"])
+                player = get_player(message.from_user.id) or player
+        except Exception:
+            pass
+
     try:
         from game.grid_exploration_service import render_exploration_panel
 
