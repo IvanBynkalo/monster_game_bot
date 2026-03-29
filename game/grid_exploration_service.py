@@ -689,8 +689,8 @@ def is_world_boss_available(telegram_id: int, location_slug: str) -> bool:
     return grid["visited_count"] >= THRESHOLDS["world_boss_spawns"]
 
 
-def get_current_cell_bonuses(telegram_id: int, location_slug: str) -> dict:
-    grid = get_grid(telegram_id, location_slug)
+def get_current_cell_bonuses(telegram_id: int, location_slug: str, district_slug: str | None = None) -> dict:
+    grid = get_grid(telegram_id, location_slug, district_slug)
     col, row = grid["current_pos"]
     key = f"{col},{row}"
     cell = grid["cells"].get(key, {})

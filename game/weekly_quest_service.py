@@ -129,11 +129,11 @@ def _find_quest(slug: str) -> dict | None:
 def check_and_assign_weekly_quest(telegram_id: int, location_slug: str) -> dict | None:
     """
     Вызывается при переходе в локацию.
-    Если регион 100% и нет квеста на эту неделю — выдаёт новый.
+    Выдаёт недельный квест при первом посещении локации (нет минимального порога).
     Возвращает квест если только что выдан, иначе None.
     """
-    if get_exploration(telegram_id, location_slug) < 100:
-        return None
+    # Убрали ограничение 100% — квест доступен всем кто посетил локацию
+    pass  # no minimum exploration required
     week = _week_key()
     # Проверяем нет ли уже квеста на эту неделю
     with get_connection() as conn:
