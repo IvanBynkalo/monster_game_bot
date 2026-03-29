@@ -272,18 +272,30 @@ def _build_district_section(location_slug: str, current_district_slug: str | Non
         if district["slug"] in visible_slugs:
             lines.append(f"{marker} {district['name']}")
         else:
-            # Показываем % исследования необходимый для открытия
-            from game.district_service import DISTRICT_UNLOCK_PCT
+            # Показываем % исследования ПРЕДЫДУЩЕГО района для разблокировки
             danger = district.get("danger", 1)
-            required_pct = DISTRICT_UNLOCK_PCT.get(danger, 0)
-            if required_pct > 0:
-                current_pct = 0
-                if telegram_id:
-                    from game.district_service import get_explored_pct
-                    current_pct = get_explored_pct(telegram_id, location_slug)
-                lines.append(f"{marker} 🔒 Неоткрытый район ({current_pct}%/{required_pct}% исследовано)")
-            else:
-                lines.append(f"{marker} 🔒 Неоткрытый район")
+            PREV_UNLOCK = {2: 30, 3: 50, 4: 70}
+            required_pct = PREV_UNLOCK.get(danger, 30)
+            # Находим предыдущий район
+            prev_pct = 0
+            if telegram_id:
+                try:
+                    from game.district_service import get_district_explored_pct
+                    district_idx = all_districts.index(district)
+                    if district_idx > 0:
+                        prev_district = all_districts[district_idx - 1]
+                        prev_pct = get_district_explored_pct(
+                            telegram_id, location_slug, prev_district["slug"]
+                        )
+                        prev_name = prev_district["name"]
+                    else:
+                        prev_name = "района"
+                except Exception:
+                    prev_name = "района"
+            lines.append(
+                f"{marker} 🔒 {district['name']} "
+                f"(исследуй предыдущий район: {prev_pct}%/{required_pct}%)"
+            )
 
     return lines
 

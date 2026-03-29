@@ -1,6 +1,90 @@
 import random
 from database.repositories import add_resource, get_resources_count_total, improve_profession_from_action
 
+# Ресурсы по районам (более специфичные)
+RESOURCES_BY_DISTRICT = {
+    # Тёмный лес
+    "mushroom_path": [
+        {"slug": "mushroom_cap",  "name": "🍄 Шляпка гриба",    "kind": "gatherer",  "base_chance": 1.0,  "rare": False},
+        {"slug": "forest_herb",   "name": "🌿 Лесная трава",     "kind": "gatherer",  "base_chance": 0.8,  "rare": False},
+        {"slug": "silver_moss",   "name": "✨ Серебряный мох",   "kind": "gatherer",  "base_chance": 0.15, "rare": True},
+    ],
+    "wet_thicket": [
+        {"slug": "forest_herb",   "name": "🌿 Лесная трава",     "kind": "gatherer",  "base_chance": 1.0,  "rare": False},
+        {"slug": "silver_moss",   "name": "✨ Серебряный мох",   "kind": "gatherer",  "base_chance": 0.25, "rare": True},
+        {"slug": "dark_resin",    "name": "🕯 Тёмная смола",     "kind": "hunter",    "base_chance": 0.6,  "rare": False},
+    ],
+    "whisper_den": [
+        {"slug": "silver_moss",   "name": "✨ Серебряный мох",   "kind": "gatherer",  "base_chance": 0.9,  "rare": True},
+        {"slug": "dark_resin",    "name": "🕯 Тёмная смола",     "kind": "hunter",    "base_chance": 0.8,  "rare": False},
+        {"slug": "ghost_reed",    "name": "🎐 Призрачный камыш", "kind": "hunter",    "base_chance": 0.2,  "rare": True},
+    ],
+    # Изумрудные поля
+    "green_meadow": [
+        {"slug": "field_grass",   "name": "🌾 Полевая трава",    "kind": "gatherer",  "base_chance": 1.0,  "rare": False},
+        {"slug": "sun_blossom",   "name": "🌼 Солнечный цветок", "kind": "gatherer",  "base_chance": 0.7,  "rare": False},
+        {"slug": "dew_crystal",   "name": "💧 Кристалл росы",    "kind": "gatherer",  "base_chance": 0.15, "rare": True},
+    ],
+    "flower_valley": [
+        {"slug": "sun_blossom",   "name": "🌼 Солнечный цветок", "kind": "gatherer",  "base_chance": 1.0,  "rare": False},
+        {"slug": "dew_crystal",   "name": "💧 Кристалл росы",    "kind": "gatherer",  "base_chance": 0.3,  "rare": True},
+        {"slug": "field_grass",   "name": "🌾 Полевая трава",    "kind": "gatherer",  "base_chance": 0.6,  "rare": False},
+    ],
+    # Каменные холмы
+    "old_mine": [
+        {"slug": "raw_ore",       "name": "⛏ Сырая руда",        "kind": "geologist", "base_chance": 1.0,  "rare": False},
+        {"slug": "granite_shard", "name": "🪨 Осколок гранита",  "kind": "geologist", "base_chance": 0.8,  "rare": False},
+        {"slug": "ember_stone",   "name": "🔥 Угольный камень",  "kind": "geologist", "base_chance": 0.5,  "rare": False},
+    ],
+    "rock_pass": [
+        {"slug": "granite_shard", "name": "🪨 Осколок гранита",  "kind": "geologist", "base_chance": 0.9,  "rare": False},
+        {"slug": "sky_crystal",   "name": "💎 Небесный кристалл","kind": "geologist", "base_chance": 0.2,  "rare": True},
+        {"slug": "raw_ore",       "name": "⛏ Сырая руда",        "kind": "geologist", "base_chance": 0.7,  "rare": False},
+    ],
+    # Болота теней
+    "fog_pool": [
+        {"slug": "bog_flower",    "name": "🪷 Болотный цветок",  "kind": "gatherer",  "base_chance": 1.0,  "rare": False},
+        {"slug": "dark_resin",    "name": "🕯 Тёмная смола",     "kind": "hunter",    "base_chance": 0.7,  "rare": False},
+        {"slug": "swamp_moss",    "name": "🪴 Болотный мох",     "kind": "gatherer",  "base_chance": 0.6,  "rare": False},
+    ],
+    "sunken_ruins": [
+        {"slug": "dark_resin",    "name": "🕯 Тёмная смола",     "kind": "hunter",    "base_chance": 0.9,  "rare": False},
+        {"slug": "ghost_reed",    "name": "🎐 Призрачный камыш", "kind": "hunter",    "base_chance": 0.5,  "rare": True},
+        {"slug": "black_pearl",   "name": "⚫ Чёрная жемчужина", "kind": "hunter",    "base_chance": 0.15, "rare": True},
+    ],
+    # Вулкан
+    "ash_slope": [
+        {"slug": "ash_leaf",      "name": "🍂 Пепельный лист",   "kind": "gatherer",  "base_chance": 1.0,  "rare": False},
+        {"slug": "ember_stone",   "name": "🔥 Угольный камень",  "kind": "geologist", "base_chance": 0.8,  "rare": False},
+        {"slug": "magma_core",    "name": "💠 Ядро магмы",       "kind": "geologist", "base_chance": 0.12, "rare": True},
+    ],
+    "lava_bridge": [
+        {"slug": "ember_stone",   "name": "🔥 Угольный камень",  "kind": "geologist", "base_chance": 0.9,  "rare": False},
+        {"slug": "magma_core",    "name": "💠 Ядро магмы",       "kind": "geologist", "base_chance": 0.2,  "rare": True},
+        {"slug": "ash_leaf",      "name": "🍂 Пепельный лист",   "kind": "gatherer",  "base_chance": 0.6,  "rare": False},
+    ],
+    "heart_of_magma": [
+        {"slug": "magma_core",    "name": "💠 Ядро магмы",       "kind": "geologist", "base_chance": 0.5,  "rare": True},
+        {"slug": "ember_stone",   "name": "🔥 Угольный камень",  "kind": "geologist", "base_chance": 1.0,  "rare": False},
+    ],
+    # Болота теней (shadow_swamp)
+    "black_water": [
+        {"slug": "swamp_moss",    "name": "🪴 Болотный мох",     "kind": "gatherer",  "base_chance": 0.9,  "rare": False},
+        {"slug": "toxic_spore",   "name": "🧫 Токсичная спора",  "kind": "gatherer",  "base_chance": 0.7,  "rare": False},
+        {"slug": "black_pearl",   "name": "⚫ Чёрная жемчужина", "kind": "hunter",    "base_chance": 0.12, "rare": True},
+    ],
+    "fog_trail": [
+        {"slug": "swamp_moss",    "name": "🪴 Болотный мох",     "kind": "gatherer",  "base_chance": 1.0,  "rare": False},
+        {"slug": "bog_flower",    "name": "🪷 Болотный цветок",  "kind": "gatherer",  "base_chance": 0.6,  "rare": False},
+        {"slug": "toxic_spore",   "name": "🧫 Токсичная спора",  "kind": "gatherer",  "base_chance": 0.5,  "rare": False},
+    ],
+    "grave_of_voices": [
+        {"slug": "toxic_spore",   "name": "🧫 Токсичная спора",  "kind": "gatherer",  "base_chance": 0.8,  "rare": False},
+        {"slug": "black_pearl",   "name": "⚫ Чёрная жемчужина", "kind": "hunter",    "base_chance": 0.25, "rare": True},
+        {"slug": "ghost_reed",    "name": "🎐 Призрачный камыш", "kind": "hunter",    "base_chance": 0.35, "rare": True},
+    ],
+}
+
 RESOURCES_BY_LOCATION = {
     "dark_forest": [
         {"slug": "forest_herb", "name": "🌿 Лесная трава", "kind": "gatherer", "base_chance": 1.0, "rare": False},
@@ -34,12 +118,13 @@ RESOURCES_BY_LOCATION = {
     ],
 }
 
-def gather_resource(player, location_slug):
+def gather_resource(player, location_slug, district_slug: str | None = None):
     current_total = get_resources_count_total(player.telegram_id)
     if current_total >= player.bag_capacity:
         return {"error": f"Сумка заполнена: {current_total}/{player.bag_capacity}. Освободи место или купи новую сумку в городе."}
 
-    pool = RESOURCES_BY_LOCATION.get(location_slug, [])
+    # Сначала ищем ресурсы района, затем фолбэк на локацию
+    pool = (RESOURCES_BY_DISTRICT.get(district_slug) if district_slug else None)            or RESOURCES_BY_LOCATION.get(location_slug, [])
     if not pool:
         return None
 

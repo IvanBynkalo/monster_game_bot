@@ -93,19 +93,65 @@ def get_explored_pct(telegram_id: int, location_slug: str) -> int:
         return 0
 
 
+def get_district_explored_pct(telegram_id: int, location_slug: str, district_slug: str) -> int:
+    """% исследования конкретного района (по его собственному гриду)."""
+    try:
+        from database.repositories import get_connection
+        import json
+        key = f"{location_slug}:{district_slug}"
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT grid_data FROM player_grid_exploration WHERE telegram_id=? AND location_slug=?",
+                (telegram_id, key)
+            ).fetchone()
+        if not row:
+            return 0
+        grid = json.loads(row["grid_data"])
+        return min(100, int(grid.get("visited_count", 0)))
+    except Exception:
+        return 0
+
+
 def get_unlocked_districts(telegram_id: int, location_slug: str) -> list:
-    """Возвращает только открытые районы с учётом % исследования."""
+    """
+    Районы открываются последовательно:
+    - danger=1 → всегда открыт (первый район)
+    - danger=2 → открывается когда предыдущий район исследован на 30%
+    - danger=3 → открывается когда предыдущий район исследован на 50%
+    - danger=4 → открывается когда предыдущий район исследован на 70%
+    Прогресс считается по гриду ПРЕДЫДУЩЕГО района.
+    """
     from game.location_rules import is_city
     if is_city(location_slug):
         return get_districts_for_location(location_slug)
 
-    explored_pct = get_explored_pct(telegram_id, location_slug)
+    all_districts = get_districts_for_location(location_slug)
+    if not all_districts:
+        return []
+
+    # Порог исследования предыдущего района для разблокировки следующего
+    PREV_DISTRICT_UNLOCK = {2: 30, 3: 50, 4: 70}
+
     result = []
-    for district in get_districts_for_location(location_slug):
+    prev_slug = None
+    for district in all_districts:
         danger = district.get("danger", 1)
-        required_pct = DISTRICT_UNLOCK_PCT.get(danger, 0)
-        if explored_pct >= required_pct:
+        if danger <= 1:
+            # Первый район — всегда открыт
             result.append(district)
+            prev_slug = district["slug"]
+        else:
+            # Следующий район — нужно исследовать предыдущий
+            required_pct = PREV_DISTRICT_UNLOCK.get(danger, 30)
+            if prev_slug:
+                prev_pct = get_district_explored_pct(telegram_id, location_slug, prev_slug)
+            else:
+                prev_pct = 100
+            if prev_pct >= required_pct:
+                result.append(district)
+                prev_slug = district["slug"]
+            else:
+                break  # последующие тоже закрыты
     return result
 
 def get_district(location_slug: str, district_slug: str):
