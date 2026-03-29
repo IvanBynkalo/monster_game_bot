@@ -259,6 +259,56 @@ def reset_player_state(telegram_id: int, name: str = "Игрок") -> Player:
             conn.execute("DELETE FROM player_travel WHERE telegram_id=?", (telegram_id,))
         except Exception:
             pass
+
+        # ── Кристаллы и экипировка ────────────────────────────────────────────
+        for tbl in [
+            "player_crystals",
+            "player_crystal_storage",
+            "monster_crystal_bond",
+            "player_belt_crystals",
+            "player_equipment",
+            "player_equipment_inventory",
+        ]:
+            try:
+                conn.execute(f"DELETE FROM {tbl} WHERE telegram_id=?", (telegram_id,))
+            except Exception:
+                pass
+
+        # ── Прогресс и достижения ─────────────────────────────────────────────
+        for tbl in [
+            "player_dungeon_progress",
+            "player_bestiary",
+            "player_weekly_quests",
+            "player_quest_completions",
+            "player_hunting_completions",
+            "player_city_orders",
+            "player_rift_tokens",
+            "player_bags",
+        ]:
+            try:
+                conn.execute(f"DELETE FROM {tbl} WHERE telegram_id=?", (telegram_id,))
+            except Exception:
+                pass
+
+        # ── Сезонный пропуск и уведомления ───────────────────────────────────
+        for tbl in ["player_season_pass", "player_notifications"]:
+            try:
+                conn.execute(f"DELETE FROM {tbl} WHERE telegram_id=?", (telegram_id,))
+            except Exception:
+                pass
+
+        # ── UI-состояние ──────────────────────────────────────────────────────
+        try:
+            conn.execute("DELETE FROM player_ui WHERE telegram_id=?", (telegram_id,))
+        except Exception:
+            pass
+
+        # ── Видимость локаций на карте ────────────────────────────────────────
+        try:
+            conn.execute("DELETE FROM player_location_visibility WHERE telegram_id=?", (telegram_id,))
+        except Exception:
+            pass
+
         conn.commit()
     return create_player(telegram_id, name)
 
