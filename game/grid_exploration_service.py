@@ -243,9 +243,9 @@ def _today_day() -> int:
     return int(time.time()) // 86400
 
 
-def try_daily_respawn(telegram_id: int, location_slug: str) -> bool:
+def try_daily_respawn(telegram_id: int, location_slug: str, district_slug: str | None = None) -> bool:
     """Раз в сутки: cleared-ячейки с шансом 40% восстанавливают монстров."""
-    grid = get_grid(telegram_id, location_slug)
+    grid = get_grid(telegram_id, location_slug, district_slug)
     today = _today_day()
     if grid.get("last_respawn_day", 0) >= today:
         return False
@@ -264,7 +264,7 @@ def try_daily_respawn(telegram_id: int, location_slug: str) -> bool:
             respawned += 1
 
     grid["last_respawn_day"] = today
-    _save_grid(telegram_id, location_slug, grid)
+    _save_grid(telegram_id, location_slug, grid, district_slug)
     return respawned > 0
 
 
@@ -334,7 +334,7 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str, district_
     _lazy_ensure()
 
     # Суточный респаун перед каждым шагом
-    try_daily_respawn(telegram_id, location_slug)
+    try_daily_respawn(telegram_id, location_slug, district_slug)
 
     grid = get_grid(telegram_id, location_slug, district_slug)
     directions = get_available_directions(grid)
