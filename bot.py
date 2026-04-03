@@ -919,7 +919,7 @@ async def fight_inline_callback(callback: CallbackQuery):
         if player0:
             try:
                 from game.grid_exploration_service import is_dungeon_available
-                _hd = is_dungeon_available(uid, player0.location_slug)
+                _hd = is_dungeon_available(uid, player0.location_slug, player0.current_district_slug)
             except Exception:
                 _hd = False
             await callback.message.answer(
@@ -1236,7 +1236,7 @@ async def fight_inline_callback(callback: CallbackQuery):
                 _fresh_p = get_player(uid)
                 if _fresh_p:
                     from game.grid_exploration_service import mark_cell_cleared as _mcc
-                    _mcc(uid, _fresh_p.location_slug)
+                    _mcc(uid, _fresh_p.location_slug, _fresh_p.current_district_slug)
             except Exception:
                 pass
         # Жар кристалла после боя
@@ -1394,7 +1394,7 @@ async def fight_inline_callback(callback: CallbackQuery):
         if player:
             try:
                 from game.grid_exploration_service import is_dungeon_available
-                _hd2 = is_dungeon_available(uid, player.location_slug)
+                _hd2 = is_dungeon_available(uid, player.location_slug, player.current_district_slug)
             except Exception:
                 _hd2 = False
             await callback.message.answer("Что делать:",
@@ -1776,12 +1776,12 @@ async def explore_stop_callback(callback: CallbackQuery):
     if not player:
         return
 
-    dungeon_ok = is_dungeon_available(callback.from_user.id, player.location_slug)
+    dungeon_ok = is_dungeon_available(callback.from_user.id, player.location_slug, player.current_district_slug)
     has_dungeon = dungeon_ok and player.location_slug in DUNGEONS
 
     from game.grid_exploration_service import render_mini_map
-    _grid_stop = get_grid(callback.from_user.id, player.location_slug)
-    _panel_stop = render_exploration_panel(callback.from_user.id, player.location_slug)
+    _grid_stop = get_grid(callback.from_user.id, player.location_slug, player.current_district_slug)
+    _panel_stop = render_exploration_panel(callback.from_user.id, player.location_slug, player.current_district_slug)
     from game.exploration_service import get_cartographer_level as _gcl_st
     _mini_stop = render_mini_map(_grid_stop, cart_level=_gcl_st(callback.from_user.id))
     await callback.message.answer(
@@ -2284,7 +2284,8 @@ async def _notification_loop(bot_instance):
                     from game.grid_exploration_service import is_dungeon_available
                     from keyboards.location_menu import location_actions_inline
                     try:
-                        has_dng = is_dungeon_available(uid, travel["to_slug"])
+                        has_dng = is_dungeon_available(uid, travel["to_slug"],
+                                                       _arr_player.current_district_slug if _arr_player else None)
                     except Exception:
                         has_dng = False
                     await bot_instance.send_message(
