@@ -1992,78 +1992,112 @@ def get_guild_quests_status(telegram_id: int) -> dict:
 
 def get_npc_quest_status(telegram_id: int, npc_key: str) -> str | None:
     """
-    Проверяет статус квеста у конкретного NPC.
-    npc_key: "mirna", "varg", "bort", "hunter", "gatherer" и т.д.
-    Возвращает: "ready" | "active" | None
-    """
-    # Маппинг NPC → guild_key в player_guild_quests
-    NPC_TO_GUILD = {
-        "hunter":    "hunter",
-        "gatherer":  "gatherer",
-        "geologist": "geologist",
-        "alchemist": "alchemist",
-        "varg":      "hunter",   # Варг даёт охотничьи квесты
-        "mirna":     "gatherer", # Мирна даёт квесты на сбор
-        "bort":      "geologist",
-    }
-    guild_key = NPC_TO_GUILD.get(npc_key, npc_key)
+    Проверяет статус квеста у конкретного NPC или гильдии.
+    npc_key: "mirna", "varg", "bort", "hunter", "gatherer", "guild_any", "board" и т.д.
 
-    # Доска заказов - проверяем board quests
+    Возвращает:
+      "ready"     — взятое задание выполнено, можно сдать (✅)
+      "available" — есть задание которое можно взять (❗)
+      "active"    — задание взято, выполняется (нет индикатора)
+      None        — нет заданий
+    """
+    import time as _time_mod
+
+    # ── Доска заказов ───────────────────────────────────────────────────────
     if npc_key == "board":
         try:
             with get_connection() as conn:
-                ready = conn.execute(
+                if conn.execute(
                     "SELECT COUNT(*) FROM player_board_quests WHERE telegram_id=? AND completed=1",
                     (telegram_id,)
-                ).fetchone()[0]
-                if ready:
+                ).fetchone()[0]:
                     return "ready"
-                active = conn.execute(
+                if conn.execute(
                     "SELECT COUNT(*) FROM player_board_quests WHERE telegram_id=? AND completed=0",
                     (telegram_id,)
-                ).fetchone()[0]
-                if active:
+                ).fetchone()[0]:
                     return "active"
+        except Exception:
+            pass
+        return "available"  # Доска всегда предлагает заказы
+
+    # ── NPC-поручения (Мирна, Варг, Борт) ───────────────────────────────────
+    NPC_SLUGS = {"mirna", "varg", "bort"}
+    if npc_key in NPC_SLUGS:
+        try:
+            # Проверяем активное поручение в player_city_orders
+            with get_connection() as conn:
+                active_row = conn.execute(
+                    "SELECT id, order_slug FROM player_city_orders "
+                    "WHERE telegram_id=? AND status='active' "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (telegram_id,)
+                ).fetchone()
+            if active_row:
+                # Есть активное — проверяем готово ли к сдаче
+                # Это делается в city handler, здесь просто возвращаем "active"
+                # (детальная проверка готовности — в _npc_quest_ready)
+                return "active"
+            # Нет активного — проверяем кулдаун
+            with get_connection() as conn:
+                cooldown_row = conn.execute(
+                    "SELECT completed_at FROM player_city_orders "
+                    "WHERE telegram_id=? AND status='completed' "
+                    "ORDER BY completed_at DESC LIMIT 1",
+                    (telegram_id,)
+                ).fetchone()
+            if cooldown_row and cooldown_row["completed_at"]:
+                elapsed = int(_time_mod.time()) - int(cooldown_row["completed_at"])
+                if elapsed < 86400:
+                    return None  # Кулдаун — ни доступно, ни активно
+            return "available"  # Можно взять
         except Exception:
             pass
         return None
 
-    if guild_key is None:
+    # ── Гильдии ──────────────────────────────────────────────────────────────
+    GUILD_KEYS = {"hunter", "gatherer", "geologist", "alchemist"}
+
+    # guild_any — хотя бы одна гильдия имеет что-то интересное
+    if npc_key == "guild_any":
+        statuses = [get_npc_quest_status(telegram_id, gk) for gk in GUILD_KEYS]
+        if "ready" in statuses:
+            return "ready"
+        if "available" in statuses:
+            return "available"
+        if "active" in statuses:
+            return "active"
+        return None
+
+    if npc_key not in GUILD_KEYS:
         return None
 
     try:
         with get_connection() as conn:
-            # Гильдейские квесты (player_guild_quests — колонка guild_key)
-            ready = conn.execute("""
+            # Есть выполненное (готово к сдаче)?
+            if conn.execute("""
                 SELECT COUNT(*) FROM player_guild_quests
                 WHERE telegram_id=? AND guild_key=? AND completed=1
-            """, (telegram_id, guild_key)).fetchone()[0]
-            if ready:
+            """, (telegram_id, npc_key)).fetchone()[0]:
                 return "ready"
-            active = conn.execute("""
+            # Есть активное (в процессе)?
+            if conn.execute("""
                 SELECT COUNT(*) FROM player_guild_quests
                 WHERE telegram_id=? AND guild_key=? AND completed=0
-            """, (telegram_id, guild_key)).fetchone()[0]
-            if active:
-                return "active"
-            # Доска заказов (player_board_quests — нет колонки npc, 
-            # ищем по quest_id содержащему ключ NPC)
-            board_ready = conn.execute("""
-                SELECT COUNT(*) FROM player_board_quests
-                WHERE telegram_id=? AND completed=1
-                AND quest_id LIKE ?
-            """, (telegram_id, f"%{npc_key}%")).fetchone()[0]
-            if board_ready:
-                return "ready"
-            board_active = conn.execute("""
-                SELECT COUNT(*) FROM player_board_quests
-                WHERE telegram_id=? AND completed=0
-                AND quest_id LIKE ?
-            """, (telegram_id, f"%{npc_key}%")).fetchone()[0]
-            if board_active:
+            """, (telegram_id, npc_key)).fetchone()[0]:
                 return "active"
     except Exception:
         pass
+
+    # Нет активных — проверяем есть ли доступные для взятия
+    try:
+        from game.guild_quests import get_available_quests
+        available = get_available_quests(telegram_id, npc_key)
+        if available:
+            return "available"
+    except Exception:
+        pass
+
     return None
 
 
