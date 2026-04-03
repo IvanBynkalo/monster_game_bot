@@ -106,27 +106,13 @@ def city_menu(district_slug: str | None = None, telegram_id: int | None = None) 
     """
 
     keyboard = [
-        [KeyboardButton(text="🏙 Город")],
-
+        # Городские кварталы
         [KeyboardButton(text="🏬 Торговый квартал"),
          KeyboardButton(text=_qi(telegram_id, "🏛 Гильдии", "guild_any"))],
-
         [KeyboardButton(text="⚒ Ремесленный квартал"),
-         KeyboardButton(text=_qi(telegram_id, "📜 Доска заказов", "board"))],
-
-        [KeyboardButton(text="🧭 Перемещение"),
          KeyboardButton(text="🚶 Покинуть город")],
-
-        [KeyboardButton(text="🐲 Мои монстры"),
-         KeyboardButton(text="🎒 Инвентарь")],
-
-        [KeyboardButton(text="👤 Персонаж"),
-         KeyboardButton(text="💎 Кристаллы")],
-
-        [KeyboardButton(text="⚔️ Экипировка"),
-         KeyboardButton(text=_notif_label(telegram_id))],
-
-        [KeyboardButton(text="📂 Ещё")],
+        # Возврат в корень
+        [KeyboardButton(text="⬅️ Назад")],
     ]
 
     return ReplyKeyboardMarkup(

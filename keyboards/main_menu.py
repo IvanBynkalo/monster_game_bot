@@ -35,8 +35,7 @@ def main_menu(
     if is_traveling:
         keyboard = [
             [KeyboardButton(text="🚫 Отменить перемещение")],
-            [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="🎒 Инвентарь")],
-            [KeyboardButton(text="👤 Персонаж"), KeyboardButton(text="📂 Ещё")],
+            [KeyboardButton(text="🐲 Герой"), KeyboardButton(text="📜 Задания")],
         ]
         return ReplyKeyboardMarkup(
             keyboard=keyboard,
@@ -47,8 +46,8 @@ def main_menu(
     if is_city(location_slug):
         keyboard = [
             [KeyboardButton(text="🏙 Город")],
-            [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="🎒 Инвентарь")],
-            [KeyboardButton(text="👤 Персонаж"), KeyboardButton(text="📂 Ещё")],
+            [KeyboardButton(text="🐲 Герой"), KeyboardButton(text="📜 Задания")],
+            [KeyboardButton(text="🗺 Перемещение"), KeyboardButton(text="📖 Кодекс")],
         ]
         return ReplyKeyboardMarkup(
             keyboard=keyboard,
@@ -57,9 +56,9 @@ def main_menu(
 
     # Полевое корневое меню
     keyboard = [
-        [KeyboardButton(text="🧭 Локация"), KeyboardButton(text="🗺 Переходы")],
-        [KeyboardButton(text="🐲 Мои монстры"), KeyboardButton(text="🎒 Инвентарь")],
-        [KeyboardButton(text="👤 Персонаж"), KeyboardButton(text="📂 Ещё")],
+        [KeyboardButton(text="🧭 Локация"), KeyboardButton(text="🗺 Перемещение")],
+        [KeyboardButton(text="🐲 Герой"), KeyboardButton(text="📜 Задания")],
+        [KeyboardButton(text="📖 Кодекс")],
     ]
     return ReplyKeyboardMarkup(
         keyboard=keyboard,
