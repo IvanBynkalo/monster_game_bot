@@ -1071,18 +1071,23 @@ def bort_sell_inline(player_id: int, city_slug: str):
     if not categorized:
         rows.append([InlineKeyboardButton(text="Нет ресурсов для продажи", callback_data="marketnpc:noop")])
     else:
+        # Кнопка «Продать всё» вверху
+        rows.append([InlineKeyboardButton(
+            text="💰 Продать всё сразу",
+            callback_data="marketnpc:bort_sell_all",
+        )])
         for cat in CATEGORY_ORDER:
             items = categorized.get(cat, [])
             if not items:
                 continue
-            # Заголовок категории как неактивная кнопка
             rows.append([InlineKeyboardButton(
-                text=CATEGORY_LABELS[cat],
+                text=CATEGORY_LABELS.get(cat, "📦 Прочее"),
                 callback_data="marketnpc:noop"
             )])
-            for slug, qty, price in sorted(items, key=lambda x: x[0]):
+            for slug, qty, price in sorted(items, key=lambda x: -x[1]):
                 label = get_resource_label(slug)
-                price_str = f"{price}з" if price > 0 else "нет цены"
+                total_price = price * qty
+                price_str = f"{total_price}з ({price}з/шт)" if price > 0 else "нет цены"
                 rows.append([InlineKeyboardButton(
                     text=f"💰 {label} ×{qty} → {price_str}",
                     callback_data=f"marketnpc:bort_sell:{slug}",
@@ -1316,10 +1321,8 @@ async def trap_inline_callback(callback: CallbackQuery):
         add_player_gold(uid, -result["gold_cost"])
         add_item(uid, result["item"], result["amount"])
         improve_profession_from_action(uid, "hunter")
-        await callback.answer("✅ Создано", show_alert=False)
-        await callback.message.answer(
-            f"🪤 {result['msg']}\n💰 Потрачено: {result['gold_cost']}з\n🎒 Получено: x{result['amount']}"
-        )
+        msg_craft = f"🪤 {result['msg']} | 💰 -{result['gold_cost']}з | +{result['amount']}шт"
+        await callback.answer(msg_craft[:200], show_alert=True)
         return
 
     await callback.answer()
@@ -1589,18 +1592,54 @@ async def market_inline_callback(callback: CallbackQuery):
         await _edit_city_inline(callback, render_npc_quest_detail(uid, "bort"), npc_quest_detail_inline(uid, "bort"))
         await callback.answer()
         return
+    if data == "marketnpc:bort_sell_all":
+        # Продаём все ресурсы разом
+        from database.repositories import get_resources as _get_res_all
+        _all_res = _get_res_all(uid)
+        total_gold_all = 0
+        sold_items = []
+        for _slug, _qty in list(_all_res.items()):
+            if _qty <= 0:
+                continue
+            for _ in range(int(_qty)):
+                _g = sell_resource_to_city_market(uid, player.location_slug, _slug, 1)
+                if _g and _g > 0:
+                    total_gold_all += _g
+                else:
+                    break
+            if _g and _g > 0:
+                sold_items.append(get_resource_label(_slug))
+        if total_gold_all > 0:
+            await callback.answer(f"💰 Продано всё за {total_gold_all}з", show_alert=True)
+        else:
+            await callback.answer("Нечего продавать или нет цен.", show_alert=True)
+        await _edit_city_inline(callback, render_bort_text(player.location_slug, uid), bort_sell_inline(uid, player.location_slug))
+        return
+
     if data.startswith("marketnpc:bort_sell:"):
         slug = data.split(":")[-1]
-        gold = sell_resource_to_city_market(uid, player.location_slug, slug, 1)
-        if gold is None or gold <= 0:
+        # Продаём всё количество сразу
+        from database.repositories import get_resources as _get_res
+        _res = _get_res(uid)
+        qty_to_sell = int(_res.get(slug, 0))
+        if qty_to_sell <= 0:
+            await callback.answer("Ресурс закончился.", show_alert=True)
+            return
+        total_gold = 0
+        rewards = []
+        for _ in range(qty_to_sell):
+            gold = sell_resource_to_city_market(uid, player.location_slug, slug, 1)
+            if gold is None or gold <= 0:
+                break
+            total_gold += gold
+            rewards += _mark_city_order_progress(uid, slug)
+        if total_gold <= 0:
             await callback.answer("Этот ресурс нельзя продать.", show_alert=True)
             return
-        rewards = _mark_city_order_progress(uid, slug)
-        msg = f"💰 Продано: {get_resource_label(slug)} за {gold}з"
+        popup = f"💰 Продано {qty_to_sell}×{get_resource_label(slug)} за {total_gold}з"
         if rewards:
-            msg += "\n\n" + _reward_text(uid, rewards)
-        await callback.answer(f"💰 +{gold} золота", show_alert=False)
-        await callback.message.answer(msg)
+            popup += " | " + " ".join(r["title"] for r in rewards)
+        await callback.answer(popup[:200], show_alert=False)
         await _edit_city_inline(callback, render_bort_text(player.location_slug, uid), bort_sell_inline(uid, player.location_slug))
         return
     if data.startswith("marketnpc:bort_buy:"):
