@@ -99,7 +99,7 @@ async def _show_root_menu(message: Message, player, text: str = "Главное 
 async def _show_more_menu(message: Message):
     set_ui_screen(message.from_user.id, "more")
     await message.answer(
-        "🐲 Герой — твой персонаж и всё с ним связанное:",
+        "👤 Герой — твой персонаж и всё с ним связанное:",
         reply_markup=more_menu(is_admin=_is_admin(message.from_user.id)),
     )
 

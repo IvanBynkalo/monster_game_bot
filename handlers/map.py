@@ -213,7 +213,8 @@ async def _show_arrival_screen(message: Message, target_slug: str, story_done):
 
         if target_slug in BIRTH_LOCATIONS:
             birth_panel = get_birth_panel(message.from_user.id, target_slug)
-            if birth_panel:
+            # Показываем только если есть "ГОТОВО к рождению!" — не при каждом входе
+            if birth_panel and "ГОТОВО" in birth_panel:
                 await message.answer(birth_panel)
     except Exception:
         pass

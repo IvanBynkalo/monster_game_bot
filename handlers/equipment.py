@@ -200,6 +200,13 @@ async def equipment_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
+    from game.location_rules import is_city
+    if not is_city(player.location_slug):
+        await message.answer(
+            "⚒ Мастерская Брума находится в Ремесленном квартале Сереброграда.\n"
+            "Вернись в город, чтобы купить или улучшить снаряжение."
+        )
+        return
     await message.answer(_shop_welcome_text(), reply_markup=shop_categories_kb())
 
 
