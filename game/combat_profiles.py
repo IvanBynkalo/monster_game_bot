@@ -171,6 +171,161 @@ def render_pre_battle_selector(monsters: list[dict], enemy_type: str) -> str:
     return "\n".join(lines)
 
 
+# ── Боевой экран: карточки врага и игрока ─────────────────────────────────────
+
+def _hp_bar(current: int, maximum: int, length: int = 8) -> str:
+    """Возвращает HP-бар из эмодзи."""
+    pct = current / max(1, maximum)
+    filled = round(pct * length)
+    filled = max(0, min(length, filled))
+    if pct > 0.6:
+        icon = "🟩"
+    elif pct > 0.3:
+        icon = "🟨"
+    else:
+        icon = "🟥"
+    return icon * filled + "⬛" * (length - filled)
+
+
+def render_enemy_card(encounter: dict) -> str:
+    """
+    Полная карточка врага для боевого экрана.
+    Показывает: имя, тип, редкость, HP-бар, ATK, DEF, сильные/слабые стороны.
+    """
+    from game.type_service import get_type_label, TYPE_MATRIX
+    etype = encounter.get("monster_type", "void")
+    name = encounter.get("monster_name", encounter.get("name", "???"))
+    hp = encounter.get("hp", 0)
+    max_hp = encounter.get("max_hp", hp)
+    atk = encounter.get("attack", 0)
+    # DEF считаем как ~30% от ATK (нет в данных врага явно)
+    defense = max(0, int(atk * 0.3))
+    rarity_label = encounter.get("rarity_label", "")
+    mood_label = encounter.get("mood_label", "")
+    type_label = get_type_label(etype)
+    is_wildlife = encounter.get("type") == "wildlife"
+
+    bar = _hp_bar(hp, max_hp)
+    strengths = TYPE_MATRIX.get(etype, {}).get("strengths", [])
+    weaknesses = TYPE_MATRIX.get(etype, {}).get("weaknesses", [])
+
+    lines = [
+        f"{'🐾 Зверь' if is_wildlife else '👾 Монстр'}: {name}",
+        f"{'─' * 28}",
+    ]
+    if rarity_label and not is_wildlife:
+        lines.append(f"Редкость: {rarity_label}  |  Тип: {type_label}")
+    else:
+        lines.append(f"Тип: {type_label}")
+    if mood_label and not is_wildlife:
+        lines.append(f"Эмоция: {mood_label}")
+    lines.append(f"HP:  {bar} {hp}/{max_hp}")
+    lines.append(f"ATK: {atk}  |  DEF: ~{defense}")
+    if weaknesses:
+        lines.append(f"⚡ Слаб к: {', '.join(get_type_label(t) for t in weaknesses)}")
+    if strengths and not is_wildlife:
+        lines.append(f"🛡 Силён против: {', '.join(get_type_label(t) for t in strengths)}")
+    if not is_wildlife and encounter.get("capture_chance"):
+        lines.append(f"🎯 Шанс поимки: {int(encounter['capture_chance'] * 100)}%")
+        if encounter.get("bonus_capture", 0) > 0:
+            lines.append(f"   +{int(encounter['bonus_capture'] * 100)}% (бонус)")
+    lines.append(f"💰 ~{encounter.get('reward_gold', 0)}з  ✨ {encounter.get('reward_exp', 0)} опыта")
+    return "\n".join(lines)
+
+
+def render_my_monster_card(monster: dict, enemy_type: str = "") -> str:
+    """
+    Карточка своего монстра для боевого экрана.
+    Показывает: имя, уровень, тип, HP-бар, ATK, DEF, матчап.
+    """
+    from game.type_service import get_type_label, get_damage_multiplier, get_defense_multiplier
+    if not monster:
+        return "⚠️ Нет активного монстра"
+
+    name = monster.get("name", "Монстр")
+    level = monster.get("level", 1)
+    hp = monster.get("current_hp", monster.get("hp", 0))
+    max_hp = monster.get("max_hp", monster.get("hp", 1))
+    atk = monster.get("attack", 5)
+    mtype = monster.get("monster_type", "void")
+    rarity = monster.get("rarity", "common")
+    type_label = get_type_label(mtype)
+
+    # DEF из combat_profiles
+    role = get_monster_role(mtype)
+    role_mods = ROLE_STAT_MODIFIERS.get(role, {})
+    defense = max(0, int(atk * 0.3 * role_mods.get("defense", 1.0)))
+
+    bar = _hp_bar(hp, max_hp)
+
+    lines = [
+        f"🐲 {name}  (ур. {level}  |  {type_label})",
+        f"HP:  {bar} {hp}/{max_hp}",
+        f"ATK: {atk}  |  DEF: ~{defense}",
+    ]
+
+    # Матчап против врага
+    if enemy_type:
+        mult, _ = get_damage_multiplier(mtype, enemy_type)
+        def_mult = get_defense_multiplier(mtype, enemy_type)
+        if mult >= 1.5 and def_mult <= 1.0:
+            lines.append("🟢 Выгодный матчап — бьёшь сильнее, держишь хорошо")
+        elif mult <= 0.7 or def_mult >= 1.5:
+            lines.append("🔴 Невыгодный матчап — рассмотри смену монстра")
+        else:
+            lines.append("🟡 Нейтральный матчап")
+
+    return "\n".join(lines)
+
+
+def render_switch_monster_list(monsters: list[dict], enemy_type: str) -> tuple[str, list]:
+    """
+    Экран выбора монстра для смены.
+    Возвращает (текст, список_для_кнопок).
+    Кнопки строятся в bot.py, здесь только данные.
+    """
+    from game.type_service import get_type_label, get_damage_multiplier, get_defense_multiplier
+    enemy_label = get_type_label(enemy_type)
+    lines = [f"🔄 Выбери монстра для боя против {enemy_label}", "─" * 28, ""]
+
+    button_data = []
+    rated = []
+    for m in monsters:
+        if not m or m.get("is_dead"):
+            continue
+        mtype = m.get("monster_type", "void")
+        mult, _ = get_damage_multiplier(mtype, enemy_type)
+        def_mult = get_defense_multiplier(mtype, enemy_type)
+        if mult >= 1.5 and def_mult <= 1.0:
+            icon, score = "🟢", 3
+        elif mult <= 0.7 or def_mult >= 1.5:
+            icon, score = "🔴", 1
+        else:
+            icon, score = "🟡", 2
+        rated.append((score, icon, m))
+
+    rated.sort(key=lambda x: -x[0])
+
+    for score, icon, m in rated:
+        mtype = m.get("monster_type", "void")
+        name = m.get("name", "???")
+        level = m.get("level", 1)
+        hp = m.get("current_hp", m.get("hp", 0))
+        max_hp = m.get("max_hp", m.get("hp", 1))
+        active_mark = "📍 " if m.get("is_active") else ""
+        bar = _hp_bar(hp, max_hp, length=5)
+        type_label = get_type_label(mtype)
+
+        lines.append(
+            f"{active_mark}{icon} {name}  ур.{level}\n"
+            f"   {type_label}  HP: {bar} {hp}/{max_hp}"
+        )
+        button_label = f"{active_mark}{icon} {name} ур.{level} HP:{hp}/{max_hp}"
+        button_data.append({"id": m["id"], "label": button_label, "is_active": m.get("is_active", False)})
+
+    return "\n".join(lines), button_data
+
+
 # ── Пункт 6: Маркировка монстра в карточке ────────────────────────────────────
 
 def get_matchup_badge(my_type: str, enemy_type: str) -> str:
