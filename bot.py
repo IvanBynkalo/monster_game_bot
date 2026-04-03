@@ -18,7 +18,7 @@ from handlers.start import start_handler
 from handlers.map import map_handler, location_handler, move_handler, navigation_handler
 from handlers.world import world_handler
 from handlers.story import story_handler
-from handlers.more import more_handler, back_handler, healing_menu_handler
+from handlers.more import more_handler, back_handler, healing_menu_handler, hero_handler, quests_nav_handler
 from handlers.district import district_handler, district_move_handler
 from handlers.explore import explore_handler, elite_expedition_handler
 from handlers.dungeon import (
@@ -567,6 +567,7 @@ dp.message.register(
         "Переходы",
         "🗺 Мир / переходы",
         "Мир / переходы",
+        "🗺 Перемещение",
         "🧭 Перемещение",
         "Перемещение",
         "🧭 Навигация",
@@ -576,6 +577,8 @@ dp.message.register(
     ),
 )
 dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
+dp.message.register(hero_handler, text_is("🐲 Герой", "Герой"))
+dp.message.register(quests_nav_handler, text_is("📜 Задания", "Задания"))
 dp.message.register(healing_menu_handler, text_is("❤️ Лечение", "Лечение"))
 
 dp.message.register(city_handler, text_is("🏙 Город", "Город"))
@@ -598,7 +601,7 @@ dp.message.register(
 dp.message.register(city_bags_handler, text_startswith("🎒 Лавка сумок", "Лавка сумок"))
 dp.message.register(city_monsters_handler, text_startswith("🐲 Рынок монстров", "Рынок монстров"))
 dp.message.register(city_buyer_handler, text_startswith("💰 Скупщик ресурсов", "Скупщик ресурсов"))
-dp.message.register(city_board_handler, text_startswith("📜 Доска заказов", "Доска заказов"))
+dp.message.register(city_board_handler, text_startswith("📜 Доска заказов", "📋 Доска заказов", "Доска заказов"))
 dp.message.register(city_guilds_handler, text_startswith("🏛 Гильдии", "Гильдии"))
 dp.message.register(city_craft_quarter_handler, text_is("⚒ Ремесленный квартал", "Ремесленный квартал"))
 dp.message.register(take_herbalist_order_handler, text_is("📌 Взять заказ: Травник"))
