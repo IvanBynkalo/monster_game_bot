@@ -206,7 +206,8 @@ def init_db() -> None:
             reward_gold     INTEGER NOT NULL,
             reward_exp      INTEGER NOT NULL,
             status          TEXT NOT NULL DEFAULT 'active',
-            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at    INTEGER DEFAULT NULL
         );
 
         CREATE TABLE IF NOT EXISTS pending_encounters (
@@ -369,3 +370,11 @@ def init_db() -> None:
                 conn.commit()
         except Exception:
             pass
+
+    # Миграция: добавляем completed_at в player_city_orders если БД уже существует
+    try:
+        with get_connection() as conn:
+            conn.execute("ALTER TABLE player_city_orders ADD COLUMN completed_at INTEGER DEFAULT NULL")
+            conn.commit()
+    except Exception:
+        pass

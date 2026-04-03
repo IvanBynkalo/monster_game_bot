@@ -1398,8 +1398,9 @@ def add_city_order(telegram_id: int, order_slug: str, title: str, goal_text: str
         conn.commit()
 
 def complete_city_order(order_id: int):
+    import time
     with get_connection() as conn:
-        conn.execute("UPDATE player_city_orders SET status='completed' WHERE id=?", (order_id,))
+        conn.execute("UPDATE player_city_orders SET status='completed', completed_at=? WHERE id=?", (int(time.time()), order_id))
         conn.commit()
 
 def clear_active_city_orders(telegram_id: int):
