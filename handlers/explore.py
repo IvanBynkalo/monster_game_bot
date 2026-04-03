@@ -403,7 +403,7 @@ async def explore_handler(message: Message, forced_direction: str = None):
         _chosen_dir = _directions[0]['dir'] if _directions else 'forward'
     _expl_result = explore_cell(message.from_user.id, player.location_slug, _chosen_dir, _district_slug)
     _expl_text = render_exploration_result(_expl_result, player.location_slug)
-    _expl_bonuses = get_current_cell_bonuses(message.from_user.id, player.location_slug)
+    _expl_bonuses = get_current_cell_bonuses(message.from_user.id, player.location_slug, _district_slug)
 
     if not spend_player_energy(message.from_user.id, 1):
         log_event("explore_failed_no_energy", message.from_user.id)
