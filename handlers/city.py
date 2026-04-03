@@ -40,6 +40,7 @@ from database.repositories import (
     spend_resource,
     update_player_district,
 )
+from database.db import get_connection
 
 try:
     from database.repositories import get_inventory
