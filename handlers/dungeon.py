@@ -179,7 +179,13 @@ async def dungeon_handler(message: Message):
         )
         return
 
-    cooldown = get_dungeon_cooldown_status(message.from_user.id, player.location_slug)
+    # Кулдаун проверяем per-клетка: dungeon_slug = 'location:col,row'
+    from game.grid_exploration_service import get_grid as _gg
+    _district = getattr(player, 'current_district_slug', None)
+    _grid = _gg(message.from_user.id, player.location_slug, _district)
+    _col, _row = _grid["current_pos"]
+    _cell_dungeon_slug = f"{player.location_slug}:{_col},{_row}"
+    cooldown = get_dungeon_cooldown_status(message.from_user.id, _cell_dungeon_slug)
     if not cooldown["available"]:
         remaining_text = format_duration_ru(cooldown["remaining_seconds"])
         reopen_at = cooldown.get("cooldown_until", "скоро")
@@ -191,12 +197,13 @@ async def dungeon_handler(message: Message):
         )
         return
 
-    from game.grid_exploration_service import THRESHOLDS, is_dungeon_available
+    from game.grid_exploration_service import is_dungeon_available
 
-    if not is_dungeon_available(message.from_user.id, player.location_slug):
+    if not is_dungeon_available(message.from_user.id, player.location_slug, getattr(player, 'current_district_slug', None)):
         await message.answer(
-            f"🔒 Вход в подземелье ещё не найден.\n"
-            f"Исследуй локацию до {THRESHOLDS['dungeon_unlocks']}% — тогда найдёшь вход.",
+            "🔒 Вход в подземелье не найден.\n"
+            "Исследуй локацию — вход в подземелье откроется как клетка 🕳 на карте.\n"
+            "Встань на неё, чтобы войти.",
             reply_markup=_root_menu(player),
         )
         return
@@ -209,6 +216,8 @@ async def dungeon_handler(message: Message):
         return
 
     state = start_dungeon_state(player.location_slug)
+    # Сохраняем позицию клетки — нужна для per-cell кулдауна при завершении
+    state["cell_dungeon_slug"] = _cell_dungeon_slug
     _set_dungeon_state(player, state)
 
     entry_text = (
@@ -409,11 +418,20 @@ async def dungeon_fight_handler(message: Message):
             state["completed"] = True
             dungeon_cfg = get_dungeon(state["location_slug"])
             respawn_hours = dungeon_cfg.get("respawn_hours", 72) if dungeon_cfg else 72
+            # Кулдаун per-cell: используем slug вида 'location:col,row'
+            _cell_slug = state.get("cell_dungeon_slug", state["location_slug"])
             mark_dungeon_cleared(
                 telegram_id=message.from_user.id,
-                dungeon_slug=state["location_slug"],
+                dungeon_slug=_cell_slug,
                 cooldown_hours=respawn_hours,
             )
+            # Помечаем клетку на гриде как зачищенную (для миникарты)
+            try:
+                from game.grid_exploration_service import mark_cell_cleared as _mcc
+                _mcc(message.from_user.id, state["location_slug"],
+                     getattr(player, 'current_district_slug', None))
+            except Exception:
+                pass
             _set_dungeon_state(player, state)
             await message.answer(
                 f"👑 Босс повержен: {enemy['name']}\n"

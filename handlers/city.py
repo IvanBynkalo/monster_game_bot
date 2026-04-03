@@ -868,9 +868,12 @@ def render_mirna_text(player_id: int) -> str:
     equipped = get_equipped_bag(player_id)
     equipped_line = f"Надета сейчас: {equipped['bag_name']} ({equipped['capacity']} мест)" if equipped else "Сумка пока не выбрана."
     quest_status = _render_npc_quest_status_line(player_id, "mirna")
+    player = get_player(player_id)
+    gold = player.gold if player else 0
     return (
         "🎒 Мирна — дорожная лавка\n\n"
         "У Мирны можно купить сумку, управлять своими сумками и продать часть походных расходников.\n\n"
+        f"💰 Золото: {gold}з\n"
         f"{equipped_line}\n"
         f"Поручение: {quest_status}"
     )
@@ -966,9 +969,12 @@ def varg_sell_inline(player_id: int):
 
 def render_varg_text(player_id: int) -> str:
     quest_status = _render_npc_quest_status_line(player_id, "varg")
+    player = get_player(player_id)
+    gold = player.gold if player else 0
     return (
         "🐲 Варг — рынок монстров\n\n"
         "Здесь можно купить стартового монстра для отряда или продать неактивных существ.\n\n"
+        f"💰 Золото: {gold}з\n"
         f"Поручение: {quest_status}"
     )
 
@@ -1086,33 +1092,111 @@ def bort_sell_inline(player_id: int, city_slug: str):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def bort_buy_inline(city_slug: str):
-    market = get_city_resource_market(city_slug)
-    rows = []
-    for slug, entry in market.items():
-        stock = int(entry.get("stock", 0))
-        if stock <= 0:
+# Категории ресурсов для магазина Борта
+BORT_BUY_CATEGORIES = {
+    "🌿 Травы и растения": ["forest_herb", "mushroom_cap", "silver_moss", "swamp_moss",
+                            "toxic_spore", "field_grass", "sun_blossom", "bog_flower",
+                            "ghost_reed", "ash_leaf"],
+    "⛏ Руды и минералы":  ["ember_stone", "raw_ore", "granite_shard", "magma_core",
+                            "sky_crystal", "dew_crystal", "dark_resin"],
+    "🦴 Охотничий лут":   [],  # всё остальное — wildlife loot
+}
+
+
+def _bort_buy_categorize(market: dict) -> dict[str, list]:
+    """Разбивает товары рынка по категориям."""
+    categorized: dict[str, list] = {cat: [] for cat in BORT_BUY_CATEGORIES}
+    known_slugs = set()
+    for cat, slugs in BORT_BUY_CATEGORIES.items():
+        if not slugs:
             continue
+        for slug in slugs:
+            if slug in market:
+                entry = market[slug]
+                if int(entry.get("stock", 0)) > 0:
+                    categorized[cat].append((slug, entry))
+                    known_slugs.add(slug)
+    # Всё что не попало в явные категории — в охотничий лут
+    for slug, entry in market.items():
+        if slug not in known_slugs and int(entry.get("stock", 0)) > 0:
+            categorized["🦴 Охотничий лут"].append((slug, entry))
+    return categorized
+
+
+def bort_buy_category_inline(city_slug: str, cat_index: int = 0) -> InlineKeyboardMarkup:
+    """Магазин Борта: одна категория за раз с навигацией."""
+    market = get_city_resource_market(city_slug)
+    categorized = _bort_buy_categorize(market)
+    # Фильтруем пустые категории
+    filled = [(cat, items) for cat, items in categorized.items() if items]
+
+    rows = []
+    if not filled:
+        rows.append([InlineKeyboardButton(text="Склад пуст", callback_data="marketnpc:noop")])
+        rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    cat_index = max(0, min(cat_index, len(filled) - 1))
+    cat_name, items = filled[cat_index]
+
+    # Заголовок категории
+    rows.append([InlineKeyboardButton(text=f"── {cat_name} ──", callback_data="marketnpc:noop")])
+
+    # Товары текущей категории
+    for slug, entry in items:
         price = entry.get("buy_price") or entry.get("price") or 0
+        stock = int(entry.get("stock", 0))
         rows.append([InlineKeyboardButton(
-            text=f"🛒 {get_resource_label(slug)} — {price}з — {stock}шт",
+            text=f"🛒 {get_resource_label(slug)} — {price}з ({stock}шт)",
             callback_data=f"marketnpc:bort_buy:{slug}",
         )])
-    if not rows:
-        rows.append([InlineKeyboardButton(text="Склад пуст", callback_data="marketnpc:noop")])
+
+    # Навигация по категориям
+    nav_row = []
+    if len(filled) > 1:
+        prev_i = (cat_index - 1) % len(filled)
+        next_i = (cat_index + 1) % len(filled)
+        nav_row.append(InlineKeyboardButton(text="◀️", callback_data=f"marketnpc:bort_buy_cat:{prev_i}"))
+        nav_row.append(InlineKeyboardButton(text=f"{cat_index+1}/{len(filled)}", callback_data="marketnpc:noop"))
+        nav_row.append(InlineKeyboardButton(text="▶️", callback_data=f"marketnpc:bort_buy_cat:{next_i}"))
+        rows.append(nav_row)
+
     rows.append([InlineKeyboardButton(text="⬅️ Назад к Борту", callback_data="marketnpc:bort_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bort_buy_inline(city_slug: str):
+    """Обёртка для обратной совместимости — открывает первую категорию."""
+    return bort_buy_category_inline(city_slug, 0)
 
 
 def render_bort_text(city_slug: str, player_id: int) -> str:
     resources = get_resources(player_id)
     total = sum(v for v in resources.values() if v > 0)
     quest_status = _render_npc_quest_status_line(player_id, "bort")
+    player = get_player(player_id)
+    gold = player.gold if player else 0
     return (
         "💰 Борт — склад и лавка ресурсов\n\n"
         "Здесь можно продавать добычу и выкупать ресурсы с городского рынка.\n\n"
+        f"💰 Золото: {gold}з\n"
         f"Ресурсов у тебя: {total}\n"
         f"Поручение: {quest_status}"
+    )
+
+
+def render_bort_buy_text(city_slug: str, player_id: int) -> str:
+    """Текст экрана покупки ресурсов у Борта."""
+    player = get_player(player_id)
+    gold = player.gold if player else 0
+    market = get_city_resource_market(city_slug)
+    in_stock = sum(1 for e in market.values() if int(e.get("stock", 0)) > 0)
+    return (
+        "🛒 Борт — купить ресурсы\n\n"
+        f"💰 Твой баланс: {gold}з\n"
+        f"Позиций на складе: {in_stock}\n\n"
+        "Выбери категорию и нажми на ресурс — купишь 1 штуку.\n"
+        "Переключай категории стрелками ◀️ ▶️."
     )
 
 
@@ -1489,7 +1573,16 @@ async def market_inline_callback(callback: CallbackQuery):
         await callback.answer()
         return
     if data == "marketnpc:bort_buy_menu":
-        await _edit_city_inline(callback, render_bort_text(player.location_slug, uid), bort_buy_inline(player.location_slug))
+        await _edit_city_inline(callback, render_bort_buy_text(player.location_slug, uid), bort_buy_category_inline(player.location_slug, 0))
+        await callback.answer()
+        return
+
+    if data.startswith("marketnpc:bort_buy_cat:"):
+        try:
+            cat_i = int(data.split(":")[-1])
+        except ValueError:
+            cat_i = 0
+        await _edit_city_inline(callback, render_bort_buy_text(player.location_slug, uid), bort_buy_category_inline(player.location_slug, cat_i))
         await callback.answer()
         return
     if data == "marketnpc:bort_quest":
@@ -1517,7 +1610,7 @@ async def market_inline_callback(callback: CallbackQuery):
             await callback.answer("Недостаточно золота или склад пуст.", show_alert=True)
             return
         await callback.answer(f"🛒 Куплено за {price}з", show_alert=False)
-        await _edit_city_inline(callback, render_bort_text(player.location_slug, uid), bort_buy_inline(player.location_slug))
+        await _edit_city_inline(callback, render_bort_buy_text(player.location_slug, uid), bort_buy_category_inline(player.location_slug, 0))
         return
 
     await callback.answer()
