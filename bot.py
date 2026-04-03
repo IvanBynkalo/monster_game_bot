@@ -84,7 +84,7 @@ from handlers.progression import (
     add_intellect_handler,
     upgrade_bag_handler,
 )
-from handlers.quests import quests_handler
+from handlers.quests import quests_handler, quests_page_callback
 from handlers.shop import (
     shop_handler,
     item_shop_handler,
@@ -468,6 +468,7 @@ dp.message.register(dungeon_leave_handler, text_is("🏃 Покинуть под
 dp.message.register(gather_handler, text_is("🧺 Собирать ресурсы", "Собирать ресурсы", "🧺 Собирать", "Собирать"))
 dp.message.register(story_handler, text_is("Сюжет", "🧾 Сюжет"))
 dp.message.register(quests_handler, text_is("Квесты", "📜 Квесты"))
+dp.callback_query.register(quests_page_callback, lambda c: c.data and c.data.startswith("quests:"))
 dp.message.register(
     navigation_handler,
     text_is(
