@@ -255,16 +255,22 @@ def _npc_status_label(player_id: int, npc_slug: str) -> str:
 
 
 def _npc_quest_button_label(player_id: int, npc_slug: str) -> str:
-    """Текст кнопки поручения на главном экране NPC."""
+    """Текст кнопки поручения на главном экране NPC.
+
+    ✅ — взято и выполнено (сдать)
+    ❗ — можно взять новое
+    🕒 — взято, в процессе (без индикатора)
+    🕐 — кулдаун
+    """
     active = _get_active_npc_order(player_id, npc_slug)
     if active:
         if _npc_quest_ready(player_id, active["order_slug"]):
             return "✅ Поручение — готово к сдаче"
-        return "🕒 Поручение — в процессе"
+        return "📋 Поручение — в процессе"  # без яркого индикатора
     remaining = _get_npc_quest_cooldown(player_id, npc_slug)
     if remaining > 0:
         return f"🕐 Поручение — через {_fmt_cooldown(remaining)}"
-    return "📋 Посмотреть поручение"
+    return "❗ Взять поручение"  # доступно для взятия
 
 
 def _reward_text(player_id: int, quests: list[dict]) -> str:
