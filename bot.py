@@ -577,7 +577,7 @@ dp.message.register(
     ),
 )
 dp.message.register(more_handler, text_is("📂 Ещё", "Ещё"))
-dp.message.register(hero_handler, text_is("🐲 Герой", "Герой"))
+dp.message.register(hero_handler, text_is("👤 Герой", "Герой"))
 dp.message.register(quests_nav_handler, text_is("📜 Задания", "Задания"))
 dp.message.register(healing_menu_handler, text_is("❤️ Лечение", "Лечение"))
 
@@ -984,7 +984,10 @@ async def fight_inline_callback(callback: CallbackQuery):
     """
     Inline-кнопки боя. Работает с monster и wildlife.
     """
-    action = callback.data.split(":")[1]
+    # action может быть "attack", "switchto", "switch_cancel" и т.д.
+    # Для "fight:switchto:123" нужно "switchto:123", поэтому берём всё после первого ":"
+    _raw_parts = callback.data.split(":", 1)
+    action = _raw_parts[1] if len(_raw_parts) > 1 else ""
     uid = callback.from_user.id
 
     from database.repositories import (
@@ -1230,7 +1233,7 @@ async def fight_inline_callback(callback: CallbackQuery):
         return
 
     elif action.startswith("switchto:"):
-        monster_id = int(action.split(":")[1])
+        monster_id = int(action.split(":", 1)[1])
         new_active = set_active_monster(uid, monster_id)
         if new_active:
             enc_sw = get_pending_encounter(uid)
@@ -2306,6 +2309,7 @@ async def shop_inline_callback(callback: CallbackQuery):
         try:
             from game.shop_service import ITEM_ORDER, get_market_item_price
             from database.repositories import get_inventory as _get_inv_upd
+            from game.item_service import ITEMS as _ITEMS_UPD
             _inv_upd = _get_inv_upd(uid)
             LABELS = {
                 "small_potion":   ("🧪", "Малое зелье"),
@@ -2316,6 +2320,7 @@ async def shop_inline_callback(callback: CallbackQuery):
             }
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             rows = []
+            # Основные товары из ITEM_ORDER
             for _slug in ITEM_ORDER:
                 _emoji, _name = LABELS.get(_slug, ("🛒", _slug))
                 _price = get_market_item_price(_slug)
@@ -2325,6 +2330,16 @@ async def shop_inline_callback(callback: CallbackQuery):
                     text=f"🛒 {_emoji} {_name} — {_price}з{_have_str}",
                     callback_data=f"shop:buy:{_slug}"
                 )])
+            # Специальные товары (не в ITEM_ORDER)
+            for _slug in ("flee_elixir", "revival_shard"):
+                if _slug not in ITEM_ORDER and _slug in _ITEMS_UPD:
+                    _emoji, _name = LABELS.get(_slug, ("🛒", _slug))
+                    _have = _inv_upd.get(_slug, 0)
+                    _have_str = f" · у тебя: {_have}" if _have > 0 else ""
+                    rows.append([InlineKeyboardButton(
+                        text=f"🛒 {_emoji} {_name} — 60з{_have_str}",
+                        callback_data=f"shop:buy:{_slug}"
+                    )])
             rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="shop:back")])
             await callback.message.edit_reply_markup(
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
