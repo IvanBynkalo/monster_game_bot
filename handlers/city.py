@@ -249,12 +249,21 @@ def _grant_npc_quest_rewards(player_id: int, quest_slug: str):
 
 
 def _npc_status_label(player_id: int, npc_slug: str) -> str:
+    """Оставлено для совместимости. Используй _npc_quest_button_label."""
+    return _npc_quest_button_label(player_id, npc_slug)
+
+
+def _npc_quest_button_label(player_id: int, npc_slug: str) -> str:
+    """Текст кнопки поручения на главном экране NPC."""
     active = _get_active_npc_order(player_id, npc_slug)
-    if not active:
-        return "📌 Есть поручение"
-    if _npc_quest_ready(player_id, active["order_slug"]):
-        return "✅ Можно сдать"
-    return "❗ Поручение активно"
+    if active:
+        if _npc_quest_ready(player_id, active["order_slug"]):
+            return "✅ Поручение — готово к сдаче"
+        return "🕒 Поручение — в процессе"
+    remaining = _get_npc_quest_cooldown(player_id, npc_slug)
+    if remaining > 0:
+        return f"🕐 Поручение — через {_fmt_cooldown(remaining)}"
+    return "📋 Посмотреть поручение"
 
 
 def _reward_text(player_id: int, quests: list[dict]) -> str:
@@ -287,9 +296,126 @@ def _mark_city_order_progress(player_id: int, resource_slug: str):
     return rewards
 
 
+def _get_npc_quest_cooldown(player_id: int, npc_slug: str) -> int:
+    """Возвращает оставшиеся секунды кулдауна после завершения NPC-квеста (0 = нет кулдауна)."""
+    import time
+    quest_slugs = [slug for slug, data in NPC_QUEST_DEFS.items() if data["npc"] == npc_slug]
+    if not quest_slugs:
+        return 0
+    with get_connection() as conn:
+        for quest_slug in quest_slugs:
+            row = conn.execute(
+                "SELECT completed_at FROM player_city_orders "
+                "WHERE telegram_id=? AND order_slug=? AND status='completed' "
+                "ORDER BY completed_at DESC LIMIT 1",
+                (player_id, quest_slug)
+            ).fetchone()
+            if row and row["completed_at"]:
+                elapsed = int(time.time()) - int(row["completed_at"])
+                cooldown_secs = 86400
+                if elapsed < cooldown_secs:
+                    return cooldown_secs - elapsed
+    return 0
+
+
+def _fmt_cooldown(seconds: int) -> str:
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    if hours > 0:
+        return f"{hours} ч. {minutes} мин."
+    return f"{minutes} мин."
+
+
+def _render_npc_quest_status_line(player_id: int, npc_slug: str) -> str:
+    """Короткая строка статуса для главного экрана NPC (без описания)."""
+    active = _get_active_npc_order(player_id, npc_slug)
+    if active:
+        quest_slug = active["order_slug"]
+        if _npc_quest_ready(player_id, quest_slug):
+            return "✅ Готово к сдаче"
+        return f"🕒 Активно: {active['title']}"
+    remaining = _get_npc_quest_cooldown(player_id, npc_slug)
+    if remaining > 0:
+        return f"🕐 Доступно через {_fmt_cooldown(remaining)}"
+    return "📌 Есть поручение"
+
+
+def render_npc_quest_detail(player_id: int, npc_slug: str) -> str:
+    """Детальный экран поручения: описание + прогресс/статус + награда."""
+    active = _get_active_npc_order(player_id, npc_slug)
+    if active:
+        quest_slug = active["order_slug"]
+        quest_def = NPC_QUEST_DEFS.get(quest_slug, {})
+        goal = quest_def.get("goal_text", active.get("goal_text", "Выполни условия."))
+        reward_gold = active.get("reward_gold", 0)
+        reward_exp = active.get("reward_exp", 0)
+        ready = _npc_quest_ready(player_id, quest_slug)
+        status = "✅ Условия выполнены! Нажми «Сдать»" if ready else "🕒 Выполняется..."
+        return (
+            f"📋 Поручение: {active['title']}\n"
+            f"{'─' * 30}\n"
+            f"{goal}\n\n"
+            f"Статус: {status}\n\n"
+            f"💰 Награда: {reward_gold} золота  ✨ {reward_exp} опыта"
+        )
+    remaining = _get_npc_quest_cooldown(player_id, npc_slug)
+    if remaining > 0:
+        return (
+            f"✅ Поручение выполнено!\n\n"
+            f"🕐 Следующее поручение будет доступно через {_fmt_cooldown(remaining)}.\n\n"
+            f"Возвращайся позже."
+        )
+    quest_slug = next((slug for slug, data in NPC_QUEST_DEFS.items() if data["npc"] == npc_slug), None)
+    if not quest_slug:
+        return "Поручений пока нет."
+    q = NPC_QUEST_DEFS[quest_slug]
+    return (
+        f"📋 Поручение: {q['title']}\n"
+        f"{'─' * 30}\n"
+        f"{q['goal_text']}\n\n"
+        f"💰 Награда: {q['reward_gold']} золота  ✨ {q['reward_exp']} опыта\n\n"
+        f"Нажми «Взять поручение», чтобы принять его."
+    )
+
+
+def npc_quest_detail_inline(player_id: int, npc_slug: str) -> InlineKeyboardMarkup:
+    """Кнопки на детальном экране поручения."""
+    active = _get_active_npc_order(player_id, npc_slug)
+    back_cb = f"marketnpc:{npc_slug}_back"
+    rows = []
+    if active:
+        quest_slug = active["order_slug"]
+        if _npc_quest_ready(player_id, quest_slug):
+            rows.append([InlineKeyboardButton(
+                text="✅ Сдать поручение",
+                callback_data=f"marketnpc:npc_quest_claim:{npc_slug}",
+            )])
+        else:
+            rows.append([InlineKeyboardButton(text="🕒 Ещё не выполнено", callback_data="marketnpc:noop")])
+    else:
+        if _get_npc_quest_cooldown(player_id, npc_slug) <= 0:
+            rows.append([InlineKeyboardButton(
+                text="📌 Взять поручение",
+                callback_data=f"marketnpc:npc_quest_take:{npc_slug}",
+            )])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _npc_take_or_claim_result(player_id: int, npc_slug: str):
     active = _get_active_npc_order(player_id, npc_slug)
     if not active:
+        # Проверяем кулдаун — нельзя брать снова раньше 24ч
+        remaining = _get_npc_quest_cooldown(player_id, npc_slug)
+        if remaining > 0:
+            hours = remaining // 3600
+            minutes = (remaining % 3600) // 60
+            if hours > 0:
+                cd_str = f"{hours} ч. {minutes} мин."
+            else:
+                cd_str = f"{minutes} мин."
+            return False, f"🕐 Следующее поручение доступно через {cd_str}"
+
         quest_slug = next((slug for slug, data in NPC_QUEST_DEFS.items() if data["npc"] == npc_slug), None)
         if not quest_slug:
             return False, "Поручение не найдено."
@@ -303,11 +429,16 @@ def _npc_take_or_claim_result(player_id: int, npc_slug: str):
             reward_exp=quest["reward_exp"],
         )
         invalidate_quest_status_cache(player_id, npc_slug)
-        return True, f"📌 Поручение взято:\n{quest['title']}"
+        return True, (
+            f"📌 Поручение взято: {quest['title']}\n"
+            f"📋 {quest['goal_text']}\n"
+            f"💰 Награда: {quest['reward_gold']}з + {quest['reward_exp']} опыта"
+        )
 
     quest_slug = active["order_slug"]
     if not _npc_quest_ready(player_id, quest_slug):
-        return False, "Пока требования не выполнены."
+        quest_def = NPC_QUEST_DEFS.get(quest_slug, {})
+        return False, f"🕒 Пока условия не выполнены.\n📋 {quest_def.get('goal_text', '')}"
 
     if not _complete_npc_quest_requirements(player_id, quest_slug):
         return False, "Не удалось списать требуемые ресурсы или предметы."
@@ -319,7 +450,8 @@ def _npc_take_or_claim_result(player_id: int, npc_slug: str):
     return True, (
         f"✅ Поручение сдано: {quest['title']}\n"
         f"💰 +{quest['reward_gold']} золота\n"
-        f"✨ +{quest['reward_exp']} опыта"
+        f"✨ +{quest['reward_exp']} опыта\n"
+        f"🕐 Новое поручение будет доступно через 24 ч."
     )
 
 
@@ -648,12 +780,11 @@ async def city_market_handler(message: Message):
 
 
 def mirna_main_inline(player_id: int):
-    quest_label = _npc_status_label(player_id, "mirna")
     rows = [
         [InlineKeyboardButton(text="🛒 Купить сумки", callback_data="marketnpc:mirna_buy_menu")],
         [InlineKeyboardButton(text="🎒 Мои сумки", callback_data="marketnpc:mirna_bags_menu")],
         [InlineKeyboardButton(text="💰 Продать походные товары", callback_data="marketnpc:mirna_sell_menu")],
-        [InlineKeyboardButton(text=quest_label, callback_data="marketnpc:mirna_quest")],
+        [InlineKeyboardButton(text=_npc_quest_button_label(player_id, "mirna"), callback_data="marketnpc:npc_quest_detail:mirna")],
         [InlineKeyboardButton(text="⬅️ Назад в квартал", callback_data="marketnpc:district_back")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -706,12 +837,13 @@ def mirna_sell_inline(player_id: int):
 
 def render_mirna_text(player_id: int) -> str:
     equipped = get_equipped_bag(player_id)
-    status = _npc_status_label(player_id, "mirna")
+    equipped_line = f"Надета сейчас: {equipped['bag_name']} ({equipped['capacity']} мест)" if equipped else "Сумка пока не выбрана."
+    quest_status = _render_npc_quest_status_line(player_id, "mirna")
     return (
         "🎒 Мирна — дорожная лавка\n\n"
         "У Мирны можно купить сумку, управлять своими сумками и продать часть походных расходников.\n\n"
-        f"Текущее поручение: {status}\n"
-        f"Надета сейчас: {equipped['bag_name']} ({equipped['capacity']} мест)" if equipped else "Сумка пока не выбрана."
+        f"{equipped_line}\n"
+        f"Поручение: {quest_status}"
     )
 
 
@@ -767,11 +899,10 @@ async def city_bags_handler(message: Message):
 
 
 def varg_main_inline(player_id: int):
-    quest_label = _npc_status_label(player_id, "varg")
     rows = [
         [InlineKeyboardButton(text="🛒 Купить монстра", callback_data="marketnpc:varg_buy_menu")],
         [InlineKeyboardButton(text="💰 Продать монстра", callback_data="marketnpc:varg_sell_menu")],
-        [InlineKeyboardButton(text=quest_label, callback_data="marketnpc:varg_quest")],
+        [InlineKeyboardButton(text=_npc_quest_button_label(player_id, "varg"), callback_data="marketnpc:npc_quest_detail:varg")],
         [InlineKeyboardButton(text="⬅️ Назад в квартал", callback_data="marketnpc:district_back")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -805,10 +936,11 @@ def varg_sell_inline(player_id: int):
 
 
 def render_varg_text(player_id: int) -> str:
+    quest_status = _render_npc_quest_status_line(player_id, "varg")
     return (
         "🐲 Варг — рынок монстров\n\n"
         "Здесь можно купить стартового монстра для отряда или продать неактивных существ.\n\n"
-        f"Статус поручения: {_npc_status_label(player_id, 'varg')}"
+        f"Поручение: {quest_status}"
     )
 
 
@@ -851,11 +983,10 @@ async def city_monsters_handler(message: Message):
 
 
 def bort_main_inline(player_id: int):
-    quest_label = _npc_status_label(player_id, "bort")
     rows = [
         [InlineKeyboardButton(text="💰 Продать ресурсы", callback_data="marketnpc:bort_sell_menu")],
         [InlineKeyboardButton(text="🛒 Купить ресурсы", callback_data="marketnpc:bort_buy_menu")],
-        [InlineKeyboardButton(text=quest_label, callback_data="marketnpc:bort_quest")],
+        [InlineKeyboardButton(text=_npc_quest_button_label(player_id, "bort"), callback_data="marketnpc:npc_quest_detail:bort")],
         [InlineKeyboardButton(text="⬅️ Назад в квартал", callback_data="marketnpc:district_back")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -947,11 +1078,12 @@ def bort_buy_inline(city_slug: str):
 def render_bort_text(city_slug: str, player_id: int) -> str:
     resources = get_resources(player_id)
     total = sum(v for v in resources.values() if v > 0)
+    quest_status = _render_npc_quest_status_line(player_id, "bort")
     return (
         "💰 Борт — склад и лавка ресурсов\n\n"
         "Здесь можно продавать добычу и выкупать ресурсы с городского рынка.\n\n"
         f"Ресурсов у тебя: {total}\n"
-        f"Статус поручения: {_npc_status_label(player_id, 'bort')}"
+        f"Поручение: {quest_status}"
     )
 
 
@@ -1093,6 +1225,29 @@ async def market_inline_callback(callback: CallbackQuery):
         await callback.answer()
         return
 
+    # ── Детальный экран поручения NPC ─────────────────────────────────────────
+    if data.startswith("marketnpc:npc_quest_detail:"):
+        npc_slug = data.split(":")[-1]
+        await _edit_city_inline(callback, render_npc_quest_detail(uid, npc_slug), npc_quest_detail_inline(uid, npc_slug))
+        await callback.answer()
+        return
+
+    if data.startswith("marketnpc:npc_quest_take:"):
+        npc_slug = data.split(":")[-1]
+        ok, msg = _npc_take_or_claim_result(uid, npc_slug)
+        await callback.answer(msg[:200], show_alert=ok)
+        # После взятия — остаёмся на детальном экране (теперь с прогрессом)
+        await _edit_city_inline(callback, render_npc_quest_detail(uid, npc_slug), npc_quest_detail_inline(uid, npc_slug))
+        return
+
+    if data.startswith("marketnpc:npc_quest_claim:"):
+        npc_slug = data.split(":")[-1]
+        ok, msg = _npc_take_or_claim_result(uid, npc_slug)
+        await callback.answer(msg[:200], show_alert=ok)
+        # После сдачи — показываем детальный экран (кулдаун или новое)
+        await _edit_city_inline(callback, render_npc_quest_detail(uid, npc_slug), npc_quest_detail_inline(uid, npc_slug))
+        return
+
     if data == "marketnpc:district_back":
         await callback.answer()
         await callback.message.answer(
@@ -1119,9 +1274,9 @@ async def market_inline_callback(callback: CallbackQuery):
         await callback.answer()
         return
     if data == "marketnpc:mirna_quest":
-        ok, msg = _npc_take_or_claim_result(uid, "mirna")
-        await callback.answer(msg, show_alert=not ok)
-        await _edit_city_inline(callback, render_mirna_text(uid), mirna_main_inline(uid))
+        # Legacy — redirect to detail screen
+        await _edit_city_inline(callback, render_npc_quest_detail(uid, "mirna"), npc_quest_detail_inline(uid, "mirna"))
+        await callback.answer()
         return
     if data.startswith("marketnpc:mirna_buy:"):
         slug = data.split(":")[-1]
@@ -1196,9 +1351,8 @@ async def market_inline_callback(callback: CallbackQuery):
         return
 
     if data == "marketnpc:varg_quest":
-        ok, msg = _npc_take_or_claim_result(uid, "varg")
-        await callback.answer(msg, show_alert=not ok)
-        await _edit_city_inline(callback, render_varg_text(uid), varg_main_inline(uid))
+        await _edit_city_inline(callback, render_npc_quest_detail(uid, "varg"), npc_quest_detail_inline(uid, "varg"))
+        await callback.answer()
         return
 
     if data.startswith("marketnpc:varg_buy:"):
@@ -1310,9 +1464,8 @@ async def market_inline_callback(callback: CallbackQuery):
         await callback.answer()
         return
     if data == "marketnpc:bort_quest":
-        ok, msg = _npc_take_or_claim_result(uid, "bort")
-        await callback.answer(msg, show_alert=not ok)
-        await _edit_city_inline(callback, render_bort_text(player.location_slug, uid), bort_main_inline(uid))
+        await _edit_city_inline(callback, render_npc_quest_detail(uid, "bort"), npc_quest_detail_inline(uid, "bort"))
+        await callback.answer()
         return
     if data.startswith("marketnpc:bort_sell:"):
         slug = data.split(":")[-1]
