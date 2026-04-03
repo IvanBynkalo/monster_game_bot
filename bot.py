@@ -1159,20 +1159,22 @@ async def fight_inline_callback(callback: CallbackQuery):
         return
 
     elif action == "switch":
-        # Экран выбора монстра для смены — с карточками и матчапом
+        # Экран выбора монстра — редактируем то же сообщение, не создаём новое
         all_m = get_player_monsters(uid)
         alive = [m for m in all_m if not m.get("is_dead") and m.get("current_hp", 1) > 0]
-        if len(alive) <= 1:
+        # Исключаем активного монстра — его менять не нужно
+        non_active = [m for m in alive if not m.get("is_active")]
+        if not non_active:
             await callback.answer("Нет других живых монстров для смены.", show_alert=True)
             return
         enc_for_switch = get_pending_encounter(uid)
         enemy_type = enc_for_switch.get("monster_type", "void") if enc_for_switch else "void"
         try:
             from game.combat_profiles import render_switch_monster_list
-            selector_text, button_data = render_switch_monster_list(alive, enemy_type)
+            selector_text, button_data = render_switch_monster_list(non_active, enemy_type)
         except Exception:
             selector_text = "Выбери монстра:"
-            button_data = [{"id": m["id"], "label": f"{m['name']} ур.{m.get('level',1)}", "is_active": m.get("is_active", False)} for m in alive]
+            button_data = [{"id": m["id"], "label": f"{m['name']} ур.{m.get('level',1)}", "is_active": False} for m in non_active]
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         kbd = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
@@ -1180,34 +1182,49 @@ async def fight_inline_callback(callback: CallbackQuery):
                 callback_data=f"fight:switchto:{b['id']}"
             )] for b in button_data
         ] + [[InlineKeyboardButton(text="⬅️ Назад к бою", callback_data="fight:switch_cancel")]])
-        await callback.message.answer(selector_text, reply_markup=kbd)
+        try:
+            await callback.message.edit_text(selector_text, reply_markup=kbd)
+        except Exception:
+            await callback.message.answer(selector_text, reply_markup=kbd)
         await callback.answer()
         return
 
     elif action == "switch_cancel":
-        # Возврат к бою без смены монстра
+        # Возврат к бою — редактируем то же сообщение обратно в боевой экран
         enc_cancel = get_pending_encounter(uid)
-        if enc_cancel:
-            from game.combat_profiles import render_enemy_card, render_my_monster_card
-            am_cancel = get_active_monster(uid)
-            enemy_type_c = enc_cancel.get("monster_type", "void")
-            text_c = render_enemy_card(enc_cancel)
-            my_c = render_my_monster_card(am_cancel, enemy_type_c) if am_cancel else ""
-            if my_c:
-                text_c += "\n\n" + "─" * 28 + "\n" + my_c
-            has_trap_c = get_item_count(uid, "basic_trap") > 0
-            has_ptrap_c = get_item_count(uid, "poison_trap") > 0
-            is_wildlife_c = enc_cancel.get("type") == "wildlife"
-            from keyboards.encounter_menu import encounter_inline_menu
-            kb_c = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
-                 InlineKeyboardButton(text="✨ Навык", callback_data="fight:skill")],
-                *([[InlineKeyboardButton(text="🎯 Поймать", callback_data="fight:capture"),
-                    InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")]] if not is_wildlife_c else
-                  [[InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")]]),
-                *([[InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")]] if has_trap_c else []),
-                [InlineKeyboardButton(text="🔄 Сменить монстра", callback_data="fight:switch")],
-            ])
+        if not enc_cancel:
+            await callback.answer("Встреча уже завершена.", show_alert=True)
+            return
+        from game.combat_profiles import render_enemy_card, render_my_monster_card
+        am_cancel = get_active_monster(uid)
+        enemy_type_c = enc_cancel.get("monster_type", "void")
+        text_c = render_enemy_card(enc_cancel)
+        my_c = render_my_monster_card(am_cancel, enemy_type_c) if am_cancel else ""
+        if my_c:
+            text_c += "\n\n" + "─" * 28 + "\n" + my_c
+        has_trap_c = get_item_count(uid, "basic_trap") > 0
+        has_ptrap_c = get_item_count(uid, "poison_trap") > 0
+        is_wildlife_c = enc_cancel.get("type") == "wildlife"
+        all_alive_c = [m for m in get_player_monsters(uid) if not m.get("is_dead") and m.get("current_hp",1)>0]
+        has_multi_c = len(all_alive_c) > 1
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        rows_c = [
+            [InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
+             InlineKeyboardButton(text="✨ Навык", callback_data="fight:skill")],
+        ]
+        if not is_wildlife_c:
+            rows_c.append([InlineKeyboardButton(text="🎯 Поймать", callback_data="fight:capture"),
+                            InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
+        else:
+            rows_c.append([InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
+        if has_trap_c:
+            rows_c.append([InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")])
+        if has_multi_c:
+            rows_c.append([InlineKeyboardButton(text="🔄 Сменить монстра", callback_data="fight:switch")])
+        kb_c = InlineKeyboardMarkup(inline_keyboard=rows_c)
+        try:
+            await callback.message.edit_text(text_c, reply_markup=kb_c)
+        except Exception:
             await callback.message.answer(text_c, reply_markup=kb_c)
         await callback.answer()
         return
@@ -1227,19 +1244,29 @@ async def fight_inline_callback(callback: CallbackQuery):
                 text_sw = my_sw
             is_wildlife_sw = enc_sw.get("type") == "wildlife" if enc_sw else False
             has_trap_sw = get_item_count(uid, "basic_trap") > 0
-            has_ptrap_sw = get_item_count(uid, "poison_trap") > 0
-            kb_sw = InlineKeyboardMarkup(inline_keyboard=[
+            all_alive_sw = [m for m in get_player_monsters(uid) if not m.get("is_dead") and m.get("current_hp",1)>0]
+            has_multi_sw = len(all_alive_sw) > 1
+            rows_sw = [
                 [InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
                  InlineKeyboardButton(text="✨ Навык", callback_data="fight:skill")],
-                *([[InlineKeyboardButton(text="🎯 Поймать", callback_data="fight:capture"),
-                    InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")]] if not is_wildlife_sw else
-                  [[InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")]]),
-                *([[InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")]] if has_trap_sw else []),
-                [InlineKeyboardButton(text="🔄 Сменить монстра", callback_data="fight:switch")],
-            ])
-            await callback.message.answer(f"✅ Монстр сменён на {new_active['name']}\n\n" + text_sw, reply_markup=kb_sw)
+            ]
+            if not is_wildlife_sw:
+                rows_sw.append([InlineKeyboardButton(text="🎯 Поймать", callback_data="fight:capture"),
+                                 InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
+            else:
+                rows_sw.append([InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
+            if has_trap_sw:
+                rows_sw.append([InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")])
+            if has_multi_sw:
+                rows_sw.append([InlineKeyboardButton(text="🔄 Сменить монстра", callback_data="fight:switch")])
+            kb_sw = InlineKeyboardMarkup(inline_keyboard=rows_sw)
+            full_text_sw = f"✅ Активный монстр: {new_active['name']}\n\n" + text_sw
+            try:
+                await callback.message.edit_text(full_text_sw, reply_markup=kb_sw)
+            except Exception:
+                await callback.message.answer(full_text_sw, reply_markup=kb_sw)
         else:
-            await callback.message.answer("Не удалось сменить монстра.")
+            await callback.answer("Не удалось сменить монстра.", show_alert=True)
         await callback.answer()
         return
 
