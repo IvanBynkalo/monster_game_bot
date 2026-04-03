@@ -19,7 +19,7 @@ from database.repositories import get_player, get_ui_screen, set_ui_screen
 from game.location_rules import is_city
 from keyboards.healing_menu import healing_menu
 from keyboards.main_menu import main_menu
-from keyboards.more_menu import more_menu
+from keyboards.more_menu import more_menu, quests_nav_menu
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -54,6 +54,7 @@ _BACK_TO_CITY = {
 _BACK_TO_ROOT = {
     "main",
     "more",
+    "quests_nav",
     "inventory",
     "navigation",
     "progression",
@@ -98,8 +99,16 @@ async def _show_root_menu(message: Message, player, text: str = "Главное 
 async def _show_more_menu(message: Message):
     set_ui_screen(message.from_user.id, "more")
     await message.answer(
-        "📂 Меню:",
+        "🐲 Герой — твой персонаж и всё с ним связанное:",
         reply_markup=more_menu(is_admin=_is_admin(message.from_user.id)),
+    )
+
+
+async def _show_quests_menu(message: Message):
+    set_ui_screen(message.from_user.id, "quests_nav")
+    await message.answer(
+        "📜 Задания — квесты, сюжет и ежедневные активности:",
+        reply_markup=quests_nav_menu(is_admin=_is_admin(message.from_user.id)),
     )
 
 
@@ -174,8 +183,25 @@ async def more_handler(message: Message):
     if not player:
         await message.answer("Сначала напиши /start")
         return
-
     await _show_more_menu(message)
+
+
+async def hero_handler(message: Message):
+    """Кнопка «🐲 Герой» — открывает меню персонажа."""
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    await _show_more_menu(message)
+
+
+async def quests_nav_handler(message: Message):
+    """Кнопка «📜 Задания» — открывает меню квестов."""
+    player = get_player(message.from_user.id)
+    if not player:
+        await message.answer("Сначала напиши /start")
+        return
+    await _show_quests_menu(message)
 
 
 async def healing_menu_handler(message: Message):
