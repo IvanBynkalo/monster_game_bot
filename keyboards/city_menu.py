@@ -58,9 +58,12 @@ def _cached_quest_status(telegram_id: int, npc_key: str) -> str | None:
 def _qi(telegram_id: int | None, base: str, npc_key: str) -> str:
     """
     Индикатор состояния квеста для кнопок.
-    available -> 📌
-    active    -> ❗
-    ready     -> ✅
+
+    Логика:
+      ready     → ✅  (задание взято и выполнено — можно сдать)
+      available → ❗  (есть задание которое можно взять)
+      active    → нет индикатора (взято, выполняется)
+      None      → нет индикатора
     """
     if not telegram_id:
         return base
@@ -69,10 +72,9 @@ def _qi(telegram_id: int | None, base: str, npc_key: str) -> str:
         st = _cached_quest_status(telegram_id, npc_key)
         if st == "ready":
             return f"{base} (✅)"
-        if st == "active":
-            return f"{base} (❗)"
         if st == "available":
-            return f"{base} (📌)"
+            return f"{base} (❗)"
+        # active и None — без индикатора
     except Exception:
         pass
 
