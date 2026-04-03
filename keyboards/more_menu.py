@@ -1,7 +1,7 @@
 """
 keyboards/more_menu.py
 
-Подменю «🐲 Герой» — всё что касается персонажа и его характеристик.
+Подменю «👤 Герой» — всё что касается персонажа и его характеристик.
 """
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
