@@ -342,13 +342,107 @@ async def cooldown_cmd(message):
 
 
 async def guild_quest_callback(callback):
-    """Обрабатывает взятие/сдачу гильдейских поручений и обновляет ту же inline-панель."""
-    from game.guild_quests import take_quest, claim_quest, render_guild_panel
+    """Обрабатывает взятие/сдачу гильдейских поручений и детальный экран."""
+    from game.guild_quests import (
+        take_quest, claim_quest, render_guild_panel,
+        get_available_quests, get_active_quests,
+        GUILD_QUEST_POOL, WEEKLY_GUILD_QUESTS,
+    )
+    from handlers.city import build_guild_quest_detail_inline, build_guild_inline_markup
     from keyboards.city_menu import district_actions_menu, invalidate_quest_status_cache
 
     uid = callback.from_user.id
     data = callback.data or ""
     parts = data.split(":")
+    if len(parts) < 3:
+        await callback.answer()
+        return
+
+    # ── Детальный экран поручения ─────────────────────────────────────────────
+    if data.startswith("guild:detail:") and len(parts) >= 4:
+        profession = parts[2]
+        quest_id = parts[3]
+
+        # Ищем квест в доступных и активных
+        all_pool = GUILD_QUEST_POOL.get(profession, [])
+        weekly = WEEKLY_GUILD_QUESTS.get(profession, {})
+        quest_def = next((q for q in all_pool if q["id"] == quest_id), None)
+        if not quest_def and weekly.get("id") == quest_id:
+            quest_def = weekly
+
+        active_list = get_active_quests(uid, profession)
+        active_q = next((q for q in active_list if q.get("id") == quest_id or q.get("quest_id") == quest_id), None)
+        is_active = active_q is not None
+        is_completed = bool(active_q.get("completed")) if active_q else False
+
+        # Формируем текст детали
+        if quest_def:
+            title_text = quest_def.get("title", "Поручение")
+            desc_text = quest_def.get("desc", "")
+            reward_gold = quest_def.get("reward_gold", 0)
+            reward_exp = quest_def.get("reward_exp", 0)
+            reward_skill = quest_def.get("reward_skill", 0)
+            target = quest_def.get("target", 1)
+            is_weekly = quest_id.startswith("wh_")
+            weekly_mark = "🌟 Еженедельное поручение\n" if is_weekly else ""
+        else:
+            # Квест активный, но дефиниция не нашлась — берём из БД
+            title_text = (active_q or {}).get("title", "Поручение")
+            desc_text = ""
+            reward_gold = (active_q or {}).get("reward_gold", 0)
+            reward_exp = (active_q or {}).get("reward_exp", 0)
+            reward_skill = (active_q or {}).get("reward_skill", 0)
+            target = (active_q or {}).get("count", 1)
+            weekly_mark = ""
+
+        lines = [
+            f"📋 {title_text}",
+            "─" * 30,
+        ]
+        if weekly_mark:
+            lines.append(weekly_mark.strip())
+        if desc_text:
+            lines.append(desc_text)
+        lines.append("")
+        lines.append(f"Цель: выполнить {target} раз")
+
+        if is_active and active_q:
+            progress = int(active_q.get("progress", 0) or 0)
+            pct = int(progress / max(1, target) * 10)
+            bar = "█" * pct + "░" * (10 - pct)
+            if is_completed:
+                lines.append(f"Прогресс: ✅ Выполнено! Можно сдать")
+            else:
+                lines.append(f"Прогресс: [{bar}] {progress}/{target}")
+        elif not is_active:
+            lines.append("Статус: не взято")
+
+        lines.append("")
+        lines.append(f"💰 {reward_gold} золота   ✨ {reward_exp} опыта   📈 +{reward_skill} навык")
+
+        detail_text = "\n".join(lines)
+        kb = build_guild_quest_detail_inline(profession, quest_id, is_active, is_completed)
+        try:
+            await callback.message.edit_text(detail_text, reply_markup=kb)
+        except Exception:
+            await callback.message.answer(detail_text, reply_markup=kb)
+        await callback.answer()
+        return
+
+    # ── Назад к списку поручений ──────────────────────────────────────────────
+    if data.startswith("guild:back:") and len(parts) >= 3:
+        profession = parts[2]
+        title, desc = _guild_meta(profession)
+        panel_text = render_guild_panel(uid, profession, title, desc)
+        kb = build_guild_inline_markup(uid, profession)
+        try:
+            await callback.message.edit_text(panel_text, reply_markup=kb)
+        except Exception:
+            await callback.message.answer(panel_text, reply_markup=kb)
+        await callback.answer()
+        return
+
+    # ── Взять / Сдать ─────────────────────────────────────────────────────────
     if len(parts) < 4:
         await callback.answer()
         return
@@ -358,34 +452,31 @@ async def guild_quest_callback(callback):
 
     if data.startswith("guild:take:"):
         ok, msg = take_quest(uid, quest_id, profession)
-    elif data.startswith("guild:claim:"):
-        ok, msg = claim_quest(uid, quest_id, profession)
-    else:
-        await callback.answer()
+        await callback.answer(msg[:200], show_alert=not ok)
+        invalidate_quest_status_cache(uid, profession)
+        invalidate_quest_status_cache(uid, "guild_any")
+        # После взятия — возвращаемся на детальный экран (теперь с прогрессом)
+        # Повторно вызываем detail через рекурсию через имитацию данных
+        callback.data = f"guild:detail:{profession}:{quest_id}"
+        await guild_quest_callback(callback)
         return
 
-    invalidate_quest_status_cache(uid, profession)
-    invalidate_quest_status_cache(uid, "guild_any")
+    elif data.startswith("guild:claim:"):
+        ok, msg = claim_quest(uid, quest_id, profession)
+        await callback.answer(msg[:200], show_alert=ok)
+        invalidate_quest_status_cache(uid, profession)
+        invalidate_quest_status_cache(uid, "guild_any")
+        # После сдачи — назад к списку
+        title, desc = _guild_meta(profession)
+        panel_text = render_guild_panel(uid, profession, title, desc)
+        kb = build_guild_inline_markup(uid, profession)
+        try:
+            await callback.message.edit_text(panel_text, reply_markup=kb)
+        except Exception:
+            await callback.message.answer(panel_text, reply_markup=kb)
+        return
 
-    await callback.answer(msg, show_alert=not ok)
-
-    title, desc = _guild_meta(profession)
-    panel_text = render_guild_panel(uid, profession, title, desc)
-    kb = build_guild_inline_markup(uid, profession)
-
-    try:
-        await callback.message.edit_text(panel_text, reply_markup=kb)
-    except Exception:
-        await callback.message.answer(panel_text, reply_markup=kb)
-
-    # Обновляем reply-клавиатуру квартала гильдий, чтобы статусы (✅/❗/📌) менялись сразу.
-    try:
-        await callback.message.answer(
-            "🏛 Меню гильдий обновлено.",
-            reply_markup=district_actions_menu("guild_quarter", uid),
-        )
-    except Exception:
-        pass
+    await callback.answer()
 
 
 
