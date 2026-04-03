@@ -361,8 +361,18 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str, district_
         grid["visited_count"] += 1
     else:
         # Уже посещённая — тип НЕ меняем, cleared сохраняется
-        # Исключение: если это dungeon/boss_zone — всегда можно зайти
-        pass
+        # Исключение для dungeon-клеток: проверяем кулдаун и восстанавливаем если истёк
+        if cell.get("cleared") and cell.get("original_type") == "dungeon":
+            try:
+                from database.repositories import get_dungeon_cooldown_status
+                _cell_slug = f"{location_slug}:{nc},{nr}"
+                _cd = get_dungeon_cooldown_status(telegram_id, _cell_slug)
+                if _cd["available"]:
+                    # Кулдаун истёк — восстанавливаем клетку
+                    cell["cleared"] = False
+                    cell["type"] = "dungeon"
+            except Exception:
+                pass
 
     grid["current_pos"] = [nc, nr]
     _save_grid(telegram_id, location_slug, grid, district_slug)
@@ -396,7 +406,7 @@ def explore_cell(telegram_id: int, location_slug: str, direction: str, district_
         "is_cleared": is_cleared,
         "direction": chosen["label"],
         "threshold_reward": threshold_reward,
-        "dungeon_available": current_type == "dungeon",  # доступно только на клетке подземелья
+        "dungeon_available": current_type == "dungeon" and not cell.get("cleared", False),  # доступно если не зачищена
         "boss_zone": current_type == "boss_zone",
         "is_dungeon": current_type == "dungeon",
         "cart_level": cart_level,
@@ -655,10 +665,11 @@ def render_exploration_panel(telegram_id: int, location_slug: str, district_slug
 def is_dungeon_available(telegram_id: int, location_slug: str, district_slug: str | None = None) -> bool:
     """
     Подземелье доступно если:
-    1. Локация есть в словаре DUNGEONS (подземелье для неё предусмотрено).
-    2. Игрок стоит на клетке типа 'dungeon' в гриде.
-    Клетка 'dungeon' генерируется только в локациях из DUNGEONS (см. _weighted_cell_type),
-    поэтому двойная проверка защищает от любых edge-case.
+    1. Локация есть в словаре DUNGEONS.
+    2. Игрок стоит на клетке типа 'dungeon' (не зачищенной).
+    
+    Клетки 'dungeon' независимы — кулдаун per-cell через slug 'location:col,row'.
+    Проверку % открытия не делаем: клетка сама появляется только при исследовании.
     """
     from game.dungeon_service import DUNGEONS
     if location_slug not in DUNGEONS:
@@ -667,7 +678,9 @@ def is_dungeon_available(telegram_id: int, location_slug: str, district_slug: st
     col, row = grid["current_pos"]
     key = f"{col},{row}"
     cell = grid["cells"].get(key, {})
-    return cell.get("type") == "dungeon"
+    ctype = cell.get("type", "")
+    # Клетка должна быть типа dungeon и не зачищена (cleared)
+    return ctype == "dungeon" and not cell.get("cleared", False)
 
 
 def has_any_dungeon_cell(telegram_id: int, location_slug: str) -> bool:
