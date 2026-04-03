@@ -268,9 +268,9 @@ def try_daily_respawn(telegram_id: int, location_slug: str, district_slug: str |
     return respawned > 0
 
 
-def mark_cell_cleared(telegram_id: int, location_slug: str):
+def mark_cell_cleared(telegram_id: int, location_slug: str, district_slug: str | None = None):
     """Помечает текущую ячейку как зачищенную (монстр/зверь побеждён)."""
-    grid = get_grid(telegram_id, location_slug)
+    grid = get_grid(telegram_id, location_slug, district_slug)
     col, row = grid["current_pos"]
     key = f"{col},{row}"
     cell = grid["cells"].get(key)
@@ -280,11 +280,11 @@ def mark_cell_cleared(telegram_id: int, location_slug: str):
         if orig not in ("dungeon", "boss_zone"):
             cell["cleared"] = True
             cell["type"] = "cleared"
-    _save_grid(telegram_id, location_slug, grid)
+    _save_grid(telegram_id, location_slug, grid, district_slug)
 
 
-def is_cell_cleared(telegram_id: int, location_slug: str) -> bool:
-    grid = get_grid(telegram_id, location_slug)
+def is_cell_cleared(telegram_id: int, location_slug: str, district_slug: str | None = None) -> bool:
+    grid = get_grid(telegram_id, location_slug, district_slug)
     col, row = grid["current_pos"]
     key = f"{col},{row}"
     cell = grid["cells"].get(key, {})
@@ -663,7 +663,7 @@ def is_dungeon_available(telegram_id: int, location_slug: str, district_slug: st
     from game.dungeon_service import DUNGEONS
     if location_slug not in DUNGEONS:
         return False
-    grid = get_grid(telegram_id, location_slug)
+    grid = get_grid(telegram_id, location_slug, district_slug)
     col, row = grid["current_pos"]
     key = f"{col},{row}"
     cell = grid["cells"].get(key, {})
