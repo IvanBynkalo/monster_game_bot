@@ -640,20 +640,18 @@ async def explore_handler(message: Message, forced_direction: str = None):
         _encounter_monster_type = encounter.get("monster_type", "void")
     elif encounter["type"] == "wildlife":
         save_pending_encounter(message.from_user.id, encounter)
-        from game.wildlife_service import render_wildlife_encounter as _rwe
-        text = _rwe(encounter)
-        # HP активного монстра при встрече со зверем
+        # Карточка зверя + карточка своего монстра
         try:
+            from game.combat_profiles import render_enemy_card, render_my_monster_card
             from database.repositories import get_active_monster as _gam2
             _am2 = _gam2(message.from_user.id)
-            if _am2:
-                _hp2 = _am2.get("current_hp", _am2.get("hp", 0))
-                _mhp2 = _am2.get("max_hp", _am2.get("hp", 1))
-                _filled2 = int(_hp2 / max(1, _mhp2) * 8)
-                _bar2 = "❤️" * _filled2 + "🖤" * (8 - _filled2)
-                text += f"\n\n🐲 {_am2['name']}: {_bar2} {_hp2}/{_mhp2} HP"
+            text = render_enemy_card(encounter)
+            my_card2 = render_my_monster_card(_am2, encounter.get("monster_type", "")) if _am2 else ""
+            if my_card2:
+                text += "\n\n" + "─" * 28 + "\n" + my_card2
         except Exception:
-            pass
+            from game.wildlife_service import render_wildlife_encounter as _rwe
+            text = _rwe(encounter)
     else:
         event = world_event or encounter
         event_text = event.get("text") or event.get("title") or "Тишина окутывает местность."
@@ -739,8 +737,18 @@ async def explore_handler(message: Message, forced_direction: str = None):
         )
         has_ptrap = get_item_count(message.from_user.id, 'poison_trap') > 0
 
+        # Проверяем есть ли несколько живых монстров для смены
+        from database.repositories import get_player_monsters as _gpm_kb
+        _all_alive_kb = [m for m in _gpm_kb(message.from_user.id)
+                         if not m.get("is_dead") and m.get("current_hp", 1) > 0]
+        _has_multi = len(_all_alive_kb) > 1
+
         if encounter["type"] == "monster":
-            kb = encounter_inline_menu(has_trap=has_any_trap, has_poison_trap=has_ptrap)
+            kb = encounter_inline_menu(
+                has_trap=has_any_trap,
+                has_poison_trap=has_ptrap,
+                has_multiple_monsters=_has_multi,
+            )
             mtype = locals().get("_encounter_monster_type", encounter.get("monster_type", "void"))
             await _send_monster_card_message(
                 message,
@@ -750,22 +758,21 @@ async def explore_handler(message: Message, forced_direction: str = None):
                 reply_markup=kb,
             )
         else:
-            # Зверь — поймать нельзя, только бой
+            # Зверь — без поимки
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            # Зверь — без поимки, но 2x2
             _wl_rows = [
                 [
                     InlineKeyboardButton(text="⚔️ Атаковать", callback_data="fight:attack"),
                     InlineKeyboardButton(text="✨ Навык",      callback_data="fight:skill"),
                 ],
+                [
+                    InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee"),
+                ],
             ]
             if has_any_trap:
-                _wl_rows.append([
-                    InlineKeyboardButton(text="🪤 Ловушка",  callback_data="fight:trap"),
-                    InlineKeyboardButton(text="🏃 Убежать",  callback_data="fight:flee"),
-                ])
-            else:
-                _wl_rows.append([InlineKeyboardButton(text="🏃 Убежать", callback_data="fight:flee")])
+                _wl_rows.insert(1, [InlineKeyboardButton(text="🪤 Ловушка", callback_data="fight:trap")])
+            if _has_multi:
+                _wl_rows.append([InlineKeyboardButton(text="🔄 Сменить монстра", callback_data="fight:switch")])
             wildlife_kb = InlineKeyboardMarkup(inline_keyboard=_wl_rows)
             await _send_monster_card_message(
                 message,
