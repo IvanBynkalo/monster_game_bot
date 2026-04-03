@@ -614,31 +614,59 @@ def _guild_meta(profession: str) -> tuple[str, str]:
 
 
 def build_guild_inline_markup(telegram_id: int, profession: str):
+    """
+    Кнопки гильдии: все поручения открываются через детальный экран.
+    Взять/Сдать — только на детальном экране, чтобы игрок видел описание перед взятием.
+    """
     rows = []
 
     available = get_available_quests(telegram_id, profession)
     for q in available:
         rows.append([InlineKeyboardButton(
-            text=f"📌 Взять: {q['title']}",
-            callback_data=f"guild:take:{profession}:{q['id']}",
+            text=f"📋 {q['title']}",
+            callback_data=f"guild:detail:{profession}:{q['id']}",
         )])
 
     active = get_active_quests(telegram_id, profession)
     for q in active:
         if q.get("completed"):
+            status = "✅"
+        else:
+            status = "🕒"
+        rows.append([InlineKeyboardButton(
+            text=f"{status} {q.get('title', 'Поручение')}",
+            callback_data=f"guild:detail:{profession}:{q.get('id', q.get('quest_id', ''))}",
+        )])
+
+    if not rows:
+        rows.append([InlineKeyboardButton(text="Поручений пока нет", callback_data="guild:noop:none:0")])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_guild_quest_detail_inline(profession: str, quest_id: str, is_active: bool, is_completed: bool) -> InlineKeyboardMarkup:
+    """Кнопки на детальном экране конкретного поручения гильдии."""
+    rows = []
+    if is_active:
+        if is_completed:
             rows.append([InlineKeyboardButton(
-                text=f"✅ Сдать: {q['title']}",
-                callback_data=f"guild:claim:{profession}:{q['id']}",
+                text="✅ Сдать поручение",
+                callback_data=f"guild:claim:{profession}:{quest_id}",
             )])
         else:
             rows.append([InlineKeyboardButton(
-                text=f"❗ Активно: {q['title']}",
-                callback_data=f"guild:noop:{profession}:{q['id']}",
+                text="🕒 Ещё не выполнено",
+                callback_data="guild:noop:none:0",
             )])
-
-    if not rows:
-        rows.append([InlineKeyboardButton(text="Пока поручений нет", callback_data="guild:noop:none:0")])
-
+    else:
+        rows.append([InlineKeyboardButton(
+            text="📌 Взять поручение",
+            callback_data=f"guild:take:{profession}:{quest_id}",
+        )])
+    rows.append([InlineKeyboardButton(
+        text="⬅️ Назад к поручениям",
+        callback_data=f"guild:back:{profession}",
+    )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
